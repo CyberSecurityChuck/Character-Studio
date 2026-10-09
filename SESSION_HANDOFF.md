@@ -55,6 +55,7 @@ New root continuity docs, README, Git ignore/attributes, Python metadata/lockfil
 
 - Repository on main. Verified implementation checkpoint: `31b9ddbb72e1f8e41252e7434e89b5bae98273c8` — "Build Phase 1 local studio foundation and continuity system".
 - No remote configured or push performed. No personal photos, database, credentials or generated images are staged.
+- User explicitly requires being asked before any GitHub repository setup or code push. Confirm the account/repository first; local Git checkpoint approval is not publishing approval.
 - Worktree was clean immediately after the implementation commit. This documentation-only follow-up records that verified hash; find its own commit with `git log -5 --oneline`. Always check current `git status --short` on resume.
 
 ## Remaining work and next action
