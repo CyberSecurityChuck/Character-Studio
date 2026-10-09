@@ -13,6 +13,7 @@ Last checkpoint: 2026-10-09 22:17 IST (+05:30)
 - Continuity: file/dependency/exclusion audit passed. A genuinely new Codex conversation recovery exercise remains **unperformed**, with instructions in docs/CONTINUITY.md.
 - Blockers: none for the implemented foundation. Agent sandbox cache/temp restrictions required escalation for installs/tests/launcher verification.
 - Interruption recovery: usage-limit approval failure prevented the first commit. Resumed, verified files and staging differences, reran all 29 tests/lint/build successfully, and ran the launcher successfully. No implementation work was lost.
+- Verified implementation commit: `31b9ddb`; documentation follow-up records the checkpoint. Check `git log` and `git status` on resume.
 - Not implemented: character uploads, scenes, AI analysis, approvals, generation/export/import, full backup/restore UI. These belong to later phases.
 - Next action: review the foundation and optionally perform the fresh-conversation resume exercise; seek explicit approval before Phase 2.
 

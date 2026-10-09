@@ -53,9 +53,9 @@ New root continuity docs, README, Git ignore/attributes, Python metadata/lockfil
 
 ## Git checkpoint
 
-- Repository initialized on main. The foundation checkpoint is being prepared with source and these records; verify actual `git log -5 --oneline` and `git status --short` on resume.
+- Repository on main. Verified implementation checkpoint: `31b9ddbb72e1f8e41252e7434e89b5bae98273c8` — "Build Phase 1 local studio foundation and continuity system".
 - No remote configured or push performed. No personal photos, database, credentials or generated images are staged.
-- The next documentation checkpoint will record the verified implementation commit hash; do not infer it from this draft.
+- Worktree was clean immediately after the implementation commit. This documentation-only follow-up records that verified hash; find its own commit with `git log -5 --oneline`. Always check current `git status --short` on resume.
 
 ## Remaining work and next action
 
