@@ -111,6 +111,58 @@ def test_supported_formats_and_primary_fallback(client, format):
     assert c["photos"] == []
 
 
+def test_photo_framing_defaults_updates_and_validation(client):
+    c = upload(client, create_character(client)).json()
+    photo = c["photos"][0]
+    assert photo["frame"] == {"x": 0.5, "y": 0.3, "zoom": 1.0}
+    path = f"/api/photos/{photo['id']}"
+    frame = {"x": 0.2, "y": 0.75, "zoom": 2.5}
+    body = {"revision": c["revision"], "label": "Front", "frame": frame}
+    c = client.put(path, headers=authorization(client), json=body).json()
+    assert c["photos"][0]["frame"] == frame
+    # Omitting the frame leaves it unchanged.
+    body = {"revision": c["revision"], "label": "Left profile"}
+    c = client.put(path, headers=authorization(client), json=body).json()
+    assert c["photos"][0]["frame"] == frame
+    assert c["photos"][0]["label"] == "Left profile"
+    for bad in (
+        {"x": -0.1, "y": 0.5, "zoom": 1},
+        {"x": 0.5, "y": 1.1, "zoom": 1},
+        {"x": 0.5, "y": 0.5, "zoom": 0.5},
+        {"x": 0.5, "y": 0.5, "zoom": 5},
+        {"x": 0.5, "y": 0.5},
+        {"x": 0.5, "y": 0.5, "zoom": 1, "extra": 1},
+    ):
+        body = {"revision": c["revision"], "label": "Front", "frame": bad}
+        assert client.put(path, headers=authorization(client), json=body).status_code == 422
+    assert client.get(f"/api/characters/{c['id']}").json()["photos"][0]["frame"] == frame
+
+
+def test_library_upgrade_gives_existing_photos_default_framing(settings):
+    settings.data_dir.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{settings.data_dir / 'studio.db'}")
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parents[1] / "backend/migrations"))
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "0002_library")
+        connection.exec_driver_sql(
+            "INSERT INTO characters VALUES ('c1', 'Kept', 'Adult', '', 'p1', 0, 1, 't', 't')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO reference_photos VALUES ('p1', 'c1', 'Front', "
+            "'characters/p1.png', 'thumbnails/p1.jpg', 'image/png', 8, 6, 't')"
+        )
+    engine.dispose()
+    with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
+        kept = client.get("/api/characters/c1").json()
+        assert kept["name"] == "Kept"
+        assert kept["photos"][0]["label"] == "Front"
+        assert kept["photos"][0]["frame"] == {"x": 0.5, "y": 0.3, "zoom": 1.0}
+    with sqlite3.connect(settings.data_dir / "studio.db") as db:
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
 def test_edit_archive_restore_and_stale_requests(client):
     c = create_character(client)
     path = f"/api/characters/{c['id']}"

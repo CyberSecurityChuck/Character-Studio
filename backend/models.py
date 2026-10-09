@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -39,6 +39,10 @@ class ReferencePhoto(Base):
     width: Mapped[int] = mapped_column(Integer)
     height: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[str] = mapped_column(String(40))
+    # Avatar framing: focus point (0-1 across the overflow) and zoom; display-only.
+    frame_x: Mapped[float] = mapped_column(Float, default=0.5)
+    frame_y: Mapped[float] = mapped_column(Float, default=0.3)
+    frame_zoom: Mapped[float] = mapped_column(Float, default=1.0)
 
 
 class CharacterGroup(Base):

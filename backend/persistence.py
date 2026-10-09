@@ -6,7 +6,7 @@ from sqlalchemy import URL, Engine, create_engine, event
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0002_library"
+SCHEMA_REVISION = "0003_photo_framing"
 
 
 def open_database(settings: Settings) -> Engine:

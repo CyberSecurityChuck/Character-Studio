@@ -39,3 +39,6 @@ backups/
 tmp/
 .DS_Store
 Thumbs.db
+
+# User's local phase-review checklists and reports (kept out of Git by request)
+Phase_Checks/

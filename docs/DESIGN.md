@@ -12,3 +12,7 @@ Future features are labeled as later phases, not fake working buttons. Current s
 The same warm palette and system fonts now support a responsive character gallery and profile editor, with a separate group editor. Search, filters and archive state use labeled native controls. Upload progress, errors, partial-success guidance and saved feedback are visible; unsaved profile/group edits are guarded. A native modal dialog provides keyboard focus containment for original-photo previews. Busy writes disable navigation and related controls.
 
 The UI/UX skill's focused form-error search supported announced/focusable errors; React guidance supported controlled fields and normal form submission. No new visual system or animation dependencies were added. Browser QA covered desktop/mobile widths and original preview, with synthetic photos only.
+
+## Phase 2 review refinements (2026-10-10)
+
+After the user's hands-on review: round avatars with user-adjustable framing (drag/zoom editor, live previews at card, header and mini sizes); a two-column profile form and compact photo cards; group chips and member avatar stacks; one primary "+ New group" action; a footer action bar for the short group form (Delete left, Cancel and the primary action right) while the long character profile keeps Close at top-right; matching panel heights for the group placeholder; line icons for every sidebar item. Hash routes keep the current view across refresh. Browser QA used isolated synthetic data at desktop and 375px widths.

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, getBootstrap, savePreferences, type Bootstrap } from './api'
 
 import Library from './Library'
+import { replaceRoute, routeParts } from './route'
 
 type Page = 'overview' | 'settings' | 'characters'
+const pageRoutes: Record<string, Page> = { characters: 'characters', groups: 'characters', settings: 'settings' }
 
 const upcoming = [
   { name: 'Scenes', phase: '03–04', text: 'A reference. A new possibility.', detail: 'Prepare scenes, map people and review prompts.' },
@@ -13,7 +15,7 @@ const upcoming = [
 export default function App() {
   const [libraryBusy, setLibraryBusy] = useState(false)
   const [libraryDirty, setLibraryDirty] = useState(false)
-  const [page, setPage] = useState<Page>('overview')
+  const [page, setPage] = useState<Page>(() => pageRoutes[routeParts()[0]] ?? 'overview')
   const [data, setData] = useState<Bootstrap | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -51,6 +53,7 @@ export default function App() {
   function navigate(next: Page) {
     if (next === page || libraryBusy) return
     if (libraryDirty && !window.confirm('Leave the library and discard unsaved edits?')) return
+    replaceRoute(next === 'overview' ? '' : next)
     setPage(next)
     requestAnimationFrame(() => heading.current?.focus())
   }
@@ -78,7 +81,7 @@ export default function App() {
 
   return (
     <div className="studio-layout">
-      <a className="skip-link" href="#main">Skip to content</a>
+      <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus() }}>Skip to content</a>
       <aside className="sidebar">
         <a href="#" className="brand" onClick={(e) => { e.preventDefault(); navigate('overview') }} aria-label="Character Studio overview">
           <span className="brand-mark" aria-hidden="true">cs<span>.</span></span>
@@ -89,10 +92,12 @@ export default function App() {
           <button disabled={libraryBusy} aria-current={page === 'overview' ? 'page' : undefined} className={page === 'overview' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('overview')}>
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg> Overview
           </button>
-          <button disabled={libraryBusy} aria-current={page === 'characters' ? 'page' : undefined} className={page === 'characters' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('characters')}>Characters</button>
+          <button disabled={libraryBusy} aria-current={page === 'characters' ? 'page' : undefined} className={page === 'characters' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('characters')}>
+            <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5" /><circle cx="17" cy="9" r="2.5" /><path d="M17 14.5c2.4.3 4 2 4.6 4.5" /></svg> Characters
+          </button>
           <div className="future-nav" aria-label="Planned features">
-            <span>Scenes <small>Phase 3</small></span>
-            <span>Results <small>Phase 5</small></span>
+            <span><span className="future-item"><svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M3 17l5-5 5 5 3-3 5 5" /></svg> Scenes</span> <small>Phase 3</small></span>
+            <span><span className="future-item"><svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><rect x="7" y="7" width="14" height="14" rx="2" /><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" /><path d="M14 10.5l.9 2 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" /></svg> Results</span> <small>Phase 5</small></span>
           </div>
           <button disabled={libraryBusy} aria-current={page === 'settings' ? 'page' : undefined} className={page === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}>
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7h18M3 17h18" /><circle cx="8" cy="7" r="3" fill="var(--surface)" /><circle cx="16" cy="17" r="3" fill="var(--surface)" /></svg> Studio settings

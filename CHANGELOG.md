@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-10 — Phase 2 review refinements
+
+- Addressed the user's hands-on Phase 2 review (local `Phase_Checks/` checklist and report, excluded from Git).
+- Character cards and profile header use round avatars. Added per-photo thumbnail framing (drag/zoom editor with live previews); originals are untouched. Migration `0003_photo_framing` adds three display-only columns with defaults for existing photos.
+- Profile editor: Name/Age side by side, compact photo cards (Primary badge, label + size row, side-by-side actions), styled Add photos button, group chips that open the group.
+- Groups: single primary "+ New group" in the list header; "Select a group" placeholder matches the list height; editor actions moved to a footer (Delete left, Cancel/Save right); creating a group closes the editor; member avatars in rows and picker; "1 member" pluralization.
+- Sidebar icons for Characters, Scenes and Results; "Show archived" aligned with the filter row.
+- Browser refresh keeps the current page, tab and open profile/group via hash routes (`#/characters/<id>`, `#/groups/<id>`, `#/settings`) without adding history entries.
+- Fixed the preview-dialog image rule shrinking the framing editor image.
+- Verified 49 tests (new: framing update/validation and 0002→0003 upgrade with existing photos), Ruff and production build; browser-tested on an isolated synthetic data folder (port 8766). The user's studio was restarted and is on `0003_photo_framing`.
+
 ## 2026-10-09 — Phase 2 Character Library
 
 - Recorded explicit Phase 2 approval; Phase 3 and later remain gated.

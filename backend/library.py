@@ -66,11 +66,19 @@ class ArchiveInput(BaseModel):
     archived: bool
 
 
+class PhotoFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
+    zoom: float = Field(ge=1, le=4, allow_inf_nan=False)
+
+
 class PhotoUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     revision: int = Field(ge=1)
     label: PhotoLabel
     primary: bool = False
+    frame: PhotoFrame | None = None
 
 
 class GroupInput(BaseModel):
@@ -121,6 +129,7 @@ def photo_data(photo):
         "width": photo.width,
         "height": photo.height,
         "created_at": photo.created_at,
+        "frame": {"x": photo.frame_x, "y": photo.frame_y, "zoom": photo.frame_zoom},
         "thumbnail_url": f"/api/photos/{photo.id}/thumbnail",
         "original_url": f"/api/photos/{photo.id}/original",
     }
@@ -370,6 +379,12 @@ def update_photo(request: Request, photo_id: str, body: PhotoUpdate):
         item = require(session, Character, photo.character_id)
         check_revision(item, body.revision)
         photo.label = body.label
+        if body.frame is not None:
+            photo.frame_x, photo.frame_y, photo.frame_zoom = (
+                body.frame.x,
+                body.frame.y,
+                body.frame.zoom,
+            )
         if body.primary:
             item.primary_photo_id = photo.id
         touch(item)

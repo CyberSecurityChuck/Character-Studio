@@ -1,43 +1,37 @@
 # Session handoff
 
-Checkpoint: 2026-10-09 22:44 IST (+05:30)
+Checkpoint: 2026-10-10 04:10 IST (+05:30)
 
 ## Objective and authorization
 
-The user explicitly said **"Approve Phase 2"** on 2026-10-09 (Asia/Kolkata). Phase 2 is implemented; stop at user review. Do not implement Phase 3 or later without explicit approval. Avoid additional API charges: no paid AI calls, credentials, unofficial endpoints or unattended Codex integrations. Local checkpoint commits are authorized. Ask before GitHub setup or pushing, and confirm account/repository.
+The user explicitly said **"Approve Phase 2"** on 2026-10-09 (Asia/Kolkata). Phase 2 is implemented, was reviewed hands-on by the user on 2026-10-10, and their requested refinements are done. Do not implement Phase 3 or later without explicit approval. Avoid additional API charges: no paid AI calls, credentials, unofficial endpoints or unattended Codex integrations. Local checkpoint commits are authorized; this checkpoint was explicitly requested. Ask before GitHub setup or pushing, and confirm account/repository — the user restated that nothing is to be pushed yet.
 
-PLAN.md remains authoritative and unchanged. The new conversation independently recovered the prior implementation/checkpoints, clean worktree and approval boundary; the fresh-conversation recovery exercise is now demonstrated.
+**Standing user rule (2026-10-10):** do not change any project files without the user's approval. Describe proposed changes and wait for a yes; reading, testing and running the app are fine.
 
-## Implemented Phase 2
+PLAN.md remains authoritative and unchanged.
 
-- `backend/library.py`: validated character/group CRUD, Unicode-insensitive name search, archive/restore, memberships, reference upload/label/primary/delete and private image serving.
-- `backend/models.py` and migration `0002_library`: characters, references, groups/members and durable pending-file cleanup. Upgrade preserves Phase 1 settings. Future history references must restrict deletion or retain immutable snapshots; no history is implemented yet.
-- Uploads stream with a configurable byte limit (default 20 MiB); Pillow verifies JPEG/PNG/WebP, rejects animation/corruption/oversize pixel counts (40 MP default), retains original bytes and builds metadata-free, orientation-correct thumbnails.
-- File paths use generated IDs under the external data directory. Intended upload files are journaled before writes and removed from the cleanup journal atomically with metadata commit. Startup cleans interrupted uploads; requested deletion queues survive crashes/locked files. Cleanup during requests is limited to their own paths so other uploads are untouched.
-- Serialized writes and expected revisions protect character and group edits. Photo mutations advance the parent character revision. No automatic retry after uncertain responses.
-- `frontend/src/Library.tsx`: search/filter, profile editor, multiple-photo upload with partial-success feedback, labeled gallery, primary selection, full-size modal, group editor/membership controls, archive/restore and explicit irreversible-delete confirmation. Unsaved-edit guards, busy controls and visible error/status feedback.
-- Existing overview/settings, warm palette, responsive layout, local provider constraints retained. Library navigation added; future scene/results features remain labeled planned.
+## Review process
+
+- `Phase_Checks/Phase2_Review_Checklist.html` (offline tick-and-notes page) and `Phase_Checks/Phase2_Review_Report.md` (the user's exported results) are local review records, ignored by Git. Read the report for the user's original comments.
+- Review outcome items (all addressed): profile panel staying open after create (kept, by design — it becomes the new profile with a clear message); thumbnail overlapping the card edge (round avatars); New group form open by default; group names shown as plain text (chips); generated file names (expected, explained — privacy and collision safety).
+- Follow-up rounds addressed: user-selectable thumbnail area, side-by-side profile layout, Show archived alignment, create-group closes the editor, single "+ New group", sidebar icons, orange "+ New group", group editor footer actions, matching placeholder height, refresh keeps the current view.
+
+## Implemented in this checkpoint
+
+- Backend: `ReferencePhoto.frame_x/frame_y/frame_zoom` (defaults 0.5/0.3/1.0); migration `0003_photo_framing`; `PUT /api/photos/{id}` accepts optional `frame {x 0–1, y 0–1, zoom 1–4}` (finite, extra fields rejected) and photo responses include `frame`. `SCHEMA_REVISION` updated.
+- Frontend `Library.tsx`: `FramedImage`/`Avatar` render framing with percentage sizing; `FrameEditor` dialog (pointer drag, arrow keys, +/- and slider zoom, reset, live previews, in-dialog errors). Two-column profile form, compact photo cards, chips, footer action bar for the group editor, empty-state panel stretching to the list height, member avatars.
+- `route.ts`: hash routes with `replaceState` (`#/characters[/<id>]`, `#/groups[/<id>]`, `#/settings`, plain URL for Overview). `App.tsx` reads the initial page from the hash; the skip link no longer alters the hash; sidebar icons added.
+- Tests: framing defaults/update/validation and 0002→0003 upgrade preserving an existing photo.
+- Decision record D008 explains framing-as-metadata, hash routing, footer-vs-top-close panel rule and the `Phase_Checks/` exclusion.
 
 ## Verification evidence
 
-- Latest `uv run --locked pytest`: **47 passed in 5.80s**.
-- `uv run --locked ruff check .`: **all checks passed**.
-- `npm.cmd --prefix frontend run build`: **TypeScript and Vite production build passed**.
-- Tests cover old-schema upgrade, unchanged originals, thumbnail metadata stripping, supported formats, validation/limits, labels/primary fallback, missing assets, stale edits, many-to-many groups, archive/restore, deletion scope, write failure rollback, interrupted-upload journal cleanup, locked deletion retry, browser request protection and private-file Git exclusions.
-- Expanded real-process test abruptly kills/restarts the server and verifies preferences, characters, original photo bytes and group membership.
-- Browser QA at port 8766 used only a synthetic QA profile and two locally drawn images. Verified create, multiple upload, label/primary, preview, group creation and persisted state after actual launcher stop/start. Responsive widths 390/960/1280 CSS px had no horizontal overflow. Browser warning/error log was empty. Final browser check confirmed Reload library renews the session after server restart and the next profile edit saves successfully.
-- Initial sandbox `uv` command failed on external cache permissions; required commands succeeded with escalation. Initial lint identified formatting/import issues, subsequently fixed. No dependency additions or lockfile changes.
+- `uv run --locked pytest`: **49 passed**. `uv run --locked ruff check .`: passed. `npm.cmd --prefix frontend run build`: passed.
+- Browser QA on an isolated data folder in the session scratchpad (port 8766) with synthetic images only: real schema upgrade, framing drag/zoom/save persisted, card/header avatars updated, groups create/cancel/edit/footer flows, placeholder height matching with 3 and 6 groups, refresh restoring profile/group/settings, unknown IDs falling back to the list, 375px width without overflow, no console errors.
+- An earlier "Check the name, age category…" error during thumbnail save came from the studio not yet restarted onto the new backend; resolved by restarting. The generic 422 message could be made more specific — offered to the user, not implemented.
 
-## Runtime and artifacts
+## Runtime and next action
 
-- Normal app: http://127.0.0.1:8765; default external data `%USERPROFILE%\Character-Studio-Data`; schema `0002_library`.
-- Isolated QA root: `%USERPROFILE%\AppData\Local\Temp\Character-Studio-Phase2-QA-ca31fe46686b43dca8f3c07d83da3c60`, port 8766. Contains synthetic fixtures/data and logs only. QA process is stopped at session completion; this directory is retained outside Git.
-- Existing uv Python 3.12 / Node toolchain and lockfiles unchanged. Normal launcher is restarted on the completed build and left available for user review.
-- Preview screenshot uses synthetic QA data only and is an ignored review artifact, never staged.
-
-## Git and next action
-
-- Prior checkpoints: `31b9ddb` foundation; `d49a433` recovery documentation; `28f41c6` explicit publishing approval rule.
-- The Phase 2 checkpoint includes source, tests and continuity docs after staged-diff/privacy review. Determine the actual checkpoint with `git log`; do not infer a hash from this file. No remote configured and no push.
-- Next action: let the user review the Character Library. Address Phase 2 issues within approval; obtain explicit approval before Phase 3.
-- No known unfinished implementation or blocking failures. Full backup/restore UI, scenes, AI analysis, mappings, approvals, generation/export/import and generation-history preservation remain in later phases. Offline whole-folder backup guidance remains the current recovery path.
+- Normal app: http://127.0.0.1:8765; data `%USERPROFILE%\Character-Studio-Data`; schema `0003_photo_framing`. Restart is needed after backend changes; a browser refresh suffices for frontend-only builds.
+- Git: determine the checkpoint with `git log`. `Phase_Checks/` is ignored. No remote configured and no push.
+- Next action: wait for further Phase 2 feedback from the user or an explicit "Approve Phase 3". Do not start scenes, analysis or generation work without it.
