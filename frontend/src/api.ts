@@ -1,0 +1,58 @@
+export interface Preferences {
+  studio_name: string
+  revision: number
+}
+
+export interface Provider {
+  id: string
+  name: string
+  status: 'planned' | 'unverified' | 'disabled' | 'available'
+  description: string
+  pricing: string
+}
+
+export interface Bootstrap {
+  preferences: Preferences
+  session_token: string
+  phase: number
+  schema_revision: string
+  data_directory: string
+  paid_operations_enabled: boolean
+  providers: Provider[]
+}
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 10_000)
+  try {
+    const response = await fetch(path, { ...options, signal: controller.signal })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new ApiError(
+        typeof body.detail === 'string' ? body.detail : 'Unable to save. Check your input and retry.',
+        response.status,
+      )
+    }
+    return await response.json() as T
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError('Cannot reach your local studio. Make sure it is running, then try again.', 0)
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+export const getBootstrap = () => request<Bootstrap>('/api/bootstrap')
+
+export const savePreferences = (preferences: Preferences, token: string) =>
+  request<Preferences>('/api/preferences', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Studio-Token': token },
+    body: JSON.stringify(preferences),
+  })
