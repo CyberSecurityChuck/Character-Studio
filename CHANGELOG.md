@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-09 — Phase 2 Character Library
+
+- Recorded explicit Phase 2 approval; Phase 3 and later remain gated.
+- Added persistent character profiles, multiple reference photos, labels, primary selection, thumbnails, preview, name search and reusable groups/memberships.
+- Added archive/restore, explicit deletion choices, optimistic revision checks and durable file cleanup for interrupted uploads/deletions.
+- Added migration `0002_library`, preserving studio preferences. Original photos remain unchanged and external; thumbnails exclude source metadata.
+- Verified 47 tests, Ruff and frontend production build; browser tested creation/upload/labels/primary/preview/groups and actual stop/start recovery using isolated synthetic data.
+- Verified the fresh-conversation development recovery exercise. No paid calls, dependency additions, remote setup or publishing.
+
 ## 2026-10-09 — Phase 1 foundation
 
 - Added the React/TypeScript studio overview and settings with honest planned-provider statuses.

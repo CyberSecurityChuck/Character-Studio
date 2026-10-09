@@ -1,20 +1,18 @@
 # Project status
 
-Last checkpoint: 2026-10-09 22:17 IST (+05:30)
+Last checkpoint: 2026-10-09 22:44 IST (+05:30)
 
-- Phase: 1 — Foundation implemented and verified; awaiting user review.
-- Approval: Phase 1 only, including dependencies and local Git checkpoints. Phase 2 is not approved.
-- Completed: React overview/settings UI; FastAPI communication; persisted studio name with stale-save protection; external storage; Alembic migration; provider contracts/status; Windows start/stop/setup scripts; all continuity records.
-- Verification: `uv run --locked pytest --tb=short` — **29 passed**; `uv run --locked ruff check .` — passed; `npm.cmd --prefix frontend run build` — passed (TypeScript + Vite).
-- Recovery: automated abrupt process termination/restart passed. Browser save followed by real launcher stop/start restored the saved name. Test name was restored to "My studio".
-- Privacy: external data directory, Git exclusion checks, path validation, loopback binding, origin/host/token checks. No paid AI clients or API calls.
-- Application: http://127.0.0.1:8765; started through the launcher and left running for review.
-- Data: `%USERPROFILE%\Character-Studio-Data`, outside source. Schema: `0001_foundation`.
-- Continuity: file/dependency/exclusion audit passed. A genuinely new Codex conversation recovery exercise remains **unperformed**, with instructions in docs/CONTINUITY.md.
-- Blockers: none for the implemented foundation. Agent sandbox cache/temp restrictions required escalation for installs/tests/launcher verification.
-- Interruption recovery: usage-limit approval failure prevented the first commit. Resumed, verified files and staging differences, reran all 29 tests/lint/build successfully, and ran the launcher successfully. No implementation work was lost.
-- Verified implementation commit: `31b9ddb`; documentation follow-up records the checkpoint. Check `git log` and `git status` on resume.
-- Not implemented: character uploads, scenes, AI analysis, approvals, generation/export/import, full backup/restore UI. These belong to later phases.
-- Next action: review the foundation and optionally perform the fresh-conversation resume exercise; seek explicit approval before Phase 2.
+- Phase: 2 — Character Library implemented and verified; ready for user review.
+- Approval: Explicit "Approve Phase 2" on 2026-10-09 (Asia/Kolkata). Phases 1–2 and local checkpoints authorized. Phase 3 and later, paid AI calls and remote publishing are not authorized.
+- Completed: character creation/editing/search, Adult/Teen/Child categories, notes and timestamps; multiple JPEG/PNG/WebP photos, labels, primary photo, thumbnails and full-size preview; reusable groups and memberships; archive/restore and explicit permanent deletion.
+- Persistence: schema `0002_library` upgrades the foundation without losing preferences. Private originals and thumbnails stay outside Git. Revisions reject stale writes. Interrupted uploads and locked deletions have durable cleanup records.
+- Verification: `uv run --locked pytest` — **47 passed**; `uv run --locked ruff check .` — passed; TypeScript/Vite production build — passed. Tests include an actual abruptly killed server and restart with saved character/photo/group data.
+- Browser: created a synthetic character, uploaded two photos, changed label/primary, opened full-size preview, created a group, then stopped/restarted and verified all saved state. In-app reload renews the session and allows saving after restart. No browser warnings/errors; no horizontal overflow at 390, 960 and 1280 CSS pixels.
+- Development recovery: this fresh conversation recovered status from files and Git without the old chat; the previously pending resume exercise is demonstrated.
+- Runtime: normal studio at http://127.0.0.1:8765; external data `%USERPROFILE%\Character-Studio-Data`. Isolated browser QA data was kept outside the source and normal library.
+- Blockers: none. Sandbox uv-cache restrictions were resolved with scoped escalation for verification.
+- Costs: no paid AI clients, credentials, external generation or image transmissions.
+- Pending: user review. Phase 3 (scenes/analysis) requires explicit approval. Backup/restore UI and scene/generation workflows remain later-phase work.
+- Git: Phase 2 local checkpoint; use `git log -5 --oneline` and `git status --short` for the exact current commit/worktree. No remote configured or push performed.
 
-PLAN.md's original Planning/Not Started header is historical; its requirements remain unchanged. This file records current implementation progress.
+PLAN.md's original Planning/Not Started header is historical; requirements are unchanged.

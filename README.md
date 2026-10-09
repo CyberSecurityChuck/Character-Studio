@@ -2,7 +2,7 @@
 
 A local-first home for reusable characters, reference scenes and approved image workflows.
 
-**Current scope: Phase 1 foundation.** The working application has an overview, local connection status, persistent studio-name settings, external data storage and a truthful provider status screen. Character uploads, scenes, analysis, approvals, generation and export/import are not implemented yet. PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
+**Current scope: Phase 2 Character Library.** Create and edit characters, upload multiple reference photos, choose a primary photo, add labels, preview originals, search, and organize groups. Archive/restore or explicitly delete profiles and photos. The overview, saved settings and provider status remain available. Scenes, analysis, approvals, generation and export/import are not implemented yet. PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
 
 ## Start and stop
 
@@ -31,13 +31,14 @@ uv run --locked python -m backend
 
 ## Storage and configuration
 
-Default data directory: `%USERPROFILE%\Character-Studio-Data`. The application creates `studio.db` plus directories for characters, scenes, generations, thumbnails, exports and backups. Only studio preferences are stored in Phase 1. These files belong to the user and must survive source updates. The user-profile location avoids Windows packaged-app redirection of `LOCALAPPDATA`, so launches from Codex and Explorer use the same default.
+Default data directory: `%USERPROFILE%\Character-Studio-Data`. The application creates `studio.db` plus directories for characters, scenes, generations, thumbnails, exports and backups. Preferences, character profiles, reference photos, thumbnails and groups persist locally. These files belong to the user and must survive source updates. The user-profile location avoids Windows packaged-app redirection of `LOCALAPPDATA`, so launches from Codex and Explorer use the same default.
 
 Optional environment variables, set before starting:
 
 ```powershell
 $env:STUDIO_DATA_DIR = 'D:\Character-Studio-Data'
 $env:STUDIO_PORT = '8765'
+$env:STUDIO_MAX_UPLOAD_BYTES = '20971520' # 20 MiB per photo
 ```
 
 `STUDIO_DATA_DIR` must be absolute and outside (and not a parent of) the source repository. Changing it opens a different data directory; it does not move existing work. Stop the running service before changing configuration. Use the same environment configuration when stopping it. Do not put the live SQLite database in a shared/network/cloud-sync folder.
@@ -62,7 +63,7 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 ## AI capabilities and costs
 
-Phase 1 includes interfaces and capability metadata only. Manual bridge is **planned**, direct Codex generation is **unverified**, and paid OpenAI API access is **disabled**. There is no generation endpoint, credential storage or automatic retry behavior. An installed Codex image tool is not a callable FastAPI provider.
+AI integration still consists of interfaces and capability metadata only. Manual bridge is **planned**, direct Codex generation is **unverified**, and paid OpenAI API access is **disabled**. There is no generation endpoint, credential storage or automatic retry behavior. An installed Codex image tool is not a callable FastAPI provider.
 
 The intended MVP lets the user export an approved package to Codex/ChatGPT and import the result. External generation consumes the external service's plan allowances and sends supplied images to that service. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
 
@@ -71,7 +72,7 @@ The intended MVP lets the user export an approved package to Codex/ChatGPT and i
 - Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
 - Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phase 1 only. Development must stop before Phase 2 until explicitly approved.
+- Approval covers Phases 1 and 2. Phase 3 and later require explicit approval.
 
 For data recovery and current backup limitations see `docs/RECOVERY.md`. Git backs up source history, not private application data.
 
@@ -83,3 +84,13 @@ For data recovery and current backup limitations see `docs/RECOVERY.md`. Git bac
 - **Another tab saved first:** the app rejects the stale save and retains your typed edit. Copy it before choosing "Discard local edit and reload".
 - **Database revision error:** stop and inspect the error; preserve the data folder. Do not delete or downgrade the database to fix startup.
 - **Build missing:** run `npm.cmd --prefix frontend run build`, then restart.
+
+## Character Library
+
+Open **Characters**, choose **New character**, enter a name/alias and age category, then save. Add one or more JPEG, PNG or WebP still photos (20 MiB and 40 megapixels per photo by default). Originals remain unchanged, including their metadata; separate thumbnails omit metadata and correct display orientation. Nothing is sent to an external service.
+
+Use each photo's label selector and **Make primary** button. Open a thumbnail for the full-size preview. **Groups** lets you create/rename groups and add/remove members; a character can belong to several groups. Search by name and filter by group or archived status.
+
+**Archive character** preserves all data and hides the profile from the active list; enable **Show archived** to restore it. **Delete permanently** removes the profile, references and memberships after explicit confirmation. Deleting a group preserves its characters/photos. A deleted primary photo falls back to the oldest remaining reference.
+
+Save profile edits before changing photos. If a batch upload stops, earlier successful uploads remain saved; reload to verify saved state before selecting remaining files. A stale revision or expired session is rejected. Reload after a service restart. Locked file deletions remain queued and are retried at startup; the UI reports pending cleanup.

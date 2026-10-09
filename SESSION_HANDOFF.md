@@ -1,67 +1,43 @@
 # Session handoff
 
-Checkpoint: 2026-10-09 22:17 IST (+05:30)
+Checkpoint: 2026-10-09 22:44 IST (+05:30)
 
 ## Objective and authorization
 
-Implement **Phase 1 only**, approved with "Approve Phase 1". The user prioritizes avoiding additional API charges. PLAN.md remains authoritative and unchanged. Local milestone commits are authorized; no remote push or Phase 2 work is authorized.
+The user explicitly said **"Approve Phase 2"** on 2026-10-09 (Asia/Kolkata). Phase 2 is implemented; stop at user review. Do not implement Phase 3 or later without explicit approval. Avoid additional API charges: no paid AI calls, credentials, unofficial endpoints or unattended Codex integrations. Local checkpoint commits are authorized. Ask before GitHub setup or pushing, and confirm account/repository.
 
-## Verified implementation
+PLAN.md remains authoritative and unchanged. The new conversation independently recovered the prior implementation/checkpoints, clean worktree and approval boundary; the fresh-conversation recovery exercise is now demonstrated.
 
-- React/TypeScript/Vite overview and settings. Studio name saves to the backend with saving/saved/error feedback and revision conflict handling.
-- FastAPI serves the built frontend and `/api/health`, `/api/bootstrap`, `/api/preferences`.
-- SQLAlchemy/SQLite, WAL, foreign keys, transactions, Alembic schema `0001_foundation`; startup refuses unknown future schema revisions.
-- Configurable external data root, relative asset-path validation and source/data overlap checks.
-- Provider metadata and typed interfaces only: manual bridge planned, direct Codex unverified, OpenAI API disabled. No generation endpoints, API credentials, AI network calls or retry mechanism.
-- Windows setup/start/stop scripts. Start and stop verify expected process/service identity; server binds only to 127.0.0.1.
-- All required continuity files plus README and supporting recovery/design/provider documents.
+## Implemented Phase 2
 
-## Files changed
+- `backend/library.py`: validated character/group CRUD, Unicode-insensitive name search, archive/restore, memberships, reference upload/label/primary/delete and private image serving.
+- `backend/models.py` and migration `0002_library`: characters, references, groups/members and durable pending-file cleanup. Upgrade preserves Phase 1 settings. Future history references must restrict deletion or retain immutable snapshots; no history is implemented yet.
+- Uploads stream with a configurable byte limit (default 20 MiB); Pillow verifies JPEG/PNG/WebP, rejects animation/corruption/oversize pixel counts (40 MP default), retains original bytes and builds metadata-free, orientation-correct thumbnails.
+- File paths use generated IDs under the external data directory. Intended upload files are journaled before writes and removed from the cleanup journal atomically with metadata commit. Startup cleans interrupted uploads; requested deletion queues survive crashes/locked files. Cleanup during requests is limited to their own paths so other uploads are untouched.
+- Serialized writes and expected revisions protect character and group edits. Photo mutations advance the parent character revision. No automatic retry after uncertain responses.
+- `frontend/src/Library.tsx`: search/filter, profile editor, multiple-photo upload with partial-success feedback, labeled gallery, primary selection, full-size modal, group editor/membership controls, archive/restore and explicit irreversible-delete confirmation. Unsaved-edit guards, busy controls and visible error/status feedback.
+- Existing overview/settings, warm palette, responsive layout, local provider constraints retained. Library navigation added; future scene/results features remain labeled planned.
 
-New root continuity docs, README, Git ignore/attributes, Python metadata/lockfile, start/stop command files; backend configuration/models/schemas/providers/API/persistence/migrations; frontend sources/configuration/lockfile; scripts; tests; docs. PLAN.md was read but not edited. The ignored `.cache/phase1-preview.jpg` is a review screenshot, not source or personal data.
+## Verification evidence
 
-## Commands and actual results
+- Latest `uv run --locked pytest`: **47 passed in 5.80s**.
+- `uv run --locked ruff check .`: **all checks passed**.
+- `npm.cmd --prefix frontend run build`: **TypeScript and Vite production build passed**.
+- Tests cover old-schema upgrade, unchanged originals, thumbnail metadata stripping, supported formats, validation/limits, labels/primary fallback, missing assets, stale edits, many-to-many groups, archive/restore, deletion scope, write failure rollback, interrupted-upload journal cleanup, locked deletion retry, browser request protection and private-file Git exclusions.
+- Expanded real-process test abruptly kills/restarts the server and verifies preferences, characters, original photo bytes and group membership.
+- Browser QA at port 8766 used only a synthetic QA profile and two locally drawn images. Verified create, multiple upload, label/primary, preview, group creation and persisted state after actual launcher stop/start. Responsive widths 390/960/1280 CSS px had no horizontal overflow. Browser warning/error log was empty. Final browser check confirmed Reload library renews the session after server restart and the next profile edit saves successfully.
+- Initial sandbox `uv` command failed on external cache permissions; required commands succeeded with escalation. Initial lint identified formatting/import issues, subsequently fixed. No dependency additions or lockfile changes.
 
-- `uv python install 3.12` — installed independent Python 3.12.13.
-- `uv sync --python 3.12` — installed and locked backend/test dependencies.
-- `npm.cmd install --prefix frontend` — installed dependencies; audit reported zero vulnerabilities at install time.
-- **Latest after interruption:** `uv run --locked pytest --tb=short` — **29 passed in 4.88s**.
-- **Final:** `uv run --locked ruff check .` — all checks passed.
-- **Final:** `npm.cmd --prefix frontend run build` — TypeScript and Vite production build passed.
-- Windows `Start-Studio.ps1 -NoBrowser`, `Stop-Studio.ps1`, then Start again — passed.
-- Browser: loaded app; saved "Restart verification"; stopped/restarted actual launcher-managed service; reloaded and verified saved value; restored "My studio". No browser warnings/errors were reported when checked.
-- Responsive checks: normal in-app browser layout inspected; viewport metrics showed no horizontal overflow at 390 and approximately 910 CSS pixels. Browser emulation uses Windows display scaling; viewport overrides were reset.
-- Automated continuity-file/dependency checks and Git private-file exclusions passed.
+## Runtime and artifacts
 
-## Resolved issues / environment notes
+- Normal app: http://127.0.0.1:8765; default external data `%USERPROFILE%\Character-Studio-Data`; schema `0002_library`.
+- Isolated QA root: `%USERPROFILE%\AppData\Local\Temp\Character-Studio-Phase2-QA-ca31fe46686b43dca8f3c07d83da3c60`, port 8766. Contains synthetic fixtures/data and logs only. QA process is stopped at session completion; this directory is retained outside Git.
+- Existing uv Python 3.12 / Node toolchain and lockfiles unchanged. Normal launcher is restarted on the completed build and left available for user review.
+- Preview screenshot uses synthetic QA data only and is an ignored review artifact, never staged.
 
-- Agent sandbox denied uv cache and pytest temp creation. Necessary installs/tests/start-stop checks succeeded with escalation; do not weaken system permissions.
-- Generated npm Windows shims failed on the `&` in the repository path. Scripts now invoke the tools' JavaScript entrypoints with Node.
-- LocalAppData was redirected by Windows into Codex package storage on initial launch. Default storage now uses `%USERPROFILE%\Character-Studio-Data`, consistent across launch contexts. An empty attempted LocalAppData directory may remain; no private images were created.
-- Installed Starlette deprecated HTTPX fallback; switched test dependency to HTTPX2. Final test run has no warnings.
-- Git stdin test initially needed NUL delimiters to avoid Windows CRLF conversion; fixed and passed.
-- The previous session stopped when automatic approval review hit a usage limit before the initial Git commit. No commit had executed. On resumption, staged source and final formatting fixes were intact; tests, lint and build passed again and the launcher succeeded. This is a same-conversation interruption recovery, not the separate fresh-conversation exercise.
+## Git and next action
 
-## Runtime / current application
-
-- Python 3.12.13 (uv managed); Node 24.18.0; npm 11.16.0; uv 0.11.28.
-- FastAPI 0.143.0, SQLAlchemy 2.1.4, Alembic 1.20.0, Pydantic 2.14.0, Pillow 12.3.0, HTTPX2 2.13.1; exact dependency state in uv.lock.
-- React 19.3.0, Vite 8.3.4; exact frontend dependencies in package-lock.json.
-- URL: http://127.0.0.1:8765. Service left running for review; use Stop-Studio.cmd to stop the launcher-managed process.
-- Data root on this machine: `%USERPROFILE%\Character-Studio-Data` (not Git). Default name is restored to "My studio".
-- Backend schema: `0001_foundation`. Frontend build, virtualenv and screenshot are ignored build/review artifacts.
-
-## Git checkpoint
-
-- Repository on main. Verified implementation checkpoint: `31b9ddbb72e1f8e41252e7434e89b5bae98273c8` — "Build Phase 1 local studio foundation and continuity system".
-- No remote configured or push performed. No personal photos, database, credentials or generated images are staged.
-- User explicitly requires being asked before any GitHub repository setup or code push. Confirm the account/repository first; local Git checkpoint approval is not publishing approval.
-- Worktree was clean immediately after the implementation commit. This documentation-only follow-up records that verified hash; find its own commit with `git log -5 --oneline`. Always check current `git status --short` on resume.
-
-## Remaining work and next action
-
-- Foundation implementation and automated/browser checks are complete.
-- The **genuinely new conversation recovery exercise is not yet performed**. It cannot honestly be claimed from the current chat. Follow docs/CONTINUITY.md when opening the next conversation in this folder.
-- Full consistent database-plus-assets backup/restore UI is not implemented; offline manual backup guidance and a tested SQLite backup primitive are documented.
-- Character library, uploads/groups, scene analysis/import, mapping, approvals, manual export/import, generation history and interrupted-job recovery implementations belong to later phases.
-- Review Phase 1, optionally run the fresh-chat exercise, and request explicit Phase 2 approval. Do not start Phase 2 automatically.
+- Prior checkpoints: `31b9ddb` foundation; `d49a433` recovery documentation; `28f41c6` explicit publishing approval rule.
+- The Phase 2 checkpoint includes source, tests and continuity docs after staged-diff/privacy review. Determine the actual checkpoint with `git log`; do not infer a hash from this file. No remote configured and no push.
+- Next action: let the user review the Character Library. Address Phase 2 issues within approval; obtain explicit approval before Phase 3.
+- No known unfinished implementation or blocking failures. Full backup/restore UI, scenes, AI analysis, mappings, approvals, generation/export/import and generation-history preservation remain in later phases. Offline whole-folder backup guidance remains the current recovery path.

@@ -10,6 +10,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from backend.configuration import PROJECT_ROOT
+from tests.test_library import picture
 
 
 def test_committed_preference_survives_process_termination(tmp_path):
@@ -19,11 +20,11 @@ def test_committed_preference_survives_process_termination(tmp_path):
     env = {**os.environ, "STUDIO_DATA_DIR": str(tmp_path / "private"), "STUDIO_PORT": str(port)}
     base = f"http://127.0.0.1:{port}"
 
-    def fetch(path, data=None, token=None):
+    def fetch(path, data=None, token=None, method=None):
         request = Request(
             base + path,
-            data=json.dumps(data).encode() if data else None,
-            method="PUT" if data else "GET",
+            data=data if isinstance(data, bytes) else json.dumps(data).encode() if data else None,
+            method=method or ("PUT" if data else "GET"),
             headers={
                 "Content-Type": "application/json",
                 "X-Studio-Token": token or "",
@@ -63,11 +64,34 @@ def test_committed_preference_survives_process_termination(tmp_path):
                     )["revision"]
                     == 2
                 )
+                character = fetch(
+                    "/api/characters",
+                    {"name": "Restart character", "age_category": "Adult"},
+                    current["session_token"],
+                    "POST",
+                )
+                character = fetch(
+                    f"/api/characters/{character['id']}/photos?revision=1",
+                    picture(),
+                    current["session_token"],
+                    "POST",
+                )
+                group = fetch(
+                    "/api/groups",
+                    {"name": "Restart group", "member_ids": [character["id"]]},
+                    current["session_token"],
+                    "POST",
+                )
             else:
                 assert current["preferences"] == {
                     "studio_name": "Restart verified",
                     "revision": 2,
                 }
+                restored = fetch(f"/api/characters/{character['id']}")
+                assert restored["photos"] == character["photos"]
+                assert restored["group_ids"] == [group["id"]]
+                with urlopen(base + restored["photos"][0]["original_url"], timeout=2) as response:
+                    assert response.read() == picture()
         finally:
             process.kill()
             process.wait(timeout=5)

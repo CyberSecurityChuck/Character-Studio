@@ -15,6 +15,8 @@ class Settings(BaseModel):
     data_dir: Path
     port: int = Field(default=8765, ge=1024, le=65535)
     frontend_dir: Path = PROJECT_ROOT / "frontend" / "dist"
+    max_upload_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+    max_image_pixels: int = Field(default=40_000_000, ge=1, le=100_000_000)
 
     @field_validator("data_dir")
     @classmethod
@@ -44,6 +46,7 @@ def load_settings() -> Settings:
             os.environ.get("STUDIO_DATA_DIR", str(Path.home() / "Character-Studio-Data"))
         ),
         port=os.environ.get("STUDIO_PORT", "8765"),
+        max_upload_bytes=os.environ.get("STUDIO_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)),
     )
 
 

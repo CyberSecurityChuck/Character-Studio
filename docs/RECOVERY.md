@@ -8,11 +8,19 @@ Every preference update includes its expected revision; competing/stale edits ar
 
 Startup applies migrations and fails on an unknown future schema. Database errors do not trigger database recreation or deletion. File assets are resolved beneath the configured data root; source and data cannot overlap.
 
-## Backups at the foundation stage
+## Phase 2 library recovery
+
+Characters, photos, labels, primary-photo choices and group membership survive restart. Revisions reject stale writes. Unsaved editor fields remain browser-only; save before leaving. Upload batches commit each photo separately and stop on the first failure. Reload to see what succeeded before retrying an uncertain response.
+
+Before any photo bytes are written, generated paths enter a durable cleanup journal. Successful metadata commit removes those journal entries. After interruption, startup removes incomplete/uncommitted files. Photo/profile deletion commits cleanup records before removing files; locked-file cleanup remains queued and retries on restart. Active request cleanup only processes its own paths. Do not run multiple studio processes against the same data directory.
+
+Archive/restore keeps references and memberships. Permanent deletion has no in-app undo; recover from a prior whole-folder backup. Deleting groups does not delete their characters. Missing files produce a visible backup-recovery error rather than deleting metadata. No operation resubmits generation requests.
+
+## Backups at the current stage
 
 No application backup/restore UI is implemented yet. For an offline manual backup, stop Character Studio, ensure its process has exited, then copy the **entire** private data directory to a separate backup location. Never copy only a running `studio.db`; active SQLite WAL files may contain committed changes. The baseline suite verifies SQLite's supported online backup primitive for the database.
 
-To manually restore, stop the application, retain the current data directory as a separate recovery copy, restore the complete backup into a new external folder, point `STUDIO_DATA_DIR` there, and start. Verify preferences and schema before using it. Do not overwrite your only copy. A full database-plus-assets consistent backup feature and restore test are required before the Phase 5 MVP is complete.
+To manually restore, stop the application, retain the current data directory as a separate recovery copy, restore the complete backup into a new external folder, point `STUDIO_DATA_DIR` there, and start. Verify preferences, character profiles, photos, groups and schema before using it. Do not overwrite your only copy. A full database-plus-assets consistent backup feature and restore test are required before the Phase 5 MVP is complete.
 
 ## Mandatory later-phase implementation
 

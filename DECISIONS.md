@@ -45,3 +45,12 @@
 - Alternatives: rename the user's directory; keep obsolete test-client dependencies.
 - Consequence: no directory rename or global settings change; lockfiles capture installed versions. Package scripts and tests now pass.
 - Approval: routine compatibility fixes within the approved Phase 1 implementation.
+
+## D007 — Local Character Library and file consistency (2026-10-09)
+
+- Decision: add Phase 2 with one additive Alembic migration, generated asset keys, unchanged originals, metadata-free thumbnails, bounded raw-body uploads and no new dependencies.
+- Reason: build the approved local library while keeping personal images outside source and avoiding AI charges. Raw image uploads avoid an extra multipart dependency and temporary spool files.
+- Decision: serialize writes before reading revisions. Journal upload paths before writing and clear the journal in the metadata transaction; queue deletions transactionally and retry unfinished cleanup on startup.
+- Consequence: only committed references are served. Failed batches retain earlier successful photos. An uncertain browser response requires reload before retry; no automatic resubmission. Single local service per data directory remains the operating model.
+- Decision: archive is reversible and retains memberships/photos; permanent deletion is explicit. There is currently no generation history. Later history must restrict referenced deletion or preserve immutable snapshots, never cascade history away.
+- Approval: explicit "Approve Phase 2"; Phase 3 and AI operations remain unapproved.

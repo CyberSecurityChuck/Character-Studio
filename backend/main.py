@@ -5,10 +5,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.configuration import Settings, load_settings
+from backend.library import clean_deleted_files
+from backend.library import router as library_router
 from backend.models import StudioPreferences
 from backend.persistence import SCHEMA_REVISION, open_database
 from backend.providers import PROVIDERS
@@ -21,6 +24,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.engine = open_database(settings)
+        app.state.settings = settings
+        clean_deleted_files(app.state.engine, settings)
         app.state.session_token = secrets.token_urlsafe(32)
         try:
             yield
@@ -36,6 +41,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None,
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
+
+    @app.exception_handler(OSError)
+    async def storage_error(request: Request, exc: OSError):
+        return JSONResponse(
+            {
+                "detail": "Local storage is unavailable. Check disk space and folder permissions, "
+                "then reload to check saved state before retrying."
+            },
+            status_code=503,
+        )
+
+    @app.exception_handler(OperationalError)
+    async def database_error(request: Request, exc: OperationalError):
+        return JSONResponse(
+            {"detail": "The local database is busy or unavailable. Reload and try again."},
+            status_code=503,
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def integrity_error(request: Request, exc: IntegrityError):
+        return JSONResponse(
+            {
+                "detail": "This item is still referenced by other saved work. "
+                "Reload the library or archive it instead."
+            },
+            status_code=409,
+        )
 
     @app.middleware("http")
     async def protect_local_session(request: Request, call_next):
@@ -76,7 +108,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "preferences": preferences,
             "session_token": app.state.session_token,
-            "phase": 1,
+            "phase": 2,
+            "max_upload_bytes": settings.max_upload_bytes,
             "schema_revision": SCHEMA_REVISION,
             "data_directory": str(settings.data_dir),
             "paid_operations_enabled": False,
@@ -95,9 +128,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(409, "Saved preferences changed. Reload before saving again.")
         return PreferencesResponse(studio_name=body.studio_name, revision=body.revision + 1)
 
+    app.include_router(library_router)
+
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):
-        raise HTTPException(404, "This feature is not implemented in Phase 1.")
+        raise HTTPException(404, "This feature is not implemented yet.")
 
     if settings.frontend_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.frontend_dir, html=True), name="frontend")
