@@ -1,7 +1,10 @@
 # CHARACTER STUDIO
 ## Master Architecture, Implementation & Continuity Plan
 
-**Version:** 2.0
+**Version:** 2.1
+**Revision 2.1 (2026-10-10):** CLI bridge first, manual bridge as
+fallback (DECISIONS.md D009). Adds Phase 2.5 and updates
+§8.3, §12, §20, §22 and Phases 3–5.
 **Project Status:** Planning
 **Implementation Status:** Not Started
 **Development Environment:** Codex
@@ -244,6 +247,7 @@ Character-Studio-Data/
 |-- generations/
 |-- thumbnails/
 |-- exports/
+|-- jobs/          (per-run CLI engine job folders)
 |-- backups/
 |-- studio.db
 
@@ -480,20 +484,26 @@ uncertainty rather than inventing details.
 
 ## 8.3 Analysis Provider
 
-Use a modular scene-analysis provider.
+Use a modular "analysis engine" interface.
 
-Codex must verify what visual analysis capabilities
-are actually available in the development environment.
+The first engine is the Claude Code CLI (`claude -p`),
+run locally on the user's own signed-in Claude Pro
+subscription (DECISIONS.md D009). The interface must
+allow adding Codex as a second analysis engine later.
 
-If direct integration is unavailable, provide a
-manual analysis/import workflow.
+The manual analysis workflow (copy the fixed analysis
+instruction, import the analysis) remains as the
+fallback and must always be available.
 
-Do not claim Codex can serve as an unattended
-application backend without verifying an official
-supported integration.
+Every engine run is started by an explicit user action.
+No engine is an unattended background service, and no
+run is retried automatically.
 
-Scene analysis and image generation may use
-different providers.
+Exact CLI flags, output behaviour and failure modes
+must be verified in Phase 2.5 before implementation.
+
+Scene analysis and image generation use different
+engines: Claude for analysis, Codex for images.
 
 ---
 
@@ -670,28 +680,57 @@ Each adapter must declare:
 - Relevant limits
 - Pricing information, if available
 
-## 12.1 Codex-Assisted Provider
+## 12.1 CLI Engines (Main Path)
 
-First verify:
+Decision: DECISIONS.md D009.
 
-- Whether the installed Codex environment has a
-  supported image-generation capability
-- Whether that capability can be programmatically invoked
-- Whether it supports reference photographs
-- Whether it supports persistent application workflows
-- Whether it can return generated image files
+The studio runs the official command-line tools that
+the user has installed and signed into on this PC:
 
-Do not assume ChatGPT Plus image generation is directly
-available through a local application's backend.
+- Analysis and "Polish prompt": Claude Code CLI
+  (`claude -p`) on the user's Claude Pro subscription
+- Image generation: Codex CLI (`codex exec` with its
+  built-in image generation) on the user's ChatGPT
+  subscription (Plus or above)
 
-Do not use unofficial endpoints or browser automation
-to bypass subscription/API boundaries.
+Rules:
 
-If unavailable, report the limitation.
+- No API keys and no per-use billing. Each run uses
+  the relevant plan's usage allowance.
+- Only the official `claude` and `codex` programs.
+- Never read, copy, store or forward their login
+  tokens or credential files.
+- No third-party gateways (for example OmniRoute) and
+  no extraction of subscription credentials into
+  other tools.
+- No browser automation or scripting against
+  chatgpt.com or claude.ai.
+- No unofficial endpoints.
+- Each run is started by an explicit user action, runs
+  in its own job folder, has a timeout and a cancel
+  option, and is never retried automatically.
+- Record the engine name and CLI version with every
+  analysis, prompt version and generation it produces.
 
-## 12.2 Manual Bridge Provider
+Before implementation, Phase 2.5 must verify and record
+in docs/PROVIDER_FINDINGS.md:
 
-This fallback must be supported.
+- Installed versions and sign-in state of both CLIs
+- The exact flags that actually exist (from `--help`)
+- Where generated images are saved
+- Timings and how failures appear (signed out, usage
+  limit reached, timeout, malformed output)
+- Whether attached reference photos keep each person's
+  likeness (user's judgement)
+
+Do not assume flags or output locations that the spike
+has not confirmed.
+
+## 12.2 Manual Bridge Provider (Fallback)
+
+This fallback must be supported. It is offered whenever
+a CLI engine is unavailable or fails, and can be chosen
+as the engine in Settings.
 
 Allow exporting a complete generation package:
 
@@ -707,13 +746,14 @@ Allow importing externally generated images.
 Connect imported results to their original scene
 and approval snapshot.
 
-Use this workflow with ChatGPT Images or other
-compatible interfaces when direct integration
-is unavailable.
+Use this workflow with ChatGPT Images, Codex or other
+compatible interfaces when the CLI engines are
+unavailable, fail, or the user prefers manual use.
 
 ## 12.3 OpenAI Image API Provider
 
-Optional integration.
+Optional integration. Stays off and is unchanged
+by D009.
 
 Requirements:
 
@@ -1181,6 +1221,9 @@ Core entities:
 - structured_analysis
 - analysis_text
 - version
+- source (claude_cli / codex_cli / manual_import)
+- engine_version (CLI version, if any)
+- raw_output_path (job-folder file, if any)
 - created_at
 
 ## SceneSubject
@@ -1206,6 +1249,9 @@ Core entities:
 - prompt_text
 - negative_prompt
 - version
+- is_polished (true when produced by "Polish prompt")
+- polished_from_version_id (nullable)
+- engine_version (if polished)
 - created_at
 
 ## Approval
@@ -1225,7 +1271,10 @@ Core entities:
 - model
 - settings_json
 - provider_request_id
+- engine_version (CLI version, if any)
+- job_folder (relative path, if any)
 - status
+- error_kind / error_details (if any)
 - created_at
 - updated_at
 
@@ -1324,6 +1373,15 @@ Requirements:
 - Allow users to delete their data.
 - Provide backup and restore functionality.
 - Document which operations send images externally.
+  With the CLI engines: "Analyse" sends the Base Image
+  to Anthropic via Claude Code; "Polish prompt" sends
+  prompt and analysis text (no images) to Anthropic;
+  "Generate" sends the Base Image and selected
+  reference photos to OpenAI via Codex.
+- Never read, copy, store, log or forward the CLI
+  tools' login tokens or credential files.
+- Job folders live in the private data directory,
+  never in the repository.
 
 For children's photographs:
 
@@ -1471,6 +1529,59 @@ Acceptance:
 - Character references are reusable
 - Basic privacy safeguards work
 
+## PHASE 2.5 — ENGINE VERIFICATION SPIKE
+
+Purpose: verify the CLI engines (DECISIONS.md D009)
+before Phase 3 work. Small throwaway tests only; no
+application code. Write a short dated result in
+docs/PROVIDER_FINDINGS.md. Use synthetic or authorized
+images; keep test images, outputs and logs outside the
+repository.
+
+Tasks:
+
+a. Installation and sign-in
+   - Check that `claude` and `codex` are installed and
+     signed in. Record their versions.
+   - Confirm the exact flags with `claude --help` and
+     `codex exec --help`. Do not assume flags; record
+     only the ones that actually exist.
+
+b. Claude analysis test
+   - Run `claude -p` non-interactively on a sample
+     scene image, allowing only the Read tool, asking
+     for the analysis in the studio's JSON format.
+   - Record whether the JSON comes back clean, how long
+     it takes, and how failures look (signed out, usage
+     limit reached, bad JSON).
+
+c. Codex generation test
+   - Run `codex exec` with a base image plus 2–3
+     reference photos of one person and a prompt from
+     the planned template.
+   - Record where the generated file is saved, how long
+     it takes, and how failures look.
+   - The user judges whether the likeness is
+     acceptable.
+
+d. Likeness is a quality check, not a gate
+   - Per the user, OpenAI's documentation confirms
+     Codex image generation with reference photos and
+     identity preservation. Record test (c)'s result,
+     but proceed with the Codex-based Generate design
+     either way. The manual bridge stays as the
+     fallback.
+
+Deliverable:
+
+- Dated spike results in docs/PROVIDER_FINDINGS.md:
+  versions, confirmed flags, commands used, output
+  locations, timings, failure appearances, and the
+  user's likeness verdict.
+
+Approval: start only after the user says
+"Approve Phase 2.5". Phase 3 requires its own approval.
+
 ## PHASE 3 — SCENE ANALYSIS
 
 Tasks:
@@ -1484,10 +1595,69 @@ Tasks:
 - Prompt editing
 - Analysis versioning
 - Scene save/resume
+- "Analyse" button using the analysis engine interface
+- Manual analysis fallback (copy instruction, import
+  analysis)
+- Engine settings and status (below)
+
+### Analyse with an engine
+
+- An "Analyse" button on a scene runs analysis through
+  the analysis engine interface. The first engine is
+  the Claude Code CLI. The design must allow adding
+  Codex as a second engine later.
+- Each run creates a job folder in the private data
+  directory, for example
+  `Character-Studio-Data\jobs\<scene>\analysis-<n>\`.
+- Copy the Base Image into the job folder (with
+  location metadata removed, per §22).
+- Run `claude -p` with the fixed analysis instruction,
+  the working directory set to the job folder, only the
+  Read tool allowed, no network tools, and a timeout.
+  Use only flags confirmed in Phase 2.5.
+- Capture the output to a file in the job folder.
+- Validate the result against the same schema the
+  manual "Import analysis" uses. Flag uncertain items
+  for the user to confirm, exactly as in the manual
+  flow.
+- Save the raw output and the engine/version used with
+  the analysis record.
+- The prompt is still built by the studio's own
+  template from the validated analysis. Claude does
+  not write the main prompt.
+- The prompt template labels attached images by number
+  (Base Image and each reference photo) and uses
+  "Subject N" labels, so later polishing and
+  generation can reference them reliably.
+
+### Analysis UI
+
+- Progress state ("Analysing with Claude…") with a
+  Cancel button.
+- Clear error messages for: CLI not installed, signed
+  out, usage limit reached, timeout, invalid format.
+- Each error offers "Try again" and "Do it manually"
+  (the copy-instruction + import-analysis flow).
+- Never retry automatically.
+
+### Engine settings
+
+- Engine status: show whether `claude` and `codex` are
+  found and signed in, with a "Check again" button.
+  Never read or store credentials.
+- Analysis engine choice: Claude (default), Codex, or
+  Manual.
+- Generation engine choice: Codex (default) or Manual.
+- Timeout per engine.
 
 Acceptance:
 
-- Scenes can be analyzed
+- Scenes can be analyzed via the Claude CLI engine or
+  the manual import, both validated by the same schema
+- Engine errors are clearly reported and offer a
+  manual fallback; nothing retries automatically
+- Raw output and engine/version are stored with each
+  analysis
 - Prompts can be saved and edited
 - Scene state persists after restart
 - Uncertain analysis details can be corrected
@@ -1505,6 +1675,35 @@ Tasks:
 - Approval snapshots
 - Approval invalidation
 - Workflow persistence
+- Optional "Polish prompt"
+
+### Polish prompt (optional)
+
+- A "Polish prompt" button on the review screen,
+  available before approval.
+- Sends Claude (via `claude -p`, text only, no tools)
+  the template prompt and the scene analysis, with
+  fixed rules: keep every fact, add nothing new, keep
+  the "Subject N" labels, image numbers and identity
+  instructions, keep any "keep original unchanged"
+  lines, and return only the prompt text.
+- Show the original and polished prompts side by side
+  with the differences highlighted. Choices: "Use
+  polished", "Keep original", or edit by hand.
+- Before accepting, the studio checks that the
+  required elements are still present: every subject
+  mapping, every "keep original" instruction, and the
+  image-number references. If any are missing, warn
+  the user and do not accept automatically.
+- Save the polished prompt as a new prompt version.
+  Both versions are kept, with a flag recording which
+  was polished.
+- Approval locks whichever version the user chose.
+  Polishing after approval cancels the approval, like
+  any other edit.
+- Same error handling as Analyse (progress, cancel,
+  clear messages, no automatic retry); on failure the
+  original prompt is unchanged.
 
 Acceptance:
 
@@ -1513,12 +1712,16 @@ Acceptance:
 - Approval blocks unauthorized generation
 - Changing inputs invalidates approval
 - Approved states survive restart correctly
+- A polished prompt is only accepted when all required
+  elements are present or the user explicitly accepts
+  after a warning; both versions remain stored
 
 ## PHASE 5 — GENERATION AND RESULTS
 
 Tasks:
 
 - Implement verified generation integration
+  ("Generate" via the Codex CLI)
 - Implement manual bridge fallback
 - Add optional API adapter
 - Generation job handling
@@ -1528,14 +1731,44 @@ Tasks:
 - Output versioning
 - Interrupted job handling
 
+### Generate (Codex CLI)
+
+- A "Generate" button, available only from a valid
+  approval.
+- It builds the same export package as the manual
+  bridge (Base Image, chosen reference photos with
+  location data removed, prompt.txt,
+  negative_prompt.txt, mapping.txt) into a job folder.
+- It then runs `codex exec` with those images attached
+  and the prompt, using built-in image generation, with
+  the method and flags confirmed in Phase 2.5.
+- Pick up the generated image from wherever Phase 2.5
+  showed Codex saves it, copy it into results, and link
+  it to this scene and this approval automatically, the
+  same as "Import result". Never overwrite earlier
+  results.
+- "Generate again" and "Variation" each create a new
+  result.
+- Interrupted or failed generations are marked as
+  failed and never resubmitted automatically.
+- Errors (CLI missing, signed out, plan limit reached,
+  timeout, no image produced) show a clear message and
+  offer "Export for manual use" (the existing manual
+  package flow).
+- The UI notes that each attempt uses the ChatGPT
+  plan's image allowance.
+
 Acceptance:
 
-- Approved scenes can use a verified provider
-  or be exported through the manual bridge
+- Approved scenes can be generated via the Codex CLI
+  or exported through the manual bridge
+- Generated results are linked to their scene and
+  approval automatically
 - Results can be imported and saved
 - Previous versions remain available
 - Failed/interrupted jobs are recoverable
-- No automatic duplicate paid requests
+- No automatic duplicate paid requests or automatic
+  resubmission of generations
 
 ## PHASE 6 — QUALITY AND ADVANCED FEATURES
 
@@ -1641,8 +1874,9 @@ The initial product is successful when the user can:
 6. Generate a detailed scene prompt.
 7. Assign saved identities to subjects.
 8. Review and approve the mappings and prompt.
-9. Generate an image using an available provider
-   or export/import through the manual bridge.
+9. Generate an image from inside the studio via the
+   Codex CLI, or export/import through the manual
+   bridge as a fallback.
 10. Compare results with the Base Image.
 11. Save generations and prompt versions.
 12. Close the application and resume later.

@@ -4,6 +4,8 @@ A local-first home for reusable characters, reference scenes and approved image 
 
 **Current scope: Phase 2 Character Library.** Create and edit characters, upload multiple reference photos, choose a primary photo, add labels, preview originals, search, and organize groups. Archive/restore or explicitly delete profiles and photos. The overview, saved settings and provider status remain available. Scenes, analysis, approvals, generation and export/import are not implemented yet. PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
 
+**How it will work (planned, D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt, and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
+
 ## Start and stop
 
 After setup, double-click **Start-Studio.cmd**. It starts the local service in the background and opens **http://127.0.0.1:8765**. Double-click **Stop-Studio.cmd** to stop the launcher-managed service. Closing the browser does not stop the service. Save changes before closing; only changes acknowledged as saved are durable.
@@ -13,6 +15,8 @@ The launcher refuses to stop a process whose executable/start time no longer mat
 ## First setup / clean checkout
 
 Prerequisites: Windows, Node.js 24 LTS with npm, and uv. Python 3.12 is managed by uv; dependencies live in the project's `.venv`. No OpenAI account credentials or API key are required by this application.
+
+For the planned AI features (Phase 3 onward; not needed for the current Character Library): install and sign in to **Claude Code** (`claude`) with a **Claude Pro** subscription, and **Codex CLI** (`codex`) with a **ChatGPT plan that includes image generation (Plus or above)**. Sign in through each tool yourself; the studio only launches them. Without them, the manual bridge still works.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
@@ -63,16 +67,18 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 ## AI capabilities and costs
 
-AI integration still consists of interfaces and capability metadata only. Manual bridge is **planned**, direct Codex generation is **unverified**, and paid OpenAI API access is **disabled**. There is no generation endpoint, credential storage or automatic retry behavior. An installed Codex image tool is not a callable FastAPI provider.
+AI integration still consists of interfaces and capability metadata only. There is no generation endpoint, credential storage or automatic retry behavior. Paid OpenAI API access is **disabled** and stays off.
 
-The intended MVP lets the user export an approved package to Codex/ChatGPT and import the result. External generation consumes the external service's plan allowances and sends supplied images to that service. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
+Planned direction (DECISIONS.md D009): the studio runs `claude -p` for scene analysis and optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. Both CLI paths are **unverified** until the Phase 2.5 verification spike records their real flags, output locations and failure modes.
+
+Each run uses your plan's allowance and sends data to that provider: **Analyse** sends the Base Image to Anthropic; **Polish prompt** sends prompt and analysis text to Anthropic; **Generate** sends the Base Image and chosen reference photos to OpenAI. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
 
 ## Continuity and recovery
 
 - Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
 - Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phases 1 and 2. Phase 3 and later require explicit approval.
+- Approval covers Phases 1 and 2. Phase 2.5 (engine verification spike), Phase 3 and later require explicit approval.
 
 For data recovery and current backup limitations see `docs/RECOVERY.md`. Git backs up source history, not private application data.
 

@@ -8,7 +8,7 @@ The user explicitly said **"Approve Phase 2"** on 2026-10-09 (Asia/Kolkata). Pha
 
 **Standing user rule (2026-10-10):** do not change any project files without the user's approval. Describe proposed changes and wait for a yes; reading, testing and running the app are fine.
 
-PLAN.md remains authoritative and unchanged.
+PLAN.md remains authoritative. On 2026-10-10 the user directed a planning-only change (v2.1): DECISIONS.md D009 "CLI bridge first, manual bridge as fallback", new Phase 2.5 engine verification spike, and updated Phases 3–5 (Analyse via `claude -p`, optional Polish prompt, Generate via `codex exec`, engine settings). README, PROVIDER_FINDINGS and RECOVERY were updated to match. No application code changed and no phase completion status changed.
 
 ## Review process
 
@@ -34,4 +34,4 @@ PLAN.md remains authoritative and unchanged.
 
 - Normal app: http://127.0.0.1:8765; data `%USERPROFILE%\Character-Studio-Data`; schema `0003_photo_framing`. Restart is needed after backend changes; a browser refresh suffices for frontend-only builds.
 - Git: determine the checkpoint with `git log`. `Phase_Checks/` is ignored. No remote configured and no push.
-- Next action: wait for further Phase 2 feedback from the user or an explicit "Approve Phase 3". Do not start scenes, analysis or generation work without it.
+- Next action: wait for the user's decisions on the open plan conflicts reported with the v2.1 change, then an explicit "Approve Phase 2.5" before running the engine verification spike. Phase 3 needs its own approval. Do not start scenes, analysis or generation work without it.

@@ -7,6 +7,7 @@
 - Alternatives: separately billed image/vision APIs; unverified local model; subscription-backed analysis integration.
 - Consequence: later MVP export/import is user-assisted. Codex chat tools are not assumed callable by FastAPI. Built-in usage still consumes plan allowances.
 - Approval: explicit user preference and Phase 1 approval.
+- Status (2026-10-10): superseded as the main approach by D009. The manual flow (copy instruction, export package, import result) is retained as the fallback.
 
 ## D002 — Local modular monolith (2026-10-09)
 
@@ -65,3 +66,20 @@
 - Decision: short single-purpose forms (group editor) use a footer action bar (destructive left; Cancel/primary right). The long, multi-section character profile keeps Close at top-right so leaving never requires scrolling past Archive/Delete.
 - Decision: the user's local review checklists/reports in `Phase_Checks/` stay out of Git (`.gitignore`).
 - Approval: user-requested Phase 2 review changes on 2026-10-10 within the approved Phase 2 scope; Phase 3 and AI operations remain unapproved. No dependencies added.
+
+## D009 — CLI bridge first, manual bridge as fallback (2026-10-10)
+
+- Decision: the studio remains the only screen the user works in. Instead of the user carrying files and text to other apps, the studio runs the official command-line tools installed and signed in on this PC, in the background, one user-initiated run at a time:
+  - Scene analysis: Claude Code CLI (`claude -p`) on the user's Claude Pro subscription.
+  - Optional "Polish prompt": Claude Code CLI on the user's Claude Pro subscription.
+  - Image generation: Codex CLI (`codex exec` with its built-in image generation) on the user's ChatGPT subscription.
+  - The D001 manual bridge (copy instruction, export package, import result) remains as the fallback, not the main path.
+- Replaces D001 as the main approach; D001's manual flow is kept as the fallback for every engine step.
+- Reason: stop switching between apps. Both CLIs run on existing subscriptions with no API keys and no per-use billing. Each run still consumes that plan's usage allowance.
+- Split: Claude for analysis and prompt polishing, Codex for images only, so the ChatGPT image allowance is spent on images.
+- Boundaries: only the official `claude` and `codex` programs, run locally for the user's personal use, signed in by the user. The studio never reads, copies, stores or forwards their login tokens. No extracting subscription credentials into other tools, no third-party gateways (for example OmniRoute), no browser automation or scripting against chatgpt.com or claude.ai. User-supplied findings: Anthropic allows subscription logins only inside Claude Code and Claude.ai; scripted website use breaks OpenAI's terms. See `docs/PROVIDER_FINDINGS.md`.
+- Every run is started by an explicit user action (Analyse, Polish prompt, Generate from a valid approval). Never retried automatically; interrupted runs are marked failed/interrupted and not resubmitted.
+- Alternatives: manual bridge only (D001; too much app switching); paid OpenAI/Anthropic APIs (per-use billing); third-party subscription gateways or website automation (violate provider terms; rejected).
+- Open risk: it is not yet confirmed in practice that Codex's built-in image tool uses attached local reference photos to keep each person's likeness. Phase 2.5 (engine verification spike) records the CLI flags, output locations, timings and failure modes, plus the user's likeness judgement, before Phase 5's Generate button is built on it. The user has stated that OpenAI's documentation confirms reference-photo/identity support, so likeness quality is recorded as a quality check rather than a gate; the manual bridge stays as the fallback either way.
+- The optional paid OpenAI API adapter (PLAN.md §12.3) stays off and unchanged.
+- Approval: user-directed planning change on 2026-10-10. Planning documents only; no application code changed. Phase 2.5 and Phase 3 require explicit approval ("Approve Phase 2.5").

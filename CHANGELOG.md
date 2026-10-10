@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-10 — Plan v2.1: CLI bridge first (planning only)
+
+- Recorded D009 "CLI bridge first, manual bridge as fallback": Claude Code CLI for scene analysis and optional prompt polishing, Codex CLI for image generation, manual bridge as fallback. D001 marked superseded as the main approach.
+- PLAN.md v2.1: new Phase 2.5 engine verification spike; Phase 3 Analyse button, job folders, analysis UI and engine settings; Phase 4 optional Polish prompt; Phase 5 Generate via Codex; §8.3, §12, §20, §22 and §27 updated.
+- README, `docs/PROVIDER_FINDINGS.md` (subscription-use findings and spike placeholder) and `docs/RECOVERY.md` (CLI job recovery) updated. No application code, dependencies or phase completion status changed.
+
 ## 2026-10-10 — Phase 2 review refinements
 
 - Addressed the user's hands-on Phase 2 review (local `Phase_Checks/` checklist and report, excluded from Git).
