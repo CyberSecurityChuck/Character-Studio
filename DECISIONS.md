@@ -125,3 +125,12 @@
 - Decision: test-only `Settings.engine_commands` replaces the CLIs with `tests/fake_cli.py`; it is not read from the environment.
 - Alternatives: separate per-engine schemas (drift risk); overwriting analyses in place (loses provenance); one thread per job (conflicts with sequential plan-limit-friendly runs); running `codex.cmd` through cmd.exe (argument injection risk).
 - Approval: within the approved Phase 3 scope ("Approve Phase 3", 2026-10-10). No dependencies added.
+
+## D013 — Phase 3 review refinements (2026-10-11)
+
+- Decision: common actions are available on cards via a ⋯ menu (keyboard: arrow keys, Escape) and a Select mode with a selection bar, on Scenes, Characters and Groups. The detailed screens keep their own buttons.
+- Decision: bulk actions call the existing single-item endpoints one by one with each item's revision, continue past individual failures and report them by name. Scenes with a running analysis are skipped. No new bulk endpoints, so every safety check stays in one place.
+- Decision: field explanations in settings use an accessible ⓘ tooltip (hover, focus or click; Escape closes) instead of permanent helper text.
+- Decision: sentence case for analysis text is applied at display time only, so stored analyses remain exactly as the engine or user wrote them.
+- Alternatives: server-side bulk endpoints (more code paths to secure); rewriting stored text to sentence case (alters provenance).
+- Approval: user's Phase 3 review report and "Yes, please go ahead with the fixes" (2026-10-11), including the Characters and Groups card options.

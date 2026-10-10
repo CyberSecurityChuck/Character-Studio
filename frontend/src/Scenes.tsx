@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
+import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
 import { replaceRoute, routeParts } from './route'
 
 type Box = { x: number; y: number; width: number; height: number }
@@ -34,7 +35,7 @@ const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 
 const sendsTo: Record<string, string> = { claude_cli: 'Anthropic via Claude Code', codex_cli: 'OpenAI via Codex' }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
-const fieldName = (field: string) => field.replace(/_/g, ' ').replace(/\s*\.\s*/g, ' · ')
+const fieldName = (field: string) => field.replace(/_/g, ' ').split(/\s*\.\s*/).map(part => sentence(part.trim())).join(' · ')
 
 function Icon({ name }: { name: 'back' | 'copy' | 'spark' | 'edit' | 'clock' | 'folder' }) {
   const paths = {
@@ -72,7 +73,7 @@ function BaseImage({ scene, subjects, show }: { scene: SceneSummary; subjects: S
 }
 
 function Field({ label, value, flagged }: { label: string; value: string; flagged?: boolean }) {
-  return <div className={`analysis-field ${flagged ? 'flagged' : ''}`}><dt>{label}{flagged && <span className="flag-dot" title="Needs your confirmation" />}</dt><dd>{value || '—'}</dd></div>
+  return <div className={`analysis-field ${flagged ? 'flagged' : ''}`}><dt>{label}{flagged && <span className="flag-dot" title="Needs your confirmation" />}</dt><dd>{sentence(value) || '—'}</dd></div>
 }
 
 // Engines name uncertain fields freely ("Subject 1.eye_direction", "subjects[0].eye direction"),
@@ -90,7 +91,7 @@ function flagMatcher(fields: string[], subjectCount: number) {
 function AnalysisView({ data, flagged }: { data: AnalysisData; flagged: Set<string> }) {
   const isFlagged = flagMatcher([...flagged], data.subjects.length)
   return <div className="analysis-view">
-    <p className="analysis-summary">{data.scene_description}</p>
+    <p className="analysis-summary">{sentence(data.scene_description)}</p>
     <dl className="field-grid compact">
       <Field label="Orientation" value={`${data.image_properties.orientation} · ${data.image_properties.approximate_aspect_ratio}`} />
       <Field label="Style" value={data.image_properties.style} />
@@ -104,7 +105,7 @@ function AnalysisView({ data, flagged }: { data: AnalysisData; flagged: Set<stri
     {!data.subjects.length && <p className="hint">No people were found in this image.</p>}
     <h4>Scene</h4>
     <dl className="field-grid">{sceneFields.map(([key, label]) => <Field key={key} label={label} value={data[key]} flagged={isFlagged(key, 'scene')} />)}</dl>
-    {!!data.composition_constraints.length && <><h4>Must preserve</h4><ul className="plain-list">{data.composition_constraints.map((c, i) => <li key={i}>{c}</li>)}</ul></>}
+    {!!data.composition_constraints.length && <><h4>Must preserve</h4><ul className="plain-list">{data.composition_constraints.map((c, i) => <li key={i}>{sentence(c)}</li>)}</ul></>}
   </div>
 }
 
@@ -222,6 +223,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
   const [dismissed, setDismissed] = useState<string | null>(null)
+  const [stopping, setStopping] = useState<string | null>(null)
   const [promptText, setPromptText] = useState('')
   const [negative, setNegative] = useState('')
   const [changes, setChanges] = useState('')
@@ -308,10 +310,13 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/analyse`, 'POST', token)
     setScene(detail); onChanged()
   })
-  const cancel = () => scene.active_job && run(async () => {
-    await send(`/api/jobs/${scene.active_job!.id}/cancel`, 'POST', token)
-    setMessage('Stopping the run…')
-  })
+  const cancel = () => {
+    const job = scene.active_job
+    if (!job) return
+    // Show "Stopping…" at once; the server stops the CLI and the poll picks up the result.
+    setStopping(job.id)
+    void run(async () => { await send(`/api/jobs/${job.id}/cancel`, 'POST', token) })
+  }
   const startEdit = () => { if (shown) { setEditing(clone(shown.analysis)); setConfirmed(shown.confirmed_uncertainties) } }
   const saveRevision = (analysis: AnalysisData, confirmedList: Uncertainty[], base: Analysis, success: string) => run(async () => {
     await accept(await send<SceneDetail>(`/api/scenes/${scene.id}/analyses/${base.id}/revise`, 'POST', token, { analysis, confirmed_uncertainties: confirmedList }), !promptDirty)
@@ -376,9 +381,10 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
 
           {scene.active_job ? <div className="progress-card" role="status">
             <span className="spinner" aria-hidden="true" />
-            <div><strong>{scene.active_job.status === 'not_started' ? `Waiting to analyse with ${scene.active_job.engine_name}…` : `Analysing with ${scene.active_job.engine_name}…`}</strong>
-              <p><Icon name="clock" /> <Elapsed since={scene.active_job.started_at} /> · stops after {Math.round(scene.active_job.timeout_seconds / 60)} min. You can leave this page; the run continues.</p></div>
-            <button className="secondary" disabled={busy} onClick={() => void cancel()}>Cancel</button>
+            {stopping === scene.active_job.id ? <div><strong>Stopping…</strong><p>Stopping {scene.active_job.engine_name}. This takes a moment.</p></div>
+              : <div><strong>{scene.active_job.status === 'not_started' ? `Waiting to analyse with ${scene.active_job.engine_name}…` : `Analysing with ${scene.active_job.engine_name}…`}</strong>
+              <p><Icon name="clock" /> <Elapsed since={scene.active_job.started_at} /> · stops after {Math.round(scene.active_job.timeout_seconds / 60)} min. You can leave this page; the run continues.</p></div>}
+            <button className="secondary" disabled={busy || stopping === scene.active_job.id} onClick={cancel}>{stopping === scene.active_job.id ? 'Stopping…' : 'Cancel'}</button>
           </div> : showJobNotice ? <JobNotice job={lastJob} busy={busy || engine === 'manual'} onRetry={() => void analyse()} onManual={() => setManual(true)} onDismiss={() => setDismissed(lastJob.id)} /> : null}
 
           {!current && !scene.active_job && !showJobNotice && <div className="analyse-start">
@@ -405,11 +411,11 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
             {!!shown.analysis.uncertainties.length && <div className="uncertain-box">
               <strong>Please check {shown.analysis.uncertainties.length === 1 ? 'this detail' : `these ${shown.analysis.uncertainties.length} details`}</strong>
               <p className="hint">The analysis was unsure here. Confirm it as written, or edit the analysis to correct it.</p>
-              <ul>{shown.analysis.uncertainties.map((u, i) => <li key={i}><div><span className="field-name">{fieldName(u.field)}</span><span>{u.note}</span></div>
+              <ul>{shown.analysis.uncertainties.map((u, i) => <li key={i}><div><span className="field-name">{fieldName(u.field)}</span><span>{sentence(u.note)}</span></div>
                 {shown.id === current?.id && <div className="uncertain-actions"><button className="secondary" disabled={busy || !!scene.active_job} onClick={() => confirmUncertainty(u)}>Confirm</button><button className="link-button" disabled={busy || !!scene.active_job} onClick={startEdit}>Correct</button></div>}</li>)}</ul>
             </div>}
             <AnalysisView data={shown.analysis} flagged={flagged} />
-            {!!shown.confirmed_uncertainties.length && <details className="confirmed-list"><summary>Confirmed by you ({shown.confirmed_uncertainties.length})</summary><ul>{shown.confirmed_uncertainties.map((u, i) => <li key={i}><span className="field-name">{fieldName(u.field)}</span> {u.note}</li>)}</ul></details>}
+            {!!shown.confirmed_uncertainties.length && <details className="confirmed-list"><summary>Confirmed by you ({shown.confirmed_uncertainties.length})</summary><ul>{shown.confirmed_uncertainties.map((u, i) => <li key={i}><span className="field-name">{fieldName(u.field)}</span> {sentence(u.note)}</li>)}</ul></details>}
           </>}
 
           {editing && current && <>
@@ -419,7 +425,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
                 const next = clone(editing)
                 next.uncertainties = open ? next.uncertainties.filter(x => !(x.field === u.field && x.note === u.note)) : [...next.uncertainties, u]
                 setEditing(next); setConfirmed(c => open ? [...c, u] : c.filter(x => !(x.field === u.field && x.note === u.note)))
-              }} /><span><span className="field-name">{fieldName(u.field)}</span> {u.note}</span></label></li> })}</ul></div>}
+              }} /><span><span className="field-name">{fieldName(u.field)}</span> {sentence(u.note)}</span></label></li> })}</ul></div>}
             <AnalysisEditor draft={editing} onChange={setEditing} />
             <div className="panel-actions"><span className="spacer">Unsaved edits</span><button type="button" className="secondary" onClick={() => { if (window.confirm('Discard your edits to the analysis?')) setEditing(null) }}>Cancel</button><button type="button" disabled={busy} onClick={() => void saveRevision(editing, confirmed, current, `Saved as analysis version ${current.version + 1}.`)}>Save as new version</button></div>
           </>}
@@ -463,18 +469,26 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
 }
 
 export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onDirty: (dirty: boolean) => void; onBusy: (busy: boolean) => void }) {
+  const token = data.session_token
   const [scenes, setScenes] = useState<SceneSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<string | null>(() => routeParts()[0] === 'scenes' ? routeParts()[1] ?? null : null)
   const [creating, setCreating] = useState(false)
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  const [renaming, setRenaming] = useState<SceneSummary | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   const load = useCallback(() => request<SceneSummary[]>('/api/scenes').then(list => { setScenes(list); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
   useEffect(() => { void load() }, [load])
   useEffect(() => { replaceRoute(open ? `scenes/${open}` : 'scenes') }, [open])
   useEffect(() => { if (creating) { if (!dialogRef.current?.open) dialogRef.current?.showModal() } else dialogRef.current?.close() }, [creating])
+  useEffect(() => { if (!open) onBusy(busy) }, [busy, open, onBusy])
   // Keep list cards current while any run is in progress.
   useEffect(() => {
     if (open || !scenes.some(s => s.active_job)) return
@@ -484,18 +498,69 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
 
   if (open) return <Workspace key={open} data={data} sceneId={open} onBack={() => { setOpen(null); void load() }} onOpen={setOpen} onDirty={onDirty} onBusy={onBusy} onChanged={() => void load()} />
 
+  async function act(action: () => Promise<void>, success: string) {
+    if (busy) return
+    setBusy(true); setActionError(''); setNotice('')
+    try { await action(); setNotice(success) }
+    catch (e) { setActionError(e instanceof Error ? e.message : 'That did not work. Reload and try again.') }
+    finally { setBusy(false); void load() }
+  }
+  const togglePick = (id: string) => setPicked(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
+  const stopSelecting = () => { setSelecting(false); setPicked([]) }
+  const remove = (s: SceneSummary) => send<{ cleanup_pending: boolean }>(`/api/scenes/${s.id}?revision=${s.revision}`, 'DELETE', token)
+  function deleteOne(s: SceneSummary) {
+    if (!window.confirm(`Permanently delete “${s.title}”, its Base Image, analyses, prompts and run folders? This cannot be undone.`)) return
+    void act(async () => {
+      const result = await remove(s)
+      if (result.cleanup_pending) throw new Error('Scene removed. Some locked files are pending deletion; restart the studio to retry cleanup.')
+    }, `“${s.title}” deleted.`)
+  }
+  function deleteSelected() {
+    const chosen = scenes.filter(s => picked.includes(s.id))
+    const running = chosen.filter(s => s.active_job)
+    const deletable = chosen.filter(s => !s.active_job)
+    if (!deletable.length) { setActionError('The selected scenes have analyses running. Cancel them first.'); return }
+    const count = `${deletable.length} ${deletable.length === 1 ? 'scene' : 'scenes'}`
+    if (!window.confirm(`Permanently delete ${count} with their Base Images, analyses, prompts and run folders? This cannot be undone.${running.length ? ` ${running.length} with a running analysis will be skipped.` : ''}`)) return
+    void act(async () => {
+      const failed: string[] = running.map(s => `${s.title} (analysis running)`)
+      for (const s of deletable) { try { await remove(s) } catch { failed.push(s.title) } }
+      stopSelecting()
+      if (failed.length) throw new Error(`Not deleted: ${failed.join(', ')}. The others were deleted.`)
+    }, `${count} deleted.`)
+  }
+
   const filtered = scenes.filter(s => s.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   return <div className="scenes">
     <div className="library-toolbar filters">
       <div><label htmlFor="scene-search">Search scenes</label><input id="scene-search" type="search" value={query} placeholder="Search by title" onChange={e => setQuery(e.target.value)} /></div>
-      <button onClick={() => setCreating(true)}>+ New scene</button>
+      {!selecting && !!filtered.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
+      <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ New scene</button>
     </div>
+    {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
+      <button type="button" className="danger secondary" disabled={busy || !picked.length} onClick={deleteSelected}>Delete</button>
+    </SelectionBar>}
     {error && <div className="error" role="alert"><strong>Your scenes could not be loaded.</strong><p>{error}</p><button className="secondary" onClick={() => void load()}>Try again</button></div>}
+    {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
+    <p className="library-status" role="status">{busy ? 'Working…' : notice}</p>
     {loading ? <p role="status">Loading your scenes…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">A REFERENCE. A NEW POSSIBILITY.</span><h2>{query ? 'No matching scenes' : 'Your first scene starts here'}</h2><p>{query ? 'Try another title.' : 'Add a Base Image whose pose, framing and light you want to recreate. The studio analyses it and drafts a prompt you can edit.'}</p></div>
-      : <div className="scene-grid">{filtered.map(s => <button key={s.id} className="scene-card" onClick={() => setOpen(s.id)}>
-        <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
-        <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{new Date(s.updated_at).toLocaleDateString()}</span></span></span>
-      </button>)}</div>}
+      : <div className="scene-grid">{filtered.map(s => {
+        const isPicked = picked.includes(s.id)
+        return <div key={s.id} className={`scene-card ${isPicked ? 'picked' : ''}`}>
+          <button className="card-main" aria-pressed={selecting ? isPicked : undefined} disabled={busy} onClick={() => selecting ? togglePick(s.id) : setOpen(s.id)}>
+            {selecting && <span className="pick-box" aria-hidden="true" />}
+            <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
+            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{new Date(s.updated_at).toLocaleDateString()}</span></span></span>
+          </button>
+          {!selecting && <CardMenu label={s.title} disabled={busy} items={[
+            { label: 'Rename', onSelect: () => setRenaming(s) },
+            { label: 'Duplicate', onSelect: () => void act(async () => { await send(`/api/scenes/${s.id}/duplicate`, 'POST', token) }, `Copy of “${s.title}” created.`) },
+            { label: 'Delete', danger: true, disabled: !!s.active_job, onSelect: () => deleteOne(s) },
+          ]} />}
+        </div>
+      })}</div>}
+    {renaming && <TextDialog title="Rename scene" label="Scene title" initial={renaming.title} maxLength={120} onClose={() => setRenaming(null)}
+      onSave={async value => { await send(`/api/scenes/${renaming.id}`, 'PUT', token, { title: value, revision: renaming.revision }); setActionError(''); setNotice('Scene renamed.'); await load() }} />}
     <dialog ref={dialogRef} className="image-dialog new-scene-dialog" aria-labelledby="new-scene-title" onClose={() => setCreating(false)}>
       {creating && <NewSceneForm data={data} onCancel={() => setCreating(false)} onCreated={scene => { setCreating(false); setScenes(old => [scene, ...old]); setOpen(scene.id) }} />}
     </dialog>

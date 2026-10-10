@@ -95,7 +95,7 @@ For data recovery and current backup limitations see `docs/RECOVERY.md`. Git bac
 
 Open **Characters**, choose **New character**, enter a name/alias and age category, then save. Add one or more JPEG, PNG or WebP still photos (20 MiB and 40 megapixels per photo by default). Originals remain unchanged, including their metadata; separate thumbnails omit metadata and correct display orientation. Nothing is sent to an external service.
 
-Use each photo's label selector and **Make primary** button. Open a thumbnail for the full-size preview. To choose what shows inside a character's round thumbnail, click the profile photo (✎) or **Adjust thumbnail** on the primary photo, then drag and zoom; only the display framing is saved and the original photo is unchanged. **Groups** lets you create/rename groups and add/remove members; a character can belong to several groups. Search by name and filter by group or archived status.
+Use each photo's label selector and **Make primary** button. Open a thumbnail for the full-size preview. To choose what shows inside a character's round thumbnail, click the profile photo (✎) or **Adjust thumbnail** on the primary photo, then drag and zoom; only the display framing is saved and the original photo is unchanged. **Groups** lets you create/rename groups and add/remove members; a character can belong to several groups. Search by name and filter by group or archived status. Each character card and group row has a **⋯** menu (Rename, Archive/Restore or Delete), and **Select** lets you archive, restore or delete several characters, or delete several groups, at once.
 
 Refreshing the browser keeps the current page, library tab and open profile or group (the address shows, for example, `#/characters/<id>` or `#/groups`).
 
@@ -105,7 +105,7 @@ Save profile edits before changing photos. If a batch upload stops, earlier succ
 
 ## Scenes and analysis
 
-Open **Scenes** and choose **+ New scene**. Pick a JPEG, PNG or WebP Base Image (the scene whose pose, framing and light you want to recreate) and optionally a title. The image stays on this computer until you choose to analyse it. Scenes can be renamed, duplicated (the copy takes the current analysis and prompt) or permanently deleted. The Overview lists recent scenes and offers **Resume**.
+Open **Scenes** and choose **+ New scene**. Pick a JPEG, PNG or WebP Base Image (the scene whose pose, framing and light you want to recreate) and optionally a title. The image stays on this computer until you choose to analyse it. Scenes can be renamed, duplicated (the copy takes the current analysis and prompt) or permanently deleted, either inside the scene or from the **⋯** menu on its card. **Select** lets you tick several scenes and delete them together (scenes with a running analysis are skipped). The Overview lists recent scenes and offers **Resume**.
 
 **Analyse with Claude** (or Codex, if selected in Studio settings) sends the Base Image to that company using your own sign-in and plan allowance. It runs once per click with a progress timer and a **Cancel** button; you may leave the page while it runs. Errors (not installed, signed out, usage limit, time limit, unexpected reply) offer **Try again** and **Do it manually**. Nothing is retried automatically. If the studio stopped mid-run, the run shows as **Interrupted**: check the job folder shown before trying again.
 

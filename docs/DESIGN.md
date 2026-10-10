@@ -20,3 +20,7 @@ After the user's hands-on review: round avatars with user-adjustable framing (dr
 ## Phase 3 scenes and analysis (2026-10-10)
 
 Scenes reuse the warm palette and system fonts: an image-first card grid, a short new-scene dialog with footer actions, and a two-column workspace (sticky Base Image with optional subject boxes; numbered "Scene analysis" and "Generation prompt" steps). Each action appears once per state: while a run notice is shown, the start and version-bar run actions are hidden. Analysis fields use compact labelled grids; unsure details are highlighted and grouped with Confirm/Correct. Progress, failure, cancelled and interrupted states have distinct, plain-language notices. Engine settings use status cards, choice cards for the analysis engine and a footer action bar. Browser QA covered desktop and 375 px widths with synthetic images.
+
+## Phase 3 review refinements (2026-10-11)
+
+Cards on Scenes, Characters and Groups gain a quiet ⋯ menu (top-right; on group rows, vertically centred) and a Select mode with tick boxes and an accent selection bar, so frequent actions no longer require opening an item. Settings explanations live in small ⓘ tooltips rather than permanent helper text. Analysis text is shown in sentence case. Cancel switches to "Stopping…" at once. Side-by-side Groups panels share one height.

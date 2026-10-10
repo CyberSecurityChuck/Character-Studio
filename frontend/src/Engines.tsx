@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ApiError, request, send } from './api'
+import { InfoTip } from './Controls'
 
 type Status = { engine: string; name: string; installed: boolean; version: string | null; signed_in: boolean; plan: string | null; message: string }
 type Settings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; revision: number }
 
 const analysisChoices = [
-  { id: 'claude_cli', name: 'Claude', note: 'Default. Uses your Claude plan. Sends the Base Image to Anthropic.' },
+  { id: 'claude_cli', name: 'Claude (default)', note: 'Uses your Claude plan. Sends the Base Image to Anthropic.' },
   { id: 'codex_cli', name: 'Codex', note: 'Uses your ChatGPT plan’s Codex allowance, which image generation also uses. Sends the Base Image to OpenAI.' },
   { id: 'manual', name: 'Manual', note: 'Copy the instruction into any app and paste the reply back. Nothing is sent by the studio.' },
 ]
@@ -60,14 +61,13 @@ export default function Engines({ token }: { token: string }) {
       <fieldset className="engine-choice"><legend>Analysis engine</legend>
         <div className="choice-grid">{analysisChoices.map(c => <label key={c.id} className={`choice-card ${form.analysis_engine === c.id ? 'selected' : ''}`}>
           <input type="radio" name="analysis-engine" value={c.id} checked={form.analysis_engine === c.id} onChange={() => setForm({ ...form, analysis_engine: c.id })} />
-          <span><strong>{c.name}</strong><small>{c.note}</small></span></label>)}</div>
+          <strong>{c.name}</strong><InfoTip label={`${c.name} analysis`}>{c.note}</InfoTip></label>)}</div>
       </fieldset>
       <div className="engine-fields">
-        <div><label htmlFor="generation-engine">Generation engine</label><select id="generation-engine" value={form.generation_engine} onChange={e => setForm({ ...form, generation_engine: e.target.value })}><option value="codex_cli">Codex (default)</option><option value="manual">Manual</option></select><p className="hint">Used when image generation arrives in Phase 5.</p></div>
-        <div><label htmlFor="claude-timeout">Claude time limit (seconds)</label><input id="claude-timeout" type="number" min={30} max={1800} step={10} required value={form.claude_timeout} onChange={e => setForm({ ...form, claude_timeout: Number(e.target.value) })} /></div>
-        <div><label htmlFor="codex-timeout">Codex time limit (seconds)</label><input id="codex-timeout" type="number" min={30} max={1800} step={10} required value={form.codex_timeout} onChange={e => setForm({ ...form, codex_timeout: Number(e.target.value) })} /></div>
+        <div><div className="label-row"><label htmlFor="generation-engine">Generation engine</label><InfoTip label="Generation engine">Creates the final image from an approved scene. Used when image generation arrives in Phase 5. Manual lets you export the package and use any app yourself.</InfoTip></div><select id="generation-engine" value={form.generation_engine} onChange={e => setForm({ ...form, generation_engine: e.target.value })}><option value="codex_cli">Codex (default)</option><option value="manual">Manual</option></select></div>
+        <div><div className="label-row"><label htmlFor="claude-timeout">Claude time limit (seconds)</label><InfoTip label="Claude time limit">A Claude run that reaches this limit is stopped and marked as failed. 30 to 1800 seconds. Typical analyses take under a minute.</InfoTip></div><input id="claude-timeout" type="number" min={30} max={1800} step={10} required value={form.claude_timeout} onChange={e => setForm({ ...form, claude_timeout: Number(e.target.value) })} /></div>
+        <div><div className="label-row"><label htmlFor="codex-timeout">Codex time limit (seconds)</label><InfoTip label="Codex time limit">A Codex run that reaches this limit is stopped and marked as failed. 30 to 1800 seconds. Typical analyses take under a minute.</InfoTip></div><input id="codex-timeout" type="number" min={30} max={1800} step={10} required value={form.codex_timeout} onChange={e => setForm({ ...form, codex_timeout: Number(e.target.value) })} /></div>
       </div>
-      <p className="hint">A run that reaches its time limit is stopped and marked as failed. Typical analyses took under a minute.</p>
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="panel-actions"><span className="spacer" role="status">{busy ? 'Saving…' : dirty ? 'Unsaved changes' : message || 'All changes saved'}</span>
         <button type="button" className="secondary" disabled={!dirty} onClick={() => setForm(saved)}>Cancel</button>

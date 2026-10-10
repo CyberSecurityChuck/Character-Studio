@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import { getBootstrap, request, type Bootstrap } from './api'
+import { CardMenu, SelectionBar, TextDialog } from './Controls'
 import { replaceRoute, routeParts } from './route'
 
 type Frame = { x: number; y: number; zoom: number }
@@ -88,6 +89,9 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
   const [message, setMessage] = useState('')
   const [preview, setPreview] = useState<Photo | null>(null)
   const [framing, setFraming] = useState<Photo | null>(null)
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  const [renaming, setRenaming] = useState<{ kind: 'character' | 'group'; id: string; name: string } | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const groupNameRef = useRef<HTMLInputElement>(null)
@@ -145,6 +149,100 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
     selectCharacter(c)
   }
   function canLeave() { return !busy && (!dirty || window.confirm('Discard unsaved edits?')) }
+  // Card-level actions update the list without opening the profile or group.
+  function replaceCharacter(c: Character) {
+    setCharacters(old => old.map(x => x.id === c.id ? c : x))
+    if (selected?.id === c.id) selectCharacter(c)
+  }
+  function replaceGroup(g: Group) {
+    setGroups(old => old.map(x => x.id === g.id ? g : x))
+    if (editingGroup?.id === g.id) openGroup(g)
+  }
+  const touchesOpenEdits = (id: string) => (selected?.id === id && !!characterDirty) || (editingGroup?.id === id && groupDirty)
+  function guardCard(id: string) { return !touchesOpenEdits(id) || window.confirm('Discard unsaved edits?') }
+  function stopSelecting() { setSelecting(false); setPicked([]) }
+  function togglePick(id: string) { setPicked(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id]) }
+  function archiveFromCard(c: Character) {
+    if (!guardCard(c.id)) return
+    void run(async () => replaceCharacter(await mutate<Character>(`/api/characters/${c.id}/archive`, 'PUT', { revision: c.revision, archived: !c.archived })), c.archived ? `${c.name} restored.` : `${c.name} archived.`)
+  }
+  function deleteCharacterFromCard(c: Character) {
+    if (!window.confirm(`Permanently delete “${c.name}” and all ${c.photos.length} reference photos? This cannot be undone. Archive instead if you want to keep them.`)) return
+    void run(async () => {
+      const result = await mutate<{ cleanup_pending: boolean }>(`/api/characters/${c.id}?revision=${c.revision}`, 'DELETE')
+      setCharacters(old => old.filter(x => x.id !== c.id))
+      if (selected?.id === c.id) clearEditors()
+      setGroups(await request<Group[]>('/api/groups'))
+      if (result.cleanup_pending) throw new Error('Character removed. Locked files are pending deletion; restart the studio to retry cleanup.')
+    }, `${c.name} deleted.`)
+  }
+  function deleteGroupFromCard(g: Group) {
+    if (!window.confirm(`Delete group “${g.name}”? Characters and photos will remain.`)) return
+    void run(async () => {
+      await mutate(`/api/groups/${g.id}?revision=${g.revision}`, 'DELETE')
+      setGroups(old => old.filter(x => x.id !== g.id))
+      setCharacters(old => old.map(c => ({ ...c, group_ids: c.group_ids.filter(id => id !== g.id) })))
+      if (editingGroup?.id === g.id) resetGroup()
+    }, 'Group deleted. Characters kept.')
+  }
+  function bulkCharacters(kind: 'archive' | 'restore' | 'delete') {
+    const chosen = characters.filter(c => picked.includes(c.id))
+    if (!chosen.length) return
+    const count = `${chosen.length} ${chosen.length === 1 ? 'character' : 'characters'}`
+    if (kind === 'delete' && !window.confirm(`Permanently delete ${count} and all their reference photos? This cannot be undone. Archive instead if you want to keep them.`)) return
+    if (chosen.some(c => touchesOpenEdits(c.id)) && !window.confirm('Discard unsaved edits?')) return
+    void run(async () => {
+      const failed: string[] = []
+      let pending = false
+      for (const c of chosen) {
+        try {
+          if (kind === 'delete') {
+            const result = await mutate<{ cleanup_pending: boolean }>(`/api/characters/${c.id}?revision=${c.revision}`, 'DELETE')
+            pending ||= result.cleanup_pending
+            setCharacters(old => old.filter(x => x.id !== c.id))
+            if (selected?.id === c.id) clearEditors()
+          } else replaceCharacter(await mutate<Character>(`/api/characters/${c.id}/archive`, 'PUT', { revision: c.revision, archived: kind === 'archive' }))
+        } catch { failed.push(c.name) }
+      }
+      if (kind === 'delete') setGroups(await request<Group[]>('/api/groups'))
+      stopSelecting()
+      if (failed.length) throw new Error(`Could not ${kind} ${failed.join(', ')}. The others were done. Reload the library and try again.`)
+      if (pending) throw new Error('Characters removed. Some locked files are pending deletion; restart the studio to retry cleanup.')
+    }, `${count} ${kind === 'delete' ? 'deleted' : kind === 'archive' ? 'archived' : 'restored'}.`)
+  }
+  function bulkDeleteGroups() {
+    const chosen = groups.filter(g => picked.includes(g.id))
+    if (!chosen.length) return
+    const count = `${chosen.length} ${chosen.length === 1 ? 'group' : 'groups'}`
+    if (!window.confirm(`Delete ${count}? Characters and photos will remain.`)) return
+    if (chosen.some(g => touchesOpenEdits(g.id)) && !window.confirm('Discard unsaved edits?')) return
+    void run(async () => {
+      const failed: string[] = []
+      for (const g of chosen) {
+        try {
+          await mutate(`/api/groups/${g.id}?revision=${g.revision}`, 'DELETE')
+          setGroups(old => old.filter(x => x.id !== g.id))
+          setCharacters(old => old.map(c => ({ ...c, group_ids: c.group_ids.filter(id => id !== g.id) })))
+          if (editingGroup?.id === g.id) resetGroup()
+        } catch { failed.push(g.name) }
+      }
+      stopSelecting()
+      if (failed.length) throw new Error(`Could not delete ${failed.join(', ')}. The others were deleted. Reload the library and try again.`)
+    }, `${count} deleted. Characters kept.`)
+  }
+  async function saveRename(value: string) {
+    if (!renaming) return
+    if (renaming.kind === 'character') {
+      const c = characters.find(x => x.id === renaming.id)
+      if (!c) throw new Error('This character no longer exists. Reload the library.')
+      replaceCharacter(await mutate<Character>(`/api/characters/${c.id}`, 'PUT', { name: value, age_category: c.age_category, notes: c.notes, revision: c.revision }))
+    } else {
+      const g = groups.find(x => x.id === renaming.id)
+      if (!g) throw new Error('This group no longer exists. Reload the library.')
+      replaceGroup(await mutate<Group>(`/api/groups/${g.id}`, 'PUT', { name: value, member_ids: g.member_ids, revision: g.revision }))
+    }
+    setError(''); setMessage('Renamed.')
+  }
   function resetGroup() { setEditingGroup(null); setCreatingGroup(false); setGroupName(''); setMembers([]) }
   function openGroup(g: Group) { setEditingGroup(g); setCreatingGroup(false); setGroupName(g.name); setMembers(g.member_ids) }
   function newGroup() { if (canLeave()) { resetGroup(); setCreatingGroup(true); requestAnimationFrame(() => groupNameRef.current?.focus()) } }
@@ -223,7 +321,7 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
   const filtered = characters.filter(c => c.archived === archived && c.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!groupFilter || c.group_ids.includes(groupFilter)))
   return <div className="library">
     <div className="library-toolbar">
-      <div className="library-tabs" aria-label="Library sections">{(['characters', 'groups'] as const).map(t => <button key={t} className={tab === t ? '' : 'secondary'} aria-pressed={tab === t} disabled={busy} onClick={() => { if (canLeave()) { clearEditors(); setTab(t) } }}>{t === 'characters' ? 'Characters' : 'Groups'}</button>)}</div>
+      <div className="library-tabs" aria-label="Library sections">{(['characters', 'groups'] as const).map(t => <button key={t} className={tab === t ? '' : 'secondary'} aria-pressed={tab === t} disabled={busy} onClick={() => { if (canLeave()) { clearEditors(); stopSelecting(); setTab(t) } }}>{t === 'characters' ? 'Characters' : 'Groups'}</button>)}</div>
       <button className="secondary" disabled={busy} onClick={() => void reload()}>Reload library</button>
     </div>
     {error && <div className="error" role="alert" tabIndex={-1} ref={errorRef}><strong>Could not finish that action.</strong><p>{error}</p><p>Your unsaved edits remain. Reloading discards them.</p></div>}
@@ -232,16 +330,30 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
       <div className="library-toolbar filters">
         <div><label htmlFor="character-search">Search characters</label><input id="character-search" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name" /></div>
         <div><label htmlFor="group-filter">Group</label><select id="group-filter" value={groupFilter} onChange={e => setGroupFilter(e.target.value)}><option value="">All groups</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
-        <label className="checkbox-label"><input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)} /> Show archived</label>
-        <button disabled={busy} onClick={() => { if (canLeave()) { resetGroup(); selectCharacter(null); requestAnimationFrame(() => nameRef.current?.focus()) } }}>+ New character</button>
+        <label className="checkbox-label"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setPicked([]) }} /> Show archived</label>
+        {!selecting && !!filtered.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
+        <button disabled={busy || selecting} onClick={() => { if (canLeave()) { resetGroup(); selectCharacter(null); requestAnimationFrame(() => nameRef.current?.focus()) } }}>+ New character</button>
       </div>
+      {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(c => c.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
+        <button type="button" className="secondary" disabled={busy || !picked.length} onClick={() => bulkCharacters(archived ? 'restore' : 'archive')}>{archived ? 'Restore' : 'Archive'}</button>
+        <button type="button" className="danger secondary" disabled={busy || !picked.length} onClick={() => bulkCharacters('delete')}>Delete</button>
+      </SelectionBar>}
       <div className={`library-columns ${creating || selected ? 'with-detail' : ''}`}>
         <section aria-label="Saved characters">
           {!filtered.length ? <div className="empty-library panel"><span className="tiny-label">FAMILIAR FACES, SAVED ONCE</span><h2>{query || groupFilter ? 'No matching characters' : archived ? 'No archived characters' : 'Your cast starts here'}</h2><p>{query || groupFilter ? 'Try another name or group.' : 'Create a profile, then add a few reference photos. Everything stays on this computer.'}</p></div> : <div className="character-grid">{filtered.map(c => {
-            return <button className={`character-card ${selected?.id === c.id ? 'selected' : ''}`} aria-pressed={selected?.id === c.id} key={c.id} disabled={busy} onClick={() => { if (canLeave()) { resetGroup(); selectCharacter(c); requestAnimationFrame(() => nameRef.current?.focus()) } }}>
-              <Avatar character={c} />
-              <span className="character-card-copy"><strong>{c.name}</strong><span>{c.age_category} · {c.photos.length} {c.photos.length === 1 ? 'photo' : 'photos'}</span></span>
-            </button>
+            const isPicked = picked.includes(c.id)
+            return <div key={c.id} className={`character-card ${selected?.id === c.id && !selecting ? 'selected' : ''} ${isPicked ? 'picked' : ''}`}>
+              <button className="card-main" aria-pressed={selecting ? isPicked : selected?.id === c.id} disabled={busy} onClick={() => { if (selecting) togglePick(c.id); else if (canLeave()) { resetGroup(); selectCharacter(c); requestAnimationFrame(() => nameRef.current?.focus()) } }}>
+                {selecting && <span className="pick-box" aria-hidden="true" />}
+                <Avatar character={c} />
+                <span className="character-card-copy"><strong>{c.name}</strong><span>{c.age_category} · {c.photos.length} {c.photos.length === 1 ? 'photo' : 'photos'}</span></span>
+              </button>
+              {!selecting && <CardMenu label={c.name} disabled={busy} items={[
+                { label: 'Rename', onSelect: () => { if (guardCard(c.id)) setRenaming({ kind: 'character', id: c.id, name: c.name }) } },
+                { label: c.archived ? 'Restore' : 'Archive', onSelect: () => archiveFromCard(c) },
+                { label: 'Delete permanently', danger: true, onSelect: () => deleteCharacterFromCard(c) },
+              ]} />}
+            </div>
           })}</div>}
         </section>
         {(creating || selected) && <section className="panel character-detail" aria-label="Character profile">
@@ -305,14 +417,25 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
       </div>
     </> : <div className="group-columns">
       <section className="panel">
-        <div className="panel-head"><h2>Your groups</h2><button disabled={busy} onClick={newGroup}>+ New group</button></div>
+        <div className="panel-head"><h2>Your groups</h2><div className="panel-head-actions">{!selecting && !!groups.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}<button disabled={busy || selecting} onClick={newGroup}>+ New group</button></div></div>
         <p>Organize couples, families or any collection. Characters can belong to several groups.</p>
+        {selecting && <SelectionBar count={picked.length} total={groups.length} onAll={() => setPicked(groups.map(g => g.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
+          <button type="button" className="danger secondary" disabled={busy || !picked.length} onClick={bulkDeleteGroups}>Delete</button>
+        </SelectionBar>}
         <div className="group-list">{groups.map(g => {
           const shown = g.member_ids.map(id => byId.get(id)).filter((c): c is Character => !!c)
-          return <button key={g.id} className="secondary" disabled={busy} aria-pressed={editingGroup?.id === g.id} onClick={() => { if (canLeave()) openGroup(g) }}>
-            <span className="group-row-copy"><strong>{g.name}</strong><span>{g.member_ids.length} {g.member_ids.length === 1 ? 'member' : 'members'}</span></span>
-            {!!shown.length && <span className="avatar-stack" aria-hidden="true">{shown.slice(0, 4).map(c => <Avatar key={c.id} character={c} size="mini" />)}{shown.length > 4 && <span className="avatar avatar-mini more">+{shown.length - 4}</span>}</span>}
-          </button>
+          const isPicked = picked.includes(g.id)
+          return <div key={g.id} className={`group-row ${isPicked ? 'picked' : ''}`}>
+            <button className="secondary group-main" disabled={busy} aria-pressed={selecting ? isPicked : editingGroup?.id === g.id} onClick={() => { if (selecting) togglePick(g.id); else if (canLeave()) openGroup(g) }}>
+              {selecting && <span className="pick-box" aria-hidden="true" />}
+              <span className="group-row-copy"><strong>{g.name}</strong><span>{g.member_ids.length} {g.member_ids.length === 1 ? 'member' : 'members'}</span></span>
+              {!!shown.length && <span className="avatar-stack" aria-hidden="true">{shown.slice(0, 4).map(c => <Avatar key={c.id} character={c} size="mini" />)}{shown.length > 4 && <span className="avatar avatar-mini more">+{shown.length - 4}</span>}</span>}
+            </button>
+            {!selecting && <CardMenu label={g.name} disabled={busy} items={[
+              { label: 'Rename', onSelect: () => { if (guardCard(g.id)) setRenaming({ kind: 'group', id: g.id, name: g.name }) } },
+              { label: 'Delete group', danger: true, onSelect: () => deleteGroupFromCard(g) },
+            ]} />}
+          </div>
         })}</div>
       </section>
       {!editingGroup && !creatingGroup ? <section className="panel empty-detail"><span className="tiny-label">GROUPS</span><h2>{groups.length ? 'Select a group' : 'No groups yet'}</h2><p>{groups.length ? 'Choose a group from the list to see or change its members.' : 'Use + New group to save a couple, a family or any set of characters you want to pick together later.'}</p></section>
@@ -335,6 +458,7 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
       <form method="dialog"><button className="secondary" autoFocus>Close preview</button></form>
       {preview && <><h2 id="preview-title">{preview.label} reference</h2><img src={preview.original_url} alt={`${preview.label} reference at original size`} /><a href={preview.original_url} target="_blank" rel="noreferrer">Open original at full size</a></>}
     </dialog>
+    {renaming && <TextDialog title={renaming.kind === 'character' ? 'Rename character' : 'Rename group'} label={renaming.kind === 'character' ? 'Name or alias' : 'Group name'} initial={renaming.name} maxLength={80} onSave={saveRename} onClose={() => setRenaming(null)} />}
     <dialog ref={frameDialogRef} className="image-dialog frame-dialog" aria-labelledby="frame-title" onClose={() => setFraming(null)}>
       {framing && <FrameEditor key={framing.id} photo={framing} busy={busy} error={error} onSave={frame => saveFrame(framing, frame)} onCancel={() => setFraming(null)} />}
     </dialog>

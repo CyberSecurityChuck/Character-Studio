@@ -161,10 +161,10 @@ export default function App() {
               </section>
 
               {scenes.length > 0 && <><div className="section-title"><h2>Recent scenes</h2><button className="link-button" onClick={() => navigate('scenes')}>All scenes</button></div>
-                <section className="recent-scenes" aria-label="Recent scenes">{recent.map(s => <button key={s.id} className="scene-card" onClick={() => navigate('scenes', `scenes/${s.id}`)}>
+                <section className="recent-scenes" aria-label="Recent scenes">{recent.map(s => <div key={s.id} className="scene-card"><button className="card-main" onClick={() => navigate('scenes', `scenes/${s.id}`)}>
                   <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
                   <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /></span></span>
-                </button>)}</section></>}
+                </button></div>)}</section></>}
 
               <div className="section-title"><h2>What’s taking shape</h2><span>THE ROAD TO YOUR FIRST SCENE</span></div>
               <section className="roadmap" aria-label="Upcoming phases">{upcoming.map((item, index) => (

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-11 — Phase 3 review refinements (local commit, awaiting follow-up check)
+
+- From the user's Phase 3 review: ⋯ card menus and a Select mode on Scenes (Rename, Duplicate, Delete; bulk Delete), Characters (Rename, Archive/Restore, Delete; bulk Archive/Restore/Delete) and Groups (Rename, Delete; bulk Delete), with a shared rename dialog.
+- Studio settings explanations moved into ⓘ tips (generation engine, time limits, analysis engine choices).
+- Analysis text is shown in sentence case (display only; stored analyses unchanged).
+- Cancel shows "Stopping…" immediately and disables itself until the run ends.
+- The "Your groups" and "No groups yet" panels now match in height. Select is hidden when a list is empty.
+- Frontend only; no API, schema or dependency changes. 69 tests pass.
+
 ## 2026-10-10 — Phase 3: Scene Analysis (local commit, awaiting review)
 
 - Approved by the user ("Approve Phase 3"). Scenes: Base Image upload, thumbnails, rename, duplicate, delete, resume and recent scenes on the Overview.
