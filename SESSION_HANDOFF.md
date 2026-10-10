@@ -40,4 +40,5 @@ PLAN.md remains authoritative. On 2026-10-10 the user directed a planning-only c
   - Gotchas: launch CLIs with `CLAUDE*`/`ANTHROPIC*` variables removed (this desktop session injects its own); close stdin; check `auth status` / `login status` first; Codex exit 0 can still mean "no image".
   - Test images (consenting user's own photos plus a scene) and outputs are in `%USERPROFILE%\Character-Studio-Data\spike-2.5\` and `~\.codex\generated_images\`, outside Git. Do not commit them.
 - Public release prep (2026-10-10, D011): public README, `docs/USER_GUIDE.md`, LICENSE (MIT), RESPONSIBLE_USE.md, SECURITY.md, CI workflow with privacy guard, and demo screenshots (fictional characters only) in `docs/images/`.
+- The repository stays private for now (user's choice). The go-public checklist is in PROJECT_STATUS.md under "Pending: making the GitHub repository public".
 - Next action: wait for an explicit "Approve Phase 3". Do not start scenes, analysis or generation work without it. Every future push to GitHub follows the AGENTS.md publishing rule.

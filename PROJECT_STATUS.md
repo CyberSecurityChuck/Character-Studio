@@ -19,4 +19,13 @@ Last checkpoint: 2026-10-10 04:10 IST (+05:30)
 - Planning change (2026-10-10, user-directed, docs only): D009 "CLI bridge first, manual bridge as fallback" — Claude Code CLI for analysis/polish, Codex CLI for generation, manual bridge as fallback. PLAN.md v2.1 adds Phase 2.5 (engine verification spike) and updates Phases 3–5. The user's follow-up decisions on the plan's open questions are recorded in D009 (both CLI analysis engines in Phase 3; content-only approvals; distinct job statuses; paid API engines planned post-MVP). Batch processing planned as Phase 5.5 with a queue-ready job runner from Phase 3 (D010). No application code changed.
 - Phase 2.5 (engine verification spike): **approved** ("Approve Phase 2.5", 2026-10-10) and **completed** 2026-10-10. claude 2.1.296 (Pro, signed in by the user) and codex-cli 0.162.1 (ChatGPT) are confirmed. Claude analysis took 49 s and Codex analysis 52 s; both returned valid JSON and were confined to their job folders. Codex generation with 2 reference photos took 72 s, output in `~\.codex\generated_images\<thread_id>\`; the user judged the likeness "clearly me". The official OpenAI docs do not promise identity preservation. The spike gate is met. Details and implementation notes are in `docs/PROVIDER_FINDINGS.md`; test files are in `%USERPROFILE%\Character-Studio-Data\spike-2.5\` (outside Git). **Phase 3 is not approved.**
 
+## Pending: making the GitHub repository public (deferred by the user, 2026-10-10)
+
+The repository stays **private** for now, by the user's choice. When the user decides to publish:
+
+1. **User, on GitHub:** Settings → Emails → tick "Keep my email addresses private" and "Block command line pushes that expose my email". Website edits otherwise sign commits with the personal Gmail, as happened on 2026-10-10.
+2. **User:** review the repository, then switch it to public (repo Settings → General → Danger Zone → Change visibility).
+3. **Assistant, with the user's OK:** enable secret scanning, push protection and private vulnerability reporting (free only for public repositories; `SECURITY.md` already links to the reporting form). Dependabot alerts are already on.
+4. **Before going public, re-check:** no personal email in `main` history (`git log --format='%ae%n%ce' | grep -i gmail` should print nothing), and the privacy guard passes (`gh workflow run CI`).
+
 PLAN.md's original Planning/Not Started header is historical; requirements changed only by the dated v2.1 revision.
