@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-10 — Phase 2.5 engine verification spike
+
+- Ran the approved spike with throwaway tests only; no application code changed. Confirmed versions, sign-in and real flags for `claude` 2.1.296 and `codex-cli` 0.162.1.
+- Claude and Codex analysis both returned schema-valid JSON (49 s / 52 s) and were confined to their job folders (`--restricted`; Codex `-s read-only` blocks commands).
+- Codex generation with two consenting reference photos produced an image in 72 s at `~\.codex\generated_images\<thread_id>\`; the user judged the likeness "clearly me".
+- Recorded failure appearances (signed out, timeout, no image produced, which exits 0) and implementation notes in `docs/PROVIDER_FINDINGS.md`. The official OpenAI docs do not promise identity preservation.
+
 ## 2026-10-10 — Batch processing planned (planning only)
 
 - Recorded D010: Phases 3–5 use a queue-ready job runner (single job per click); new Phase 5.5 adds batch scene creation, batch analysis, batch generation of individually approved scenes, N variations and optional quick group mapping. Moved "Batch generation" and "Multiple image variations" out of Phase 6. Added `batch_id`/`not_started` to the planned GenerationJob model. No application code changed.

@@ -36,4 +36,7 @@ PLAN.md remains authoritative. On 2026-10-10 the user directed a planning-only c
 - Git: determine the checkpoint with `git log`. `Phase_Checks/` is ignored. No remote configured and no push.
 - The user resolved all eight v2.1 conflicts on 2026-10-10 (recorded in D009's "Resolved" list and PLAN.md). Paid API engines are a planned post-MVP option, not authorized now.
 - Batch processing planned on 2026-10-10 (D010): queue-ready job runner required in Phases 3–5; batch features in new Phase 5.5 (needs its own approval).
-- Next action: wait for an explicit "Approve Phase 2.5" before running the engine verification spike. Phase 3 needs its own approval. Do not start scenes, analysis or generation work without it.
+- Phase 2.5 approved and **completed** on 2026-10-10. All tests (a, b, b2, c, d) and the failure checks are recorded in `docs/PROVIDER_FINDINGS.md`, including exact commands and implementation notes.
+  - Gotchas: launch CLIs with `CLAUDE*`/`ANTHROPIC*` variables removed (this desktop session injects its own); close stdin; check `auth status` / `login status` first; Codex exit 0 can still mean "no image".
+  - Test images (consenting user's own photos plus a scene) and outputs are in `%USERPROFILE%\Character-Studio-Data\spike-2.5\` and `~\.codex\generated_images\`, outside Git. Do not commit them.
+- Next action: wait for an explicit "Approve Phase 3". Do not start Phase 3 without it. before running the engine verification spike. Phase 3 needs its own approval. Do not start scenes, analysis or generation work without it.
