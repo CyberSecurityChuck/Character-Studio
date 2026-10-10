@@ -23,7 +23,7 @@ Last checkpoint: 2026-10-10 04:10 IST (+05:30)
 
 The repository stays **private** for now, by the user's choice. When the user decides to publish:
 
-1. **User, on GitHub:** Settings → Emails → tick "Keep my email addresses private" and "Block command line pushes that expose my email". Website edits otherwise sign commits with the personal Gmail, as happened on 2026-10-10.
+1. ~~**User, on GitHub:** Settings → Emails → tick "Keep my email addresses private" and "Block command line pushes that expose my email".~~ **Done by the user on 2026-10-10.** (Without these, website edits sign commits with the personal Gmail, as happened earlier that day.)
 2. **User:** review the repository, then switch it to public (repo Settings → General → Danger Zone → Change visibility).
 3. **Assistant, with the user's OK:** enable secret scanning, push protection and private vulnerability reporting (free only for public repositories; `SECURITY.md` already links to the reporting form). Dependabot alerts are already on.
 4. **Before going public, re-check:** no personal email in `main` history (`git log --format='%ae%n%ce' | grep -i gmail` should print nothing), and the privacy guard passes (`gh workflow run CI`).
