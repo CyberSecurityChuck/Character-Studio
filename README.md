@@ -1,104 +1,253 @@
-# Character Studio
+<div align="center">
 
-A local-first home for reusable characters, reference scenes and approved image workflows.
+# 🎭 Character Studio
 
-**Current scope: Phase 2 Character Library.** Create and edit characters, upload multiple reference photos, choose a primary photo, add labels, preview originals, search, and organize groups. Archive/restore or explicitly delete profiles and photos. The overview, saved settings and provider status remain available. Scenes, analysis, approvals, generation and export/import are not implemented yet. PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
+**Recreate any scene with the people you care about, privately, on your own computer.**
 
-**How it will work (planned, D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
+Save your characters once, pick a reference scene, approve the prompt, and let the AI tools you already subscribe to do the rest.
 
-## Start and stop
+[![CI](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-A0442A.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-early%20development-F59E0B.svg)](#-roadmap)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-quick-start)
+<br/>
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Local-first](https://img.shields.io/badge/local--first-no%20cloud%20backend-2E7D32.svg)](#-privacy-by-design)
+[![No API keys](https://img.shields.io/badge/AI-no%20API%20keys-7C3AED.svg)](#-how-the-ai-part-works)
 
-After setup, double-click **Start-Studio.cmd**. It starts the local service in the background and opens **http://127.0.0.1:8765**. Double-click **Stop-Studio.cmd** to stop the launcher-managed service. Closing the browser does not stop the service. Save changes before closing; only changes acknowledged as saved are durable.
+<br/>
 
-The launcher refuses to stop a process whose executable/start time no longer matches its record. For terminal development, use `uv run --locked python -m backend` and Ctrl+C instead.
+<img src="docs/images/library.png" alt="Character Studio character library showing six illustrated demo characters" width="900"/>
 
-## First setup / clean checkout
+<sub>Screenshots use fictional demo characters with illustrated portraits.</sub>
 
-Prerequisites: Windows, Node.js 24 LTS with npm, and uv. Python 3.12 is managed by uv; dependencies live in the project's `.venv`. No OpenAI account credentials or API key are required by this application.
+</div>
 
-For the planned AI features (Phase 3 onward; not needed for the current Character Library): install and sign in to **Claude Code** (`claude`) with a **Claude Pro** subscription, and **Codex CLI** (`codex`) with a **ChatGPT plan that includes image generation (Plus or above)**. Sign in through each tool yourself; the studio only launches them. Without them, the manual bridge still works.
+---
+
+> [!NOTE]
+> **Early development.** The **Character Library** (Phases 1–2) works today. Scenes, AI analysis, approvals and image generation are designed, verified in a spike and being built phase by phase. See the [roadmap](#-roadmap).
+
+## ✨ Why Character Studio?
+
+Recreating a photo with different people usually means re-uploading the same reference photos and rewriting long prompts every time, while juggling several apps. Character Studio keeps it all in one place:
+
+- 📚 **Save each person once.** Reuse their reference photos in every scene.
+- 🧭 **Composition and identity stay separate.** The scene decides *how and where*; your character photos decide *who*.
+- ✅ **Nothing will generate without your approval** of the exact prompt, photos and person-to-subject mapping.
+- 🔒 **Everything stays on your computer.** Data will leave only when you click an AI action.
+- 💸 **No API keys, no per-image billing.** It will drive the official `claude` and `codex` command-line tools under your own subscriptions.
+
+## 🧩 Features
+
+| | Feature | Status |
+|---|---|---|
+| 📚 | Character profiles: name, age category, notes, search, archive/restore | ✅ Available |
+| 🖼️ | Multiple reference photos per character, labels (front, ¾, profile…), primary photo | ✅ Available |
+| 🎯 | Adjustable round thumbnails (drag and zoom; originals never altered) | ✅ Available |
+| 👨‍👩‍👧 | Reusable groups: couples, families, friends | ✅ Available |
+| ♻️ | Crash-safe storage: stale-edit protection, upload/delete recovery | ✅ Available |
+| 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual) | 🔜 Phase 3 |
+| 🧑‍🤝‍🧑 | Map people in the scene to saved characters; optional "Polish prompt" | 🗓️ Phase 4 |
+| 🎨 | One-click generation via Codex CLI, results gallery, version history | 🗓️ Phase 5 |
+| 📦 | Batch analysis and generation, multiple variations | 🗓️ Phase 5.5 |
+
+## 🔄 How it works
+
+```mermaid
+flowchart TB
+    subgraph PREP["① Prepare"]
+        direction LR
+        A["📚 Character Library<br/>save people once"]:::done --> B["🖼️ Base Image<br/>the scene to recreate"]:::next
+        B --> C{"🔍 Analyse"}:::next
+        C -->|Claude Code| D["📝 Structured<br/>scene analysis"]:::next
+        C -->|Codex| D
+        C -->|Manual import| D
+    end
+    subgraph CREATE["② Create"]
+        direction LR
+        E["🧑‍🤝‍🧑 Map subjects<br/>to characters"]:::planned --> F["✍️ Prompt from template<br/>+ optional Polish"]:::planned
+        F --> G{"✅ You<br/>approve"}:::approve
+        G --> H{"🎨 Generate"}:::planned
+        H -->|Codex CLI| I["🖼️ Results gallery<br/>never overwritten"]:::planned
+        H -->|Manual export / import| I
+    end
+    PREP ==> CREATE
+    style PREP fill:transparent,stroke:#F59E0B,stroke-width:2px
+    style CREATE fill:transparent,stroke:#5C6BC0,stroke-width:2px
+
+    classDef done fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
+    classDef next fill:#F59E0B,stroke:#B45309,color:#1F1300,stroke-width:2px
+    classDef planned fill:#5C6BC0,stroke:#3949AB,color:#ffffff,stroke-width:2px
+    classDef approve fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:3px
+```
+
+<sub>🟩 available · 🟧 next (Phase 3) · 🟦 planned · 🟥 your approval gate</sub>
+
+**The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template will enforce this split, so a character's reference photos never change the scene's composition.
+
+## 🤖 How the AI part works
+
+*Coming in Phases 3–5.* Character Studio will **not** call paid AI APIs. When you click an AI action, it will run the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
+
+| Step | Default engine | Alternatives | Uses |
+|---|---|---|---|
+| 🔍 Scene analysis | **Claude Code** (`claude -p`) | Codex · Manual | Claude Pro plan |
+| ✍️ Polish prompt (optional) | **Claude Code** (`claude -p`) | Keep template prompt | Claude Pro plan |
+| 🎨 Image generation | **Codex CLI** (`codex exec`) | Manual export / import | ChatGPT plan with image generation |
+
+- The studio **never reads, stores or forwards** your CLI logins, never scrapes websites and never uses unofficial endpoints or gateways.
+- Every run will have a **timeout and a Cancel button** and will **never be retried automatically**.
+- The **manual bridge** (copy the instruction, export a package, import the result) stays available as a fallback.
+
+These choices were checked in a hands-on [engine verification spike](docs/PROVIDER_FINDINGS.md): real CLI flags, output locations, failure modes and folder confinement. The design rationale is in [DECISIONS.md](DECISIONS.md) (D009).
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    subgraph PC["💻 Your computer"]
+        direction TB
+        UI["🌐 React + TypeScript UI<br/>in your browser"]:::ui
+        API["⚙️ FastAPI service<br/>bound to 127.0.0.1 only"]:::core
+        DB[("🗄️ SQLite<br/>versioned migrations")]:::store
+        FS[("📁 Private data folder<br/>photos · thumbnails · results")]:::store
+        Q["🧵 Job runner<br/>one job at a time"]:::planned
+        CL["claude CLI"]:::planned
+        CX["codex CLI"]:::planned
+        UI <-->|"token-protected local API"| API
+        API --> DB
+        API --> FS
+        API --> Q
+        Q --> CL
+        Q --> CX
+    end
+    CL -. "your Claude Pro login" .-> AN(["☁️ Anthropic"]):::cloud
+    CX -. "your ChatGPT login" .-> OA(["☁️ OpenAI"]):::cloud
+
+    classDef ui fill:#0EA5E9,stroke:#0369A1,color:#ffffff,stroke-width:2px
+    classDef core fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:2px
+    classDef store fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
+    classDef planned fill:#5C6BC0,stroke:#3949AB,color:#ffffff,stroke-width:2px,stroke-dasharray: 5 3
+    classDef cloud fill:#64748B,stroke:#334155,color:#ffffff,stroke-width:2px
+    style PC fill:transparent,stroke:#A0442A,stroke-width:2px
+```
+
+<sub>Dashed boxes are planned (Phase 3 onward). The app itself has no cloud backend.</sub>
+
+## 🔒 Privacy by design
+
+| Stays on your computer | Will leave your computer only when you click (Phases 3–5) |
+|---|---|
+| ✅ Character profiles, reference photos, thumbnails | 🔍 **Analyse** sends the scene image to Anthropic (or OpenAI if you pick Codex) |
+| ✅ Scenes, prompts, approvals, results, history | ✍️ **Polish prompt** sends prompt text (no images) to Anthropic |
+| ✅ The database and all logs | 🎨 **Generate** sends the scene and the chosen reference photos to OpenAI |
+
+Today, with the Character Library, **nothing** is sent anywhere.
+
+- 🏠 The server only listens on `127.0.0.1`, with host/origin checks and a per-session request token.
+- 📂 Your data lives in a separate folder (default `%USERPROFILE%\Character-Studio-Data`), never inside the source code.
+- 🧹 Thumbnails are stored without photo metadata. Location (GPS) data will be stripped from any image before it is sent to an AI tool.
+- 🙅 No analytics, no remote fonts, no telemetry.
+- ⚠️ Local files are not encrypted, so anyone with access to your Windows account can read them.
+- 🛡️ Git ignores photos, databases and logs, and CI runs a [privacy guard](.github/workflows/ci.yml) on every push.
+
+## 🚀 Quick start
+
+> [!IMPORTANT]
+> Character Studio currently targets **Windows 10/11**.
+
+**You need:** [Node.js 24 LTS](https://nodejs.org/) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.12 for you.
+For the upcoming AI features you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude Pro plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. You don't need them for the Character Library.
 
 ```powershell
+git clone https://github.com/CyberSecurityChuck/Character-Studio.git
+cd Character-Studio
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
 ```
 
-Setup installs locked Python and npm dependencies and builds the frontend. Package downloads require internet access. Normal startup requires neither downloads nor AI requests. Do not modify lockfiles without recording the dependency change.
+Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:8765>. Use **`Stop-Studio.cmd`** to stop it.
 
-Equivalent commands:
+📖 Full setup, configuration, troubleshooting and day-to-day use: **[User Guide](docs/USER_GUIDE.md)**.
 
-```powershell
-uv sync --locked --python 3.12
-npm.cmd ci --prefix frontend
-npm.cmd --prefix frontend run build
-uv run --locked python -m backend
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/profile.png" alt="Character profile with labelled reference photos"/><br/><sub><b>Character profile</b>: labelled reference photos, primary photo, thumbnail framing</sub></td>
+    <td width="50%"><img src="docs/images/groups.png" alt="Group editor showing a four-person family group"/><br/><sub><b>Groups</b>: families, couples and friends, reusable across scenes</sub></td>
+  </tr>
+</table>
+
+## 🗺️ Roadmap
+
+```mermaid
+flowchart TB
+    subgraph NOW["✅ Done → 🔜 Next"]
+        direction LR
+        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::next
+    end
+    subgraph LATER["🗓️ Planned"]
+        direction LR
+        P4["4 · Mapping<br/>& approval"]:::planned --> P5["5 · Generation<br/>& results"]:::planned --> P55["5.5 · Batch<br/>processing"]:::planned --> P6["6 · Quality<br/>& extras"]:::later
+    end
+    NOW ==> LATER
+    style NOW fill:transparent,stroke:#2E7D32,stroke-width:2px
+    style LATER fill:transparent,stroke:#5C6BC0,stroke-width:2px
+
+    classDef done fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
+    classDef next fill:#F59E0B,stroke:#B45309,color:#1F1300,stroke-width:3px
+    classDef planned fill:#5C6BC0,stroke:#3949AB,color:#ffffff,stroke-width:2px
+    classDef later fill:#94A3B8,stroke:#475569,color:#0F172A,stroke-width:2px
 ```
 
-## Storage and configuration
+Phase 6 ideas include region-based editing, identity and composition checks, and optional paid API engines (off by default). The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md).
 
-Default data directory: `%USERPROFILE%\Character-Studio-Data`. The application creates `studio.db` plus directories for characters, scenes, generations, thumbnails, exports and backups. Preferences, character profiles, reference photos, thumbnails and groups persist locally. These files belong to the user and must survive source updates. The user-profile location avoids Windows packaged-app redirection of `LOCALAPPDATA`, so launches from Codex and Explorer use the same default.
+## 🛠️ Tech stack
 
-Optional environment variables, set before starting:
+| Layer | Technology |
+|---|---|
+| Frontend | React 19 · TypeScript · Vite |
+| Backend | Python 3.12 · FastAPI · Pydantic |
+| Storage | SQLite (SQLAlchemy + Alembic migrations) · local filesystem |
+| Images | Pillow |
+| AI engines | Claude Code CLI · Codex CLI (official, subscription-based) |
+| Tooling | uv · npm · pytest · Ruff · GitHub Actions |
 
-```powershell
-$env:STUDIO_DATA_DIR = 'D:\Character-Studio-Data'
-$env:STUDIO_PORT = '8765'
-$env:STUDIO_MAX_UPLOAD_BYTES = '20971520' # 20 MiB per photo
+## 📁 Project layout
+
+```text
+backend/      FastAPI app, models, migrations, provider contracts
+frontend/     React + TypeScript UI (Vite)
+tests/        pytest suite (isolated temporary data, no network)
+scripts/      Windows setup / start / stop scripts
+docs/         User guide, provider findings, recovery, continuity, design
+PLAN.md       Authoritative requirements and phased roadmap
+DECISIONS.md  Architecture decision log
 ```
 
-`STUDIO_DATA_DIR` must be absolute and outside (and not a parent of) the source repository. Changing it opens a different data directory; it does not move existing work. Stop the running service before changing configuration. Use the same environment configuration when stopping it. Do not put the live SQLite database in a shared/network/cloud-sync folder.
-
-The backend always binds to `127.0.0.1`. Host/origin checks, a per-process request token, CSP and no-store responses restrict browser-based misuse. This is a single-user local tool, not a public authenticated service. Local files are not encrypted; anyone with filesystem access can read them. No analytics, remote fonts or AI network clients are included.
-
-## Development
-
-Backend: `uv run --locked python -m backend`.
-
-Frontend in a separate terminal: `npm.cmd --prefix frontend run dev`, then visit `http://127.0.0.1:5173`. Vite proxies `/api` to the local backend. Set the same `STUDIO_PORT` for both processes if changing it. After frontend changes, build again for the normal launcher.
+## 🧪 Development
 
 ```powershell
-uv run --locked pytest
-uv run --locked ruff check .
-npm.cmd --prefix frontend run build
+uv run --locked pytest              # tests
+uv run --locked ruff check .        # lint
+npm --prefix frontend run build     # type-check + production build
 ```
 
-If a restricted agent sandbox prevents uv cache access, use the installed executables for offline checks: `.\.venv\Scripts\python.exe -m pytest` and `.\.venv\Scripts\ruff.exe check .`. An agent should request appropriate escalation for necessary blocked operations rather than change system permissions.
+The project is built in small, approved phases and keeps continuity records ([PROJECT_STATUS](PROJECT_STATUS.md), [SESSION_HANDOFF](SESSION_HANDOFF.md), [CHANGELOG](CHANGELOG.md)), so any work session can be paused and resumed safely. It is developed with the help of AI coding assistants.
 
-Tests use isolated temporary data outside the repository. They do not call external image services. The database schema is managed by Alembic on startup; unknown future revisions fail rather than being downgraded. Never edit historical migrations after release; add a new revision. Migrations receive an explicit SQLAlchemy connection from `backend/persistence.py`; destructive downgrades are disabled.
+## 🤝 Responsible use
 
-## AI capabilities and costs
+Character Studio works with real people's likenesses. **Only use photos of yourself or of people who have agreed**, take extra care with children, and never use it to deceive, impersonate or harass. Please read the **[Responsible Use policy](RESPONSIBLE_USE.md)**.
 
-AI integration still consists of interfaces and capability metadata only. There is no generation endpoint, credential storage or automatic retry behavior. Paid API access is **disabled**. Paid API-based engines for analysis and generation are planned after the MVP as an opt-in that needs separate approval and asks for cost confirmation on every run.
+## 🔐 Security
 
-Planned direction (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. Both CLI paths are **unverified** until the Phase 2.5 verification spike records their real flags, output locations and failure modes.
+Found a vulnerability? Please report it privately. See **[SECURITY.md](SECURITY.md)**.
 
-Each run uses your plan's allowance and sends data to that provider: **Analyse** sends the Base Image to Anthropic (or to OpenAI if Codex is the analysis engine); **Polish prompt** sends prompt and analysis text to Anthropic; **Generate** sends the Base Image and chosen reference photos to OpenAI. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
+## 📄 License
 
-## Continuity and recovery
-
-- Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
-- Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
-- Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phases 1 and 2. Phase 2.5 (engine verification spike), Phase 3 and later require explicit approval.
-
-For data recovery and current backup limitations see `docs/RECOVERY.md`. Git backs up source history, not private application data.
-
-## Troubleshooting
-
-- **Cannot reach studio:** run Start-Studio.cmd; check `server.stderr.log` in the selected private data folder. No request bodies are logged.
-- **Port in use:** stop the existing instance or select another port; do not kill unrelated services.
-- **Session expired after restart:** reload before saving; the per-process request token has changed.
-- **Another tab saved first:** the app rejects the stale save and retains your typed edit. Copy it before choosing "Discard local edit and reload".
-- **Database revision error:** stop and inspect the error; preserve the data folder. Do not delete or downgrade the database to fix startup.
-- **Build missing:** run `npm.cmd --prefix frontend run build`, then restart.
-
-## Character Library
-
-Open **Characters**, choose **New character**, enter a name/alias and age category, then save. Add one or more JPEG, PNG or WebP still photos (20 MiB and 40 megapixels per photo by default). Originals remain unchanged, including their metadata; separate thumbnails omit metadata and correct display orientation. Nothing is sent to an external service.
-
-Use each photo's label selector and **Make primary** button. Open a thumbnail for the full-size preview. To choose what shows inside a character's round thumbnail, click the profile photo (✎) or **Adjust thumbnail** on the primary photo, then drag and zoom; only the display framing is saved and the original photo is unchanged. **Groups** lets you create/rename groups and add/remove members; a character can belong to several groups. Search by name and filter by group or archived status.
-
-Refreshing the browser keeps the current page, library tab and open profile or group (the address shows, for example, `#/characters/<id>` or `#/groups`).
-
-**Archive character** preserves all data and hides the profile from the active list; enable **Show archived** to restore it. **Delete permanently** removes the profile, references and memberships after explicit confirmation. Deleting a group preserves its characters/photos. A deleted primary photo falls back to the oldest remaining reference.
-
-Save profile edits before changing photos. If a batch upload stops, earlier successful uploads remain saved; reload to verify saved state before selecting remaining files. A stale revision or expired session is rejected. Reload after a service restart. Locked file deletions remain queued and are retried at startup; the UI reports pending cleanup.
+[MIT](LICENSE) © CyberSecurityChuck

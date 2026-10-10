@@ -33,10 +33,11 @@ PLAN.md remains authoritative. On 2026-10-10 the user directed a planning-only c
 ## Runtime and next action
 
 - Normal app: http://127.0.0.1:8765; data `%USERPROFILE%\Character-Studio-Data`; schema `0003_photo_framing`. Restart is needed after backend changes; a browser refresh suffices for frontend-only builds.
-- Git: determine the checkpoint with `git log`. `Phase_Checks/` is ignored. No remote configured and no push.
+- Git: determine the checkpoint with `git log`. `Phase_Checks/` and `.playwright-mcp/` are ignored. History was rewritten on 2026-10-10 before publishing (D011): noreply email, no local profile path. The local-only `backup/pre-public-rewrite` branch and Codex `refs/codex/*` refs must **never** be pushed; push only `main`. The repository's Git config uses the noreply address. The public GitHub repository `CyberSecurityChuck/Character-Studio` was prepared for; check `git remote -v` for whether it exists and was pushed.
 - The user resolved all eight v2.1 conflicts on 2026-10-10 (recorded in D009's "Resolved" list and PLAN.md). Paid API engines are a planned post-MVP option, not authorized now.
 - Batch processing planned on 2026-10-10 (D010): queue-ready job runner required in Phases 3–5; batch features in new Phase 5.5 (needs its own approval).
 - Phase 2.5 approved and **completed** on 2026-10-10. All tests (a, b, b2, c, d) and the failure checks are recorded in `docs/PROVIDER_FINDINGS.md`, including exact commands and implementation notes.
   - Gotchas: launch CLIs with `CLAUDE*`/`ANTHROPIC*` variables removed (this desktop session injects its own); close stdin; check `auth status` / `login status` first; Codex exit 0 can still mean "no image".
   - Test images (consenting user's own photos plus a scene) and outputs are in `%USERPROFILE%\Character-Studio-Data\spike-2.5\` and `~\.codex\generated_images\`, outside Git. Do not commit them.
-- Next action: wait for an explicit "Approve Phase 3". Do not start Phase 3 without it. before running the engine verification spike. Phase 3 needs its own approval. Do not start scenes, analysis or generation work without it.
+- Public release prep (2026-10-10, D011): public README, `docs/USER_GUIDE.md`, LICENSE (MIT), RESPONSIBLE_USE.md, SECURITY.md, CI workflow with privacy guard, and demo screenshots (fictional characters only) in `docs/images/`.
+- Next action: wait for an explicit "Approve Phase 3". Do not start scenes, analysis or generation work without it. Every future push to GitHub follows the AGENTS.md publishing rule.

@@ -13,4 +13,4 @@
 - Ask the user before creating or connecting a GitHub repository or pushing code. Confirm the intended GitHub account and repository; local checkpoint approval does not authorize publishing.
 - On "Resume Character Studio", verify documentation against files, Git status and history; report discrepancies and continue only within approved scope.
 - Keep development recovery separate from application recovery. Persist application state server-side; never automatically repeat interrupted generation requests.
-- Run `uv run --locked pytest`, `uv run --locked ruff check .`, and `npm --prefix frontend run build` for relevant Phase 1/Phase 2 changes. See README.md for setup and launch.
+- Run `uv run --locked pytest`, `uv run --locked ruff check .`, and `npm --prefix frontend run build` for relevant Phase 1/Phase 2 changes. See docs/USER_GUIDE.md for setup and launch.

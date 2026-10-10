@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-10 — Prepared for public GitHub release
+
+- Rewrote the local (never pushed) history with the user's approval: noreply author/committer email on all commits; local Windows profile path replaced with `%USERPROFILE%`. Backup branch kept locally.
+- Added a public README with badges, Mermaid workflow/architecture/roadmap diagrams and screenshots of fictional demo characters. Moved the operator README to `docs/USER_GUIDE.md` and updated its references (AGENTS.md, Setup.ps1, continuity test).
+- Added MIT `LICENSE`, `RESPONSIBLE_USE.md`, `SECURITY.md` and a GitHub Actions workflow (Windows tests, lint and build, plus a privacy guard). `.gitignore` now allows only `docs/images/*.png` screenshots and ignores local browser-automation output.
+
 ## 2026-10-10 — Phase 2.5 engine verification spike
 
 - Ran the approved spike with throwaway tests only; no application code changed. Confirmed versions, sign-in and real flags for `claude` 2.1.296 and `codex-cli` 0.162.1.

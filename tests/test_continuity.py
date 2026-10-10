@@ -14,6 +14,7 @@ def test_recovery_entrypoints_and_dependency_locks_exist():
         "CHANGELOG.md",
         "DECISIONS.md",
         "README.md",
+        "docs/USER_GUIDE.md",
         "docs/CONTINUITY.md",
         "docs/RECOVERY.md",
         "uv.lock",

@@ -101,3 +101,13 @@
 - Reason: single runs ship sooner; Phase 2.5 timings and plan limits should inform batch sizes; designing the runner as a queue now keeps the later batch work small. Plan usage limits, not speed, are the main constraint, so pause-and-continue matters more than parallelism.
 - Alternatives: batch inside Phases 3 and 5 (bigger phases, later single-run delivery); leave in Phase 6 (risk of restructuring a single-run job system).
 - Approval: user-directed planning change on 2026-10-10. Phase 5.5 needs its own explicit approval.
+
+## D011 — Public GitHub repository and public-facing documentation (2026-10-10)
+
+- Decision: publish the project as the public repository `CyberSecurityChuck/Character-Studio` (account and name confirmed by the user). Push only `main`; never push backup branches or other local refs.
+- Privacy before first push (explicitly approved history rewrite, nothing previously pushed): all 9 local commits were rewritten to use the GitHub noreply address `174940690+CyberSecurityChuck@users.noreply.github.com`, and the local Windows profile path was replaced with `%USERPROFILE%` in `SESSION_HANDOFF.md` across history. Content otherwise identical. A local-only backup branch `backup/pre-public-rewrite` keeps the original history. The repository's Git config uses the noreply address for future commits.
+- Licence: MIT, copyright "CyberSecurityChuck" (handle rather than real name, for privacy).
+- Docs: new public `README.md` (badges, Mermaid diagrams checked in light and dark themes, screenshots of fictional demo characters with illustrated portraits). The former README moved to `docs/USER_GUIDE.md`. Added `RESPONSIBLE_USE.md` (consent, children, no deception, provider terms) and `SECURITY.md` (private vulnerability reporting).
+- CI: GitHub Actions runs pytest, Ruff and the frontend build on Windows, plus a privacy guard that fails if images, databases, logs, archives, keys or env files are tracked. The only exception is README screenshots in `docs/images/`, which `.gitignore` now allows.
+- Alternatives: keep the Gmail address public (rejected for privacy and spam); publish a single squashed commit (loses history); no licence (prevents reuse).
+- Approval: user request on 2026-10-10. Creating the GitHub repository, pushing and changing its security settings each need the user's final confirmation.

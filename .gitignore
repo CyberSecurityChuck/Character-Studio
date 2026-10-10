@@ -42,3 +42,10 @@ Thumbs.db
 
 # User's local phase-review checklists and reports (kept out of Git by request)
 Phase_Checks/
+
+# README screenshots (synthetic data only) are the one allowed image location
+!docs/images/
+!docs/images/*.png
+
+# Local browser-automation output
+.playwright-mcp/
