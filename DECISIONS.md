@@ -112,3 +112,16 @@
 - Alternatives: keep the Gmail address public (rejected for privacy and spam); publish a single squashed commit (loses history); no licence (prevents reuse).
 - Approval: user request on 2026-10-10. Creating the GitHub repository, pushing and changing its security settings each need the user's final confirmation.
 - Update (2026-10-10): the repository was created **private** first at the user's request; the user switches it to public. CI changed to **on request only** (`workflow_dispatch`) to save Actions minutes while private; run it at phase checkpoints so the README badge reflects a recent check. Alternatives considered: run on every push (truthful but uses minutes); run once then disable (rejected: the badge would stay "passing" forever without re-checking).
+
+## D012 — Phase 3 implementation choices (2026-10-10)
+
+- Decision: one analysis format. The Phase 2.5 JSON Schema is passed to `claude --json-schema` and `codex exec --output-schema`, and the same shape is enforced by Pydantic models (with size limits) for every engine result and every manual import. Pasted manual replies may be wrapped in a Markdown fence or a sentence.
+- Decision: analyses are immutable versions. Corrections and confirmed uncertainties create a new `user_edit` version that records the version it was based on; confirmed items are kept beside the schema-strict JSON. Restoring an old version creates a new version.
+- Decision: the studio's own template builds the prompt (engine-neutral; Phase 5 adds the Codex wrapper). Prompt versions record the analysis they were built from, so the UI can warn when the analysis has moved on.
+- Decision: one `engine_jobs` table and one `JobRunner` thread for all engine runs (analysis now; polish and generation later), claiming the oldest `not_started` job atomically. Statuses: not_started, running, completed, failed, cancelled, interrupted, plus `batch_id` (D010). At startup running jobs become interrupted and waiting jobs cancelled; nothing resumes.
+- Decision: launch hygiene. Remove `CLAUDE*`, `ANTHROPIC*`, `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `CODEX_API_KEY` from the child environment so a run can only use the user's own subscription login and official endpoint (no per-use billing). Check sign-in before each run. Kill the whole process tree on cancel or timeout (`taskkill /T` on Windows).
+- Decision: on Windows an npm `.cmd` shim is not executed (cmd.exe would re-parse the prompt). The studio runs the package's own launcher script (`@openai/codex/bin/codex.js`, or Claude Code's `cli.js` if installed via npm) with node, so arguments are passed exactly. Native executables (the current `claude.exe`) run directly.
+- Decision: status checks keep only installed / version / signed in / plan; raw status output is never returned or stored.
+- Decision: test-only `Settings.engine_commands` replaces the CLIs with `tests/fake_cli.py`; it is not read from the environment.
+- Alternatives: separate per-engine schemas (drift risk); overwriting analyses in place (loses provenance); one thread per job (conflicts with sequential plan-limit-friendly runs); running `codex.cmd` through cmd.exe (argument injection risk).
+- Approval: within the approved Phase 3 scope ("Approve Phase 3", 2026-10-10). No dependencies added.

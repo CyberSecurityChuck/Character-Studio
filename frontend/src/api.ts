@@ -28,7 +28,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit, fallback = 'Check the name, age category and other fields before saving.'): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 60_000)
   try {
@@ -36,7 +36,7 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new ApiError(
-        typeof body.detail === 'string' ? body.detail : 'Check the name, age category and other fields before saving.',
+        typeof body.detail === 'string' ? body.detail : fallback,
         response.status,
       )
     }
@@ -57,3 +57,9 @@ export const savePreferences = (preferences: Preferences, token: string) =>
     headers: { 'Content-Type': 'application/json', 'X-Studio-Token': token },
     body: JSON.stringify(preferences),
   })
+
+// JSON writes carry the session token; the fallback message covers field-level validation errors.
+export const send = <T>(path: string, method: string, token: string, body?: unknown) => request<T>(path, {
+  method, headers: { 'X-Studio-Token': token, 'Content-Type': 'application/json' },
+  body: body === undefined ? undefined : JSON.stringify(body),
+}, 'Some entries are missing or too long. Check them and try again.')

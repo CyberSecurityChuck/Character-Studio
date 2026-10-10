@@ -1,4 +1,13 @@
-from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -63,3 +72,90 @@ class GroupMember(Base):
 class PendingFileDeletion(Base):
     __tablename__ = "pending_file_deletions"
     path: Mapped[str] = mapped_column(String(100), primary_key=True)
+
+
+class EngineSettings(Base):
+    __tablename__ = "engine_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton_engine_settings"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    analysis_engine: Mapped[str] = mapped_column(String(20))
+    generation_engine: Mapped[str] = mapped_column(String(20))
+    claude_timeout: Mapped[int] = mapped_column(Integer)
+    codex_timeout: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+
+
+class Scene(Base):
+    __tablename__ = "scenes"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    original_path: Mapped[str] = mapped_column(String(100))
+    thumbnail_path: Mapped[str] = mapped_column(String(100))
+    media_type: Mapped[str] = mapped_column(String(20))
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    workflow_state: Mapped[str] = mapped_column(String(30))
+    duplicated_from: Mapped[str | None] = mapped_column(String(32))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[str] = mapped_column(String(40))
+    last_opened_at: Mapped[str | None] = mapped_column(String(40))
+
+
+class SceneAnalysis(Base):
+    __tablename__ = "scene_analyses"
+    __table_args__ = (UniqueConstraint("scene_id", "version"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    structured_analysis: Mapped[str] = mapped_column(Text)
+    analysis_text: Mapped[str] = mapped_column(Text)
+    # Uncertainties the user confirmed; kept beside the schema-strict analysis JSON.
+    confirmed_uncertainties: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(20))
+    engine_version: Mapped[str | None] = mapped_column(String(80))
+    raw_output_path: Mapped[str | None] = mapped_column(String(200))
+    based_on_id: Mapped[str | None] = mapped_column(String(32))
+    job_id: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[str] = mapped_column(String(40))
+
+
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
+    __table_args__ = (UniqueConstraint("scene_id", "version"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    analysis_id: Mapped[str | None] = mapped_column(ForeignKey("scene_analyses.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    prompt_text: Mapped[str] = mapped_column(Text)
+    negative_prompt: Mapped[str] = mapped_column(Text)
+    scene_changes: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(20))
+    is_polished: Mapped[bool] = mapped_column(Boolean, default=False)
+    polished_from_version_id: Mapped[str | None] = mapped_column(String(32))
+    engine_version: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[str] = mapped_column(String(40))
+
+
+class EngineJob(Base):
+    """One CLI engine run. Queue-ready: several may wait as not_started (D010)."""
+
+    __tablename__ = "engine_jobs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    engine: Mapped[str] = mapped_column(String(20))
+    engine_version: Mapped[str | None] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    batch_id: Mapped[str | None] = mapped_column(String(32))
+    job_folder: Mapped[str | None] = mapped_column(String(200))
+    timeout_seconds: Mapped[int] = mapped_column(Integer)
+    error_kind: Mapped[str | None] = mapped_column(String(30))
+    error_details: Mapped[str | None] = mapped_column(Text)
+    result_id: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[str] = mapped_column(String(40))
+    started_at: Mapped[str | None] = mapped_column(String(40))
+    finished_at: Mapped[str | None] = mapped_column(String(40))

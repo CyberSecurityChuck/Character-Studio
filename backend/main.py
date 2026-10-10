@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.configuration import Settings, load_settings
+from backend.jobs import JobRunner, reconcile_on_startup
 from backend.library import clean_deleted_files
 from backend.library import router as library_router
 from backend.models import StudioPreferences
 from backend.persistence import SCHEMA_REVISION, open_database
 from backend.providers import PROVIDERS
+from backend.scenes import router as scenes_router
 from backend.schemas import PreferencesResponse, PreferencesUpdate
 
 
@@ -26,10 +28,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = open_database(settings)
         app.state.settings = settings
         clean_deleted_files(app.state.engine, settings)
+        # Runs left over from a previous process are never resumed (DECISIONS.md D010).
+        reconcile_on_startup(app.state.engine)
+        app.state.runner = JobRunner(app.state.engine, settings)
+        app.state.runner.start()
         app.state.session_token = secrets.token_urlsafe(32)
         try:
             yield
         finally:
+            app.state.runner.stop()
             app.state.engine.dispose()
 
     app = FastAPI(
@@ -108,7 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "preferences": preferences,
             "session_token": app.state.session_token,
-            "phase": 2,
+            "phase": 3,
             "max_upload_bytes": settings.max_upload_bytes,
             "schema_revision": SCHEMA_REVISION,
             "data_directory": str(settings.data_dir),
@@ -129,6 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return PreferencesResponse(studio_name=body.studio_name, revision=body.revision + 1)
 
     app.include_router(library_router)
+    app.include_router(scenes_router)
 
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):

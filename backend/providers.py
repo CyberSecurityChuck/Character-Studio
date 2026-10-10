@@ -1,4 +1,4 @@
-"""Provider boundaries only. Phase 1 includes no generation or analysis execution."""
+"""Provider registry. Analysis runs through the official CLIs (D009); generation is Phase 5."""
 
 from enum import StrEnum
 from typing import Literal, Protocol
@@ -77,18 +77,32 @@ class GenerationProvider(Protocol):
 
 PROVIDERS = (
     ProviderCapabilities(
-        id="manual_bridge",
-        name="Manual bridge",
-        status="planned",
-        description="Prepare approved packages for Codex or ChatGPT, then import your results.",
-        pricing="No API calls from Character Studio. External service usage limits still apply.",
+        id="claude_cli",
+        name="Claude Code CLI",
+        status="available",
+        description="Scene analysis with your own Claude sign-in. Runs only when you click "
+        "Analyse; sends the Base Image to Anthropic.",
+        analysis=True,
+        sends_images_externally=True,
+        pricing="Uses your Claude plan's usage allowance. No API key or per-use billing.",
     ),
     ProviderCapabilities(
-        id="codex_direct",
-        name="Direct Codex integration",
-        status="unverified",
-        description="A supported application-to-Codex image generation connection is not verified.",
-        pricing="Unavailable; no requests can be submitted.",
+        id="codex_cli",
+        name="Codex CLI",
+        status="available",
+        description="Scene analysis with your own ChatGPT sign-in; sends the Base Image to "
+        "OpenAI. Image generation arrives in Phase 5.",
+        analysis=True,
+        sends_images_externally=True,
+        pricing="Uses your ChatGPT plan's Codex allowance, which image generation shares.",
+    ),
+    ProviderCapabilities(
+        id="manual_bridge",
+        name="Manual bridge",
+        status="available",
+        description="Copy the analysis instruction into another app, then paste its reply back.",
+        analysis=True,
+        pricing="No calls from Character Studio. The other app's usage limits apply.",
     ),
     ProviderCapabilities(
         id="openai_api",

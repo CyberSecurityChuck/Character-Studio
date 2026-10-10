@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-10 — Phase 3: Scene Analysis (local commit, awaiting review)
+
+- Approved by the user ("Approve Phase 3"). Scenes: Base Image upload, thumbnails, rename, duplicate, delete, resume and recent scenes on the Overview.
+- Analysis through the Claude Code CLI (default) or Codex CLI, or the manual copy-and-paste fallback, all validated by one schema and saved as versions with source, CLI version and raw output. Uncertain details can be confirmed or corrected; edits become new versions.
+- Studio prompt template with numbered images, "Subject N" labels, identity/composition locks, negative prompt and optional scene changes; saved and restorable prompt versions.
+- Queue-ready engine job runner (one job at a time), per-run job folders with a metadata-free Base Image copy, timeout, Cancel, clear errors with "Try again"/"Do it manually", no automatic retry, Interrupted/Cancelled reconciliation at startup.
+- Studio settings: engine status with "Check again", analysis and generation engine choice, per-engine time limits.
+- Schema `0004_scenes`. 20 new tests with a fake CLI (69 total). No dependencies added. See D012.
+
 ## 2026-10-10 — Prepared for public GitHub release
 
 - Rewrote the local (never pushed) history with the user's approval: noreply author/committer email on all commits; local Windows profile path replaced with `%USERPROFILE%`. Backup branch kept locally.

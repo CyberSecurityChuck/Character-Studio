@@ -16,3 +16,7 @@ The UI/UX skill's focused form-error search supported announced/focusable errors
 ## Phase 2 review refinements (2026-10-10)
 
 After the user's hands-on review: round avatars with user-adjustable framing (drag/zoom editor, live previews at card, header and mini sizes); a two-column profile form and compact photo cards; group chips and member avatar stacks; one primary "+ New group" action; a footer action bar for the short group form (Delete left, Cancel and the primary action right) while the long character profile keeps Close at top-right; matching panel heights for the group placeholder; line icons for every sidebar item. Hash routes keep the current view across refresh. Browser QA used isolated synthetic data at desktop and 375px widths.
+
+## Phase 3 scenes and analysis (2026-10-10)
+
+Scenes reuse the warm palette and system fonts: an image-first card grid, a short new-scene dialog with footer actions, and a two-column workspace (sticky Base Image with optional subject boxes; numbered "Scene analysis" and "Generation prompt" steps). Each action appears once per state: while a run notice is shown, the start and version-bar run actions are hidden. Analysis fields use compact labelled grids; unsure details are highlighted and grouped with Confirm/Correct. Progress, failure, cancelled and interrupted states have distinct, plain-language notices. Engine settings use status cards, choice cards for the analysis engine and a footer action bar. Browser QA covered desktop and 375 px widths with synthetic images.

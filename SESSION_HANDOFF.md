@@ -1,44 +1,31 @@
 # Session handoff
 
-Checkpoint: 2026-10-10 04:10 IST (+05:30)
+Checkpoint: 2026-10-10 12:05 IST (+05:30)
 
 ## Objective and authorization
 
-The user explicitly said **"Approve Phase 2"** on 2026-10-09 (Asia/Kolkata). Phase 2 is implemented, was reviewed hands-on by the user on 2026-10-10, and their requested refinements are done. Do not implement Phase 3 or later without explicit approval. Avoid additional API charges: no paid AI calls, credentials, unofficial endpoints or unattended Codex integrations. Local checkpoint commits are authorized; this checkpoint was explicitly requested. Ask before GitHub setup or pushing, and confirm account/repository — the user restated that nothing is to be pushed yet.
+The user said **"Approve Phase 3"** on 2026-10-10 (Asia/Kolkata). Phase 3 (Scene Analysis) is implemented and committed locally. The user is now reviewing it with `Phase_Checks/Phase3_Review_Checklist.html` (local only, ignored by Git) and will export `Phase3_Review_Report.md` into the same folder. **Do not push** until the user approves the push after the review. Do not start Phase 4 without "Approve Phase 4".
 
-**Standing user rule (2026-10-10):** do not change any project files without the user's approval. Describe proposed changes and wait for a yes; reading, testing and running the app are fine.
+Standing rules: no project file changes without the user's approval (describe, then wait for a yes; reading, testing and running the app are fine). No paid API calls or keys (D009). Every engine run is started by the user; never retried or resumed automatically. Never read or store CLI logins.
 
-PLAN.md remains authoritative. On 2026-10-10 the user directed a planning-only change (v2.1): DECISIONS.md D009 "CLI bridge first, manual bridge as fallback", new Phase 2.5 engine verification spike, and updated Phases 3–5 (Analyse via `claude -p`, optional Polish prompt, Generate via `codex exec`, engine settings). README, PROVIDER_FINDINGS and RECOVERY were updated to match. No application code changed and no phase completion status changed.
+## Implemented in this checkpoint (Phase 3)
 
-## Review process
-
-- `Phase_Checks/Phase2_Review_Checklist.html` (offline tick-and-notes page) and `Phase_Checks/Phase2_Review_Report.md` (the user's exported results) are local review records, ignored by Git. Read the report for the user's original comments.
-- Review outcome items (all addressed): profile panel staying open after create (kept, by design — it becomes the new profile with a clear message); thumbnail overlapping the card edge (round avatars); New group form open by default; group names shown as plain text (chips); generated file names (expected, explained — privacy and collision safety).
-- Follow-up rounds addressed: user-selectable thumbnail area, side-by-side profile layout, Show archived alignment, create-group closes the editor, single "+ New group", sidebar icons, orange "+ New group", group editor footer actions, matching placeholder height, refresh keeps the current view.
-
-## Implemented in this checkpoint
-
-- Backend: `ReferencePhoto.frame_x/frame_y/frame_zoom` (defaults 0.5/0.3/1.0); migration `0003_photo_framing`; `PUT /api/photos/{id}` accepts optional `frame {x 0–1, y 0–1, zoom 1–4}` (finite, extra fields rejected) and photo responses include `frame`. `SCHEMA_REVISION` updated.
-- Frontend `Library.tsx`: `FramedImage`/`Avatar` render framing with percentage sizing; `FrameEditor` dialog (pointer drag, arrow keys, +/- and slider zoom, reset, live previews, in-dialog errors). Two-column profile form, compact photo cards, chips, footer action bar for the group editor, empty-state panel stretching to the list height, member avatars.
-- `route.ts`: hash routes with `replaceState` (`#/characters[/<id>]`, `#/groups[/<id>]`, `#/settings`, plain URL for Overview). `App.tsx` reads the initial page from the hash; the skip link no longer alters the hash; sidebar icons added.
-- Tests: framing defaults/update/validation and 0002→0003 upgrade preserving an existing photo.
-- Decision record D008 explains framing-as-metadata, hash routing, footer-vs-top-close panel rule and the `Phase_Checks/` exclusion.
+- Backend modules: `analysis_schema.py` (spike JSON Schema + matching Pydantic models, engine and manual instructions, tolerant parsing of pasted replies), `prompting.py` (studio template), `engines.py` (CLI resolution, clean environment, status, process run with timeout/cancel and tree kill, result interpretation and error kinds), `jobs.py` (queue-ready `JobRunner`, startup reconciliation, job folders), `scene_store.py` (versions, workflow state), `scenes.py` (API). Migration `0004_scenes`. `persistence.writing_session` is shared by the library and scenes. Pending deletions now also remove job folders.
+- API: `/api/scenes` (list/create raw-body upload), `/api/scenes/{id}` (get/rename/delete), `/opened`, `/duplicate`, `/image/{original|thumbnail}`, `/analyses` (manual import), `/analyses/{id}/revise`, `/analyse`, `/prompts/draft`, `/prompts`; `/api/jobs/{id}`, `/cancel`; `/api/analysis/instructions`; `/api/engines/settings`, `/api/engines/status`.
+- Frontend: `Scenes.tsx` (list, new-scene dialog, workspace with image + subject boxes, analysis view/edit/versions/uncertainties, progress/cancel/error notices, manual dialog, prompt editor and versions, run history), `Engines.tsx` (status and settings), App navigation/Overview (recent scenes, Resume). `api.send` helper with a neutral validation fallback message.
+- Workflow states: needs_analysis, analysing, review_analysis, analysis_ready, prompt_saved (derived after each change).
+- Decisions: D012.
 
 ## Verification evidence
 
-- `uv run --locked pytest`: **49 passed**. `uv run --locked ruff check .`: passed. `npm.cmd --prefix frontend run build`: passed.
-- Browser QA on an isolated data folder in the session scratchpad (port 8766) with synthetic images only: real schema upgrade, framing drag/zoom/save persisted, card/header avatars updated, groups create/cancel/edit/footer flows, placeholder height matching with 3 and 6 groups, refresh restoring profile/group/settings, unknown IDs falling back to the list, 375px width without overflow, no console errors.
-- An earlier "Check the name, age category…" error during thumbnail save came from the studio not yet restarted onto the new backend; resolved by restarting. The generic 422 message could be made more specific — offered to the user, not implemented.
+- `uv run --locked pytest`: **69 passed**. `uv run --locked ruff check .`: passed. `npm.cmd --prefix frontend run build`: passed.
+- Fake CLI: `tests/fake_cli.py` (modes: ok, text, signed_out, logged_out_run, limit, invalid, slow; `FAKE_CLI_MODE_FILE` lets browser QA switch modes). Tests assert flags, folder confinement, closed stdin, no leaked variables, provenance, no automatic retry, cancel, restart reconciliation, upgrade 0003→0004.
+- Browser QA used the session scratchpad (port 8766) and synthetic images only; QA server stopped afterwards.
+- A real CLI analysis has **not** been run by the assistant (plan allowance; user-initiated runs only).
 
 ## Runtime and next action
 
-- Normal app: http://127.0.0.1:8765; data `%USERPROFILE%\Character-Studio-Data`; schema `0003_photo_framing`. Restart is needed after backend changes; a browser refresh suffices for frontend-only builds.
-- Git: determine the checkpoint with `git log`. `Phase_Checks/` and `.playwright-mcp/` are ignored. History was rewritten on 2026-10-10 before publishing (D011): noreply email, no local profile path. The local-only `backup/pre-public-rewrite` branch and Codex `refs/codex/*` refs must **never** be pushed; push only `main`. The repository's Git config uses the noreply address. GitHub repository `CyberSecurityChuck/Character-Studio` exists (**private**, created 2026-10-10; remote `origin`; `main` pushed). The user will make it public themselves. Then, with their OK, enable secret scanning, push protection and private vulnerability reporting (Dependabot alerts already on). CI runs **on request only** (`gh workflow run CI -R CyberSecurityChuck/Character-Studio`) at phase checkpoints, to save Actions minutes; it is not triggered by pushes. Each push still needs the user's approval per AGENTS.md. Known follow-up: `actions/checkout@v4` triggers a GitHub Node 20 deprecation warning; bumping to v5 is optional.
-- The user resolved all eight v2.1 conflicts on 2026-10-10 (recorded in D009's "Resolved" list and PLAN.md). Paid API engines are a planned post-MVP option, not authorized now.
-- Batch processing planned on 2026-10-10 (D010): queue-ready job runner required in Phases 3–5; batch features in new Phase 5.5 (needs its own approval).
-- Phase 2.5 approved and **completed** on 2026-10-10. All tests (a, b, b2, c, d) and the failure checks are recorded in `docs/PROVIDER_FINDINGS.md`, including exact commands and implementation notes.
-  - Gotchas: launch CLIs with `CLAUDE*`/`ANTHROPIC*` variables removed (this desktop session injects its own); close stdin; check `auth status` / `login status` first; Codex exit 0 can still mean "no image".
-  - Test images (consenting user's own photos plus a scene) and outputs are in `%USERPROFILE%\Character-Studio-Data\spike-2.5\` and `~\.codex\generated_images\`, outside Git. Do not commit them.
-- Public release prep (2026-10-10, D011): public README, `docs/USER_GUIDE.md`, LICENSE (MIT), RESPONSIBLE_USE.md, SECURITY.md, CI workflow with privacy guard, and demo screenshots (fictional characters only) in `docs/images/`.
-- The repository stays private for now (user's choice). The go-public checklist is in PROJECT_STATUS.md under "Pending: making the GitHub repository public".
-- Next action: wait for an explicit "Approve Phase 3". Do not start scenes, analysis or generation work without it. Every future push to GitHub follows the AGENTS.md publishing rule.
+- The user's studio must be restarted to pick up Phase 3. Schema `0004_scenes`.
+- Git: local commit for Phase 3 on `main`; not pushed. `origin` is the private `CyberSecurityChuck/Character-Studio`. Push only `main`, never `backup/pre-public-rewrite` or `refs/codex/*`. CI on request only.
+- Gotchas carried from the spike: CLIs need clean environments; Codex exit 0 can still mean no image (Phase 5); usage-limit messages were never observed and are matched heuristically.
+- Next action: wait for the user's Phase 3 review report. Fix reported problems only with approval. After the user approves, push `main` (and optionally run CI). Phase 4 requires "Approve Phase 4".

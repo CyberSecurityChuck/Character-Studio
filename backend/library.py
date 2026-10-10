@@ -2,8 +2,8 @@
 
 import io
 import os
+import shutil
 import warnings
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -24,6 +24,7 @@ from backend.models import (
     PendingFileDeletion,
     ReferencePhoto,
 )
+from backend.persistence import writing_session
 
 router = APIRouter(prefix="/api")
 PhotoLabel = Literal[
@@ -92,17 +93,8 @@ class GroupUpdate(GroupInput):
     revision: int = Field(ge=1)
 
 
-@contextmanager
 def writing(request):
-    # Serialize local writes before reading revisions or touching files.
-    with Session(request.app.state.engine) as session:
-        session.execute(text("BEGIN IMMEDIATE"))
-        try:
-            yield session
-            session.commit()
-        except BaseException:
-            session.rollback()
-            raise
+    return writing_session(request.app.state.engine)
 
 
 def require(session, model, identifier):
@@ -238,7 +230,12 @@ def clean_deleted_files(engine, settings, paths=None):
             query = query.where(PendingFileDeletion.path.in_(paths))
         for item in session.scalars(query):
             try:
-                asset_path(settings, item.path).unlink(missing_ok=True)
+                target = asset_path(settings, item.path)
+                # Job folders are directories; everything else is a single file.
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink(missing_ok=True)
             except OSError:
                 continue
             session.delete(item)

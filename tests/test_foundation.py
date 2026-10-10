@@ -20,8 +20,9 @@ def test_health_and_provider_registry_are_honest(client):
     data = client.get("/api/bootstrap").json()
     assert data["paid_operations_enabled"] is False
     assert {p["id"]: p["status"] for p in data["providers"]} == {
-        "manual_bridge": "planned",
-        "codex_direct": "unverified",
+        "claude_cli": "available",
+        "codex_cli": "available",
+        "manual_bridge": "available",
         "openai_api": "disabled",
     }
     assert all(not p["generation"] for p in data["providers"])

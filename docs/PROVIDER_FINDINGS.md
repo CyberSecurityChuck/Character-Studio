@@ -76,3 +76,12 @@ _Completed 2026-10-10. Approved by the user ("Approve Phase 2.5") on 2026-10-10 
 | (c) Likeness verdict (user) | **"Yes, clearly me"** (user, 2026-10-10), on one test with one subject and two reference photos. Multi-person scenes and other lighting or poses are not yet tested. |
 | (d) Official OpenAI page cited for reference-photo identity support | **Not confirmed.** The official page https://learn.chatgpt.com/docs/image-generation (read 2026-10-10) supports attaching reference images (`-i/--image`) to transform or extend an existing image, and asks users to confirm permission to use a real person's likeness. It does **not** state that identity/likeness is preserved. It states built-in generation uses `gpt-image-2`, counts toward general Codex usage limits and uses them 3–5x faster on average. Save location and `codex exec` support are not stated. No other official page found. Likeness therefore rests on test (c). |
 | Notes / sources cited | Unofficial community READMEs (not relied on; to verify in test (c)) report: output under `~/.codex/generated_images/<session-id>/`; up to 5 reference images; `-i` may not reliably expose files outside the working directory, so copy references into the job folder with simple names; put `--` before the prompt because `-i` takes several values. Tools in those results that call Codex image endpoints directly are unofficial endpoints and remain prohibited by D009. |
+
+## Phase 3 implementation notes (2026-10-10)
+
+- Analysis runs use exactly the spike commands above, from the job folder, with stdin closed.
+- Removed from the child environment: `CLAUDE*`, `ANTHROPIC*`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CODEX_API_KEY` (subscription login and official endpoint only).
+- Windows: `claude` resolves to a native `claude.exe` and runs directly. `codex` resolves to the npm `codex.cmd` shim; the studio runs the package's `node_modules\@openai\codex\bin\codex.js` with node instead, so the prompt never passes through cmd.exe (D012).
+- Status: `claude auth status` (only `loggedIn` and `subscriptionType` are read) and `codex login status` ("Logged in" text). Nothing else from these outputs is kept.
+- Usage-limit wording is still unobserved; it is matched heuristically and otherwise reported as a generic engine error with the CLI's own text.
+- Not yet run through the studio against the real CLIs; the first real run is the user's during Phase 3 review.

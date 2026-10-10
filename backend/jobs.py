@@ -1,0 +1,233 @@
+"""One job runner for every engine run (PLAN.md §12.1, DECISIONS.md D010).
+
+Jobs are persisted before anything starts and run one at a time, oldest first.
+Phase 3 queues a single analysis per click, but several jobs may wait as
+not_started. Nothing is ever retried or resumed automatically: after a restart,
+runs that were in progress become Interrupted and waiting ones become Cancelled.
+"""
+
+import json
+import threading
+
+from PIL import Image, ImageOps
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from backend.analysis_schema import ENGINE_INSTRUCTION, JSON_SCHEMA
+from backend.configuration import Settings, asset_path
+from backend.engines import (
+    ENGINE_NAMES,
+    EngineError,
+    analysis_command,
+    interpret_analysis,
+    require_ready,
+    resolve_command,
+    run_process,
+)
+from backend.models import EngineJob, Scene
+from backend.persistence import writing_session
+from backend.scene_store import add_analysis, now, refresh_workflow
+
+INTERRUPTED_MESSAGE = (
+    "The studio stopped while this run was in progress. It may already have used some of your "
+    "plan's allowance or saved output, so check its job folder before trying again."
+)
+NOT_STARTED_MESSAGE = "The studio stopped before this run started. Nothing was sent."
+
+
+def reconcile_on_startup(engine) -> None:
+    with writing_session(engine) as session:
+        session.execute(
+            update(EngineJob)
+            .where(EngineJob.status == "running")
+            .values(
+                status="interrupted",
+                error_kind="interrupted",
+                error_details=INTERRUPTED_MESSAGE,
+                finished_at=now(),
+            )
+        )
+        session.execute(
+            update(EngineJob)
+            .where(EngineJob.status == "not_started")
+            .values(
+                status="cancelled",
+                error_kind="not_started",
+                error_details=NOT_STARTED_MESSAGE,
+                finished_at=now(),
+            )
+        )
+        for scene in session.scalars(select(Scene)):
+            refresh_workflow(session, scene)
+
+
+def prepare_analysis_folder(settings: Settings, scene: Scene) -> str:
+    """Create the job folder with a metadata-free copy of the Base Image (PLAN.md §22)."""
+    root = asset_path(settings, f"jobs/{scene.id}")
+    root.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while (root / f"analysis-{number}").exists():
+        number += 1
+    folder = root / f"analysis-{number}"
+    folder.mkdir()
+    with Image.open(asset_path(settings, scene.original_path)) as source:
+        upright = ImageOps.exif_transpose(source).convert("RGB")
+        # A fresh image carries no EXIF/GPS or other source metadata.
+        clean = Image.new("RGB", upright.size)
+        clean.paste(upright)
+        clean.save(folder / "base.jpg", "JPEG", quality=95)
+    (folder / "instruction.txt").write_text(ENGINE_INSTRUCTION, encoding="utf-8")
+    (folder / "schema.json").write_text(json.dumps(JSON_SCHEMA, indent=2), encoding="utf-8")
+    return f"jobs/{scene.id}/analysis-{number}"
+
+
+class JobRunner:
+    def __init__(self, engine, settings: Settings):
+        self.engine = engine
+        self.settings = settings
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._cancelled: set[str] = set()
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._loop, name="engine-jobs", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def notify(self) -> None:
+        self._wake.set()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._wake.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=30)
+
+    def cancel(self, job_id: str) -> None:
+        """Mark a job for cancellation; a running process is stopped within a moment."""
+        with self._lock:
+            self._cancelled.add(job_id)
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            if job is not None and job.status == "not_started":
+                self._finish(session, job, "cancelled", "cancelled", "Cancelled before it started.")
+
+    def _cancel_requested(self, job_id: str) -> bool:
+        with self._lock:
+            return job_id in self._cancelled or self._stop.is_set()
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            job_id = self._claim_next()
+            if job_id is None:
+                self._wake.wait(timeout=1)
+                self._wake.clear()
+                continue
+            self._execute(job_id)
+
+    def _claim_next(self) -> str | None:
+        with writing_session(self.engine) as session:
+            job = session.scalar(
+                select(EngineJob)
+                .where(EngineJob.status == "not_started")
+                .order_by(EngineJob.created_at, EngineJob.id)
+                .limit(1)
+            )
+            if job is None:
+                return None
+            job.status = "running"
+            job.started_at = now()
+            return job.id
+
+    def _finish(self, session, job, status, kind=None, details=None) -> None:
+        job.status = status
+        job.error_kind = kind
+        job.error_details = details
+        job.finished_at = now()
+        session.flush()
+        scene = session.get(Scene, job.scene_id)
+        if scene is not None:
+            refresh_workflow(session, scene)
+
+    def _update(self, job_id: str, **values) -> None:
+        with writing_session(self.engine) as session:
+            session.execute(update(EngineJob).where(EngineJob.id == job_id).values(**values))
+
+    def _execute(self, job_id: str) -> None:
+        overrides = self.settings.engine_commands
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            scene = session.get(Scene, job.scene_id)
+            engine, timeout = job.engine, job.timeout_seconds
+            session.expunge_all()
+        try:
+            version = require_ready(engine, overrides)
+            self._update(job_id, engine_version=version)
+            if self._cancel_requested(job_id):
+                raise _Stopped()
+            folder = prepare_analysis_folder(self.settings, scene)
+            self._update(job_id, job_folder=folder)
+            job_dir = asset_path(self.settings, folder)
+            command = resolve_command(engine, overrides)
+            if command is None:
+                raise EngineError("not_installed", f"{ENGINE_NAMES[engine]} could not be started.")
+            argv, output_name = analysis_command(
+                engine, command, job_dir, json.dumps(JSON_SCHEMA, separators=(",", ":"))
+            )
+            outcome = run_process(
+                argv,
+                job_dir,
+                job_dir / output_name,
+                timeout,
+                should_stop=lambda: self._cancel_requested(job_id),
+            )
+            if outcome.cancelled:
+                raise _Stopped()
+            data = interpret_analysis(engine, job_dir, outcome)
+            with writing_session(self.engine) as session:
+                job = session.get(EngineJob, job_id)
+                scene = session.get(Scene, job.scene_id)
+                analysis = add_analysis(
+                    session,
+                    scene,
+                    data,
+                    engine,
+                    engine_version=version,
+                    raw_output_path=f"{folder}/{output_name}",
+                    job_id=job_id,
+                )
+                job.result_id = analysis.id
+                self._finish(session, job, "completed")
+        except _Stopped:
+            with writing_session(self.engine) as session:
+                job = session.get(EngineJob, job_id)
+                if self._stop.is_set():
+                    self._finish(session, job, "interrupted", "interrupted", INTERRUPTED_MESSAGE)
+                else:
+                    self._finish(session, job, "cancelled", "cancelled", "You cancelled this run.")
+        except EngineError as error:
+            with writing_session(self.engine) as session:
+                job = session.get(EngineJob, job_id)
+                self._finish(session, job, "failed", error.kind, error.message)
+        except Exception:
+            # Never record internals or private paths; the job folder keeps the CLI's output.
+            with writing_session(self.engine) as session:
+                self._finish(
+                    session,
+                    session.get(EngineJob, job_id),
+                    "failed",
+                    "engine_error",
+                    "The run could not be completed because of an unexpected problem in the "
+                    "studio. Check the job folder, then try again or do it manually.",
+                )
+        finally:
+            with self._lock:
+                self._cancelled.discard(job_id)
+
+
+class _Stopped(Exception):
+    pass
+
+
+def job_folder_path(settings: Settings, job: EngineJob) -> str | None:
+    return str(asset_path(settings, job.job_folder)) if job.job_folder else None

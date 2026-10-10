@@ -1,12 +1,14 @@
+from contextlib import contextmanager
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import URL, Engine, create_engine, event
+from sqlalchemy import URL, Engine, create_engine, event, text
+from sqlalchemy.orm import Session
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0003_photo_framing"
+SCHEMA_REVISION = "0004_scenes"
 
 
 def open_database(settings: Settings) -> Engine:
@@ -34,3 +36,16 @@ def open_database(settings: Settings) -> Engine:
         engine.dispose()
         raise
     return engine
+
+
+@contextmanager
+def writing_session(engine: Engine):
+    # Serialize local writes before reading revisions or touching files.
+    with Session(engine) as session:
+        session.execute(text("BEGIN IMMEDIATE"))
+        try:
+            yield session
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise

@@ -16,6 +16,14 @@ Before any photo bytes are written, generated paths enter a durable cleanup jour
 
 Archive/restore keeps references and memberships. Permanent deletion has no in-app undo; recover from a prior whole-folder backup. Deleting groups does not delete their characters. Missing files produce a visible backup-recovery error rather than deleting metadata. No operation resubmits generation requests.
 
+## Phase 3 scene and engine recovery
+
+Scenes, Base Images, analysis versions, prompt versions, engine settings and engine job records survive restart. A scene's workflow stage is derived from what is saved, so the scene reopens where it was left. Unsaved prompt or analysis edits stay in the browser only; the page warns before leaving.
+
+Each engine run is recorded as `not_started` before anything launches; its job folder (`jobs/<scene>/analysis-<n>/` in the private data folder) is recorded before the CLI starts. If the studio stops during a run, the run becomes **Interrupted** at the next startup, and runs that had not started become **Cancelled** ("Nothing was sent"). Nothing is relaunched. An interrupted run may already have used plan allowance, or the CLI may have kept running after a hard stop; check its job folder before choosing "I checked — try again". Cancel and time limits stop the whole CLI process tree.
+
+Scene creation and duplication use the same path-journal as photo uploads, so interrupted writes are cleaned at startup. Deleting a scene queues its original, thumbnail and job folder for deletion; locked files are retried at startup. Deletion is refused while a run is active.
+
 ## Backups at the current stage
 
 No application backup/restore UI is implemented yet. For an offline manual backup, stop Character Studio, ensure its process has exited, then copy the **entire** private data directory to a separate backup location. Never copy only a running `studio.db`; active SQLite WAL files may contain committed changes. The baseline suite verifies SQLite's supported online backup primitive for the database.

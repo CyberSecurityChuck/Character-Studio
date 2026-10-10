@@ -6,7 +6,15 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ASSET_DIRECTORIES = ("characters", "scenes", "generations", "thumbnails", "exports", "backups")
+ASSET_DIRECTORIES = (
+    "characters",
+    "scenes",
+    "generations",
+    "thumbnails",
+    "exports",
+    "backups",
+    "jobs",
+)
 
 
 class Settings(BaseModel):
@@ -17,6 +25,8 @@ class Settings(BaseModel):
     frontend_dir: Path = PROJECT_ROOT / "frontend" / "dist"
     max_upload_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
     max_image_pixels: int = Field(default=40_000_000, ge=1, le=100_000_000)
+    # Tests only: replace the official CLIs with fakes. Never read from the environment.
+    engine_commands: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     @field_validator("data_dir")
     @classmethod

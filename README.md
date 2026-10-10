@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2) works today. Scenes, AI analysis, approvals and image generation are designed, verified in a spike and being built phase by phase. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2) works today, and **Scenes & AI analysis** (Phase 3) is built and in review. Character mapping, approvals and image generation come next, phase by phase. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -51,7 +51,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🎯 | Adjustable round thumbnails (drag and zoom; originals never altered) | ✅ Available |
 | 👨‍👩‍👧 | Reusable groups: couples, families, friends | ✅ Available |
 | ♻️ | Crash-safe storage: stale-edit protection, upload/delete recovery | ✅ Available |
-| 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual) | 🔜 Phase 3 |
+| 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | 🧪 Phase 3 (in review) |
 | 🧑‍🤝‍🧑 | Map people in the scene to saved characters; optional "Polish prompt" | 🗓️ Phase 4 |
 | 🎨 | One-click generation via Codex CLI, results gallery, version history | 🗓️ Phase 5 |
 | 📦 | Batch analysis and generation, multiple variations | 🗓️ Phase 5.5 |
@@ -86,13 +86,13 @@ flowchart TB
     classDef approve fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:3px
 ```
 
-<sub>🟩 Available · 🟧 Next (Phase 3) · 🟦 Planned · 🟥 Your Approval Gate</sub>
+<sub>🟩 Available · 🟧 Phase 3 (built, in review) · 🟦 Planned · 🟥 Your Approval Gate</sub>
 
 **The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template will enforce this split, so a character's reference photos never change the scene's composition.
 
 ## 🤖 How the AI part works
 
-*Coming in Phases 3–5.* Character Studio will **not** call paid AI APIs. When you click an AI action, it will run the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
+*Analysis works from Phase 3; polishing and generation come in Phases 4–5.* Character Studio does **not** call paid AI APIs. When you click an AI action, it runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
 
 | Step | Default engine | Alternatives | Uses |
 |---|---|---|---|
@@ -101,7 +101,7 @@ flowchart TB
 | 🎨 Image generation | **Codex CLI** (`codex exec`) | Manual export / import | ChatGPT plan with image generation |
 
 - The studio **never reads, stores or forwards** your CLI logins, never scrapes websites and never uses unofficial endpoints or gateways.
-- Every run will have a **timeout and a Cancel button** and will **never be retried automatically**.
+- Every run has a **timeout and a Cancel button** and is **never retried automatically**.
 - The **manual bridge** (copy the instruction, export a package, import the result) stays available as a fallback.
 
 These choices were checked in a hands-on [engine verification spike](docs/PROVIDER_FINDINGS.md): real CLI flags, output locations, failure modes and folder confinement. The design rationale is in [DECISIONS.md](DECISIONS.md) (D009).
@@ -147,7 +147,7 @@ flowchart TB
 | ✅ Scenes, prompts, approvals, results, history | ✍️ **Polish prompt** sends prompt text (no images) to Anthropic |
 | ✅ The database and all logs | 🎨 **Generate** sends the scene and the chosen reference photos to OpenAI |
 
-Today, with the Character Library, **nothing** is sent anywhere.
+Today, only **Analyse** sends anything (the Base Image, with location data removed), and only when you click it.
 
 - 🏠 The server only listens on `127.0.0.1`, with host/origin checks and a per-session request token.
 - 📂 Your data lives in a separate folder (default `%USERPROFILE%\Character-Studio-Data`), never inside the source code.
@@ -187,7 +187,7 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
 
 ```mermaid
 flowchart TB
-    subgraph NOW["✅ Done → 🔜 Next"]
+    subgraph NOW["✅ Done → 🧪 In review"]
         direction LR
         P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::next
     end
