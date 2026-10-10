@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-10 — Batch processing planned (planning only)
+
+- Recorded D010: Phases 3–5 use a queue-ready job runner (single job per click); new Phase 5.5 adds batch scene creation, batch analysis, batch generation of individually approved scenes, N variations and optional quick group mapping. Moved "Batch generation" and "Multiple image variations" out of Phase 6. Added `batch_id`/`not_started` to the planned GenerationJob model. No application code changed.
+
 ## 2026-10-10 — Plan v2.1 conflicts resolved (planning only)
 
 - Recorded the user's answers on the eight v2.1 open questions in D009 and PLAN.md: mechanics-only spike gate; cite the OpenAI identity-support page in the spike; both Claude and Codex analysis engines in Phase 3; approval covers content, not the engine; distinct Failed/Cancelled/Interrupted statuses; GPS stripping for analysis copies; consistent Polish prompt error handling; folder confinement where supported.

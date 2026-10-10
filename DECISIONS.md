@@ -92,3 +92,12 @@
   - The analysis copy of the Base Image has location metadata removed (PLAN §22). Polish prompt uses the same progress/cancel/error handling as Analyse.
   - File access: confine each CLI run to its job folder where Phase 2.5 finds a supported option; otherwise record the limitation and proceed.
   - Future direction: paid API-based engines for both analysis and generation will be offered post-MVP. They are off by default, need separate explicit approval to build, and require per-run cost confirmation. Engine interfaces must allow adding them. AGENTS.md reworded to cite D009 and this boundary.
+
+## D010 — Queue-ready jobs now, batch processing after Phase 5 (2026-10-10)
+
+- Decision: Phases 3–5 build single runs only (one job per click), but all engine runs go through one job runner that executes queued jobs sequentially and whose records support a "Not started" state and an optional batch identifier. Batch processing becomes its own Phase 5.5, moved up from the optional Phase 6 list ("Batch generation", "Multiple image variations").
+- Phase 5.5 scope: batch scene creation, "Analyse selected", "Generate approved scenes" (each scene still individually approved), N variations from one approval, optional quick group mapping confirmed per scene.
+- Rules: show run count and allowance use before starting; sequential only; single failures continue the batch; usage limit or sign-out pauses it with remaining items "Not started"; Pause/Cancel-remaining always available; no automatic retry or resumption after restart.
+- Reason: single runs ship sooner; Phase 2.5 timings and plan limits should inform batch sizes; designing the runner as a queue now keeps the later batch work small. Plan usage limits, not speed, are the main constraint, so pause-and-continue matters more than parallelism.
+- Alternatives: batch inside Phases 3 and 5 (bigger phases, later single-run delivery); leave in Phase 6 (risk of restructuring a single-run job system).
+- Approval: user-directed planning change on 2026-10-10. Phase 5.5 needs its own explicit approval.

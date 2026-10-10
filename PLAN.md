@@ -745,6 +745,14 @@ Rules:
   UI asks the user to check its job folder before
   "Try again". Nothing is ever resubmitted
   automatically.
+- Queue-ready job design (decided 2026-10-10): engine
+  runs (analysis, polish, generation) go through one
+  job runner that executes queued jobs one at a time.
+  Phases 3–5 only ever queue a single job per click,
+  but the runner, job records and statuses must
+  support several queued jobs (including a "Not
+  started" state and an optional batch identifier) so
+  Phase 5.5 batch processing needs no restructuring.
 
 Before implementation, Phase 2.5 must verify and record
 in docs/PROVIDER_FINDINGS.md:
@@ -1317,7 +1325,8 @@ Core entities:
 - provider_request_id
 - engine_version (CLI version, if any)
 - job_folder (relative path, if any)
-- status
+- batch_id (nullable; Phase 5.5)
+- status (includes not_started for queued items)
 - error_kind / error_details (if any)
 - created_at
 - updated_at
@@ -1664,6 +1673,8 @@ Tasks:
 - Manual analysis fallback (copy instruction, import
   analysis)
 - Engine settings and status (below)
+- Queue-ready engine job runner (§12.1); single job
+  per click in this phase
 
 ### Analyse with an engine
 
@@ -1855,6 +1866,57 @@ Acceptance:
 - No automatic duplicate paid requests or automatic
   resubmission of generations
 
+## PHASE 5.5 — BATCH PROCESSING
+
+Decided 2026-10-10 (DECISIONS.md D010). Builds on the
+queue-ready job runner from Phases 3–5. Requires
+explicit approval like every phase. Sensible batch
+sizes are informed by Phase 2.5 timings and limits.
+
+Tasks:
+
+- Batch scene creation: upload several Base Images at
+  once; each becomes its own scene.
+- Batch analysis: select scenes and click "Analyse
+  selected". Jobs run one after another with the
+  selected analysis engine. Each analysis is reviewed
+  per scene, with uncertain items flagged as usual.
+- Batch generation: "Generate approved scenes" queues
+  generation for scenes that each have their own valid
+  approval. One approval never covers several scenes.
+- Multiple variations: generate N images from one
+  approved scene in one action.
+- Optional quick mapping: apply a saved group to
+  several scenes as suggested mappings that the user
+  confirms per scene before approval.
+
+Rules:
+
+- Before starting, show how many runs the batch makes
+  and which plan allowance it uses (for example "10
+  images from your ChatGPT allowance").
+- Run jobs sequentially, never in parallel.
+- A single failed item is marked Failed and the batch
+  continues with the next item.
+- Usage limit reached or signed out: the batch pauses;
+  remaining items stay "Not started" until the user
+  clicks Continue.
+- Pause and Cancel-remaining are always available.
+- Nothing is retried automatically. An interrupted
+  batch never resumes by itself after a restart; the
+  item that was running is marked Interrupted.
+- Batch progress (done / failed / not started) is
+  persisted server-side and survives restart.
+
+Acceptance:
+
+- Several scenes can be created, analysed and (once
+  individually approved) generated as one batch
+- Limits and sign-out pause the batch without losing
+  completed items
+- No automatic retries or resumption; every item keeps
+  its own job record and results
+
 ## PHASE 6 — QUALITY AND ADVANCED FEATURES
 
 Optional improvements:
@@ -1863,9 +1925,7 @@ Optional improvements:
 - Selective identity replacement
 - Identity consistency checks
 - Composition fidelity checks
-- Multiple image variations
 - Saved generation presets
-- Batch generation
 - Advanced comparison interface
 - Additional generation providers
 - Optional paid API-based engines for scene analysis
