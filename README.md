@@ -16,8 +16,8 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Local-first](https://img.shields.io/badge/local--first-no%20cloud%20backend-2E7D32.svg)](#-privacy-by-design)
-[![No API keys](https://img.shields.io/badge/AI-no%20API%20keys-7C3AED.svg)](#-how-the-ai-part-works)
+[![Local-first](https://img.shields.io/badge/local--first-No%20Cloud%20Backend-2E7D32.svg)](#-privacy-by-design)
+[![No API keys](https://img.shields.io/badge/AI-No%20API%20Keys-7C3AED.svg)](#-how-the-ai-part-works)
 
 <br/>
 
@@ -86,7 +86,7 @@ flowchart TB
     classDef approve fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:3px
 ```
 
-<sub>🟩 available · 🟧 next (Phase 3) · 🟦 planned · 🟥 your approval gate</sub>
+<sub>🟩 Available · 🟧 Next (Phase 3) · 🟦 Planned · 🟥 Your Approval Gate</sub>
 
 **The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template will enforce this split, so a character's reference photos never change the scene's composition.
 
