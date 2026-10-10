@@ -80,8 +80,9 @@ PROVIDERS = (
         id="claude_cli",
         name="Claude Code CLI",
         status="available",
-        description="Scene analysis with your own Claude sign-in. Runs only when you click "
-        "Analyse; sends the Base Image to Anthropic.",
+        description="Scene analysis and optional prompt polishing with your own Claude sign-in. "
+        "Runs only when you click Analyse or Polish prompt; Analyse sends the Base Image to "
+        "Anthropic, Polish sends the prompt text and the analysis.",
         analysis=True,
         sends_images_externally=True,
         pricing="Uses your Claude plan's usage allowance. No API key or per-use billing.",

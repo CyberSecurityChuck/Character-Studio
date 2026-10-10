@@ -16,98 +16,10 @@ from PIL import Image
 from sqlalchemy import create_engine
 
 from backend.analysis_schema import JSON_SCHEMA, SceneAnalysisData
-from backend.configuration import Settings
 from backend.engines import run_process
 from backend.main import create_app
-from tests.conftest import authorization
+from tests.conftest import ANALYSIS, authorization, wait_for_job
 from tests.test_library import picture
-
-FAKE = Path(__file__).with_name("fake_cli.py")
-ANALYSIS = {
-    "schema_version": 1,
-    "image_properties": {
-        "orientation": "landscape",
-        "approximate_aspect_ratio": "4:3",
-        "style": "Photographic",
-    },
-    "scene_description": "One person stands beside a bicycle on a quiet street.",
-    "camera": {
-        "height": "Chest height",
-        "direction": "Frontal",
-        "shot_type": "Full-body shot",
-        "framing": "Subject centred with space above",
-        "perspective": "Slight wide-angle",
-    },
-    "subjects": [
-        {
-            "label": "Subject 1",
-            "position": "centre",
-            "bounding_box": {"x": 0.4, "y": 0.2, "width": 0.2, "height": 0.7},
-            "body_direction": "Facing the camera",
-            "torso_orientation": "Square to camera",
-            "shoulder_alignment": "Level",
-            "head_direction": "Turned slightly left",
-            "facial_viewing_angle": "Three-quarter left",
-            "eye_direction": "Looking at the camera",
-            "expression": "Gentle smile",
-            "arms_and_hands": "Right hand on the handlebar",
-            "legs_and_feet": "Standing, feet apart",
-            "pose_summary": "Standing beside a bicycle",
-            "outfit": "Blue jacket, grey trousers",
-            "hairstyle": "Short",
-            "accessories": "None visible",
-        }
-    ],
-    "environment": "Residential street with trees",
-    "lighting": "Soft overcast daylight",
-    "color_palette": "Muted blues and greens",
-    "atmosphere": "Calm",
-    "composition_constraints": ["Keep the bicycle on the left of the subject"],
-    "uncertainties": [{"field": "Subject 1.eye_direction", "note": "Face partly in shadow"}],
-}
-
-
-def wait_for_job(client, job_id, timeout=30):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        job = client.get(f"/api/jobs/{job_id}").json()
-        if job["status"] not in ("not_started", "running"):
-            return job
-        time.sleep(0.1)
-    raise AssertionError("Job did not finish")
-
-
-@pytest.fixture
-def fake(tmp_path, monkeypatch):
-    analysis = tmp_path / "analysis.json"
-    analysis.write_text(json.dumps(ANALYSIS), encoding="utf-8")
-    log = tmp_path / "cli-log.jsonl"
-    monkeypatch.setenv("FAKE_CLI_ANALYSIS", str(analysis))
-    monkeypatch.setenv("FAKE_CLI_LOG", str(log))
-    monkeypatch.setenv("FAKE_CLI_MODE", "ok")
-    # Variables that must never reach a CLI run.
-    monkeypatch.setenv("CLAUDE_CODE_TEST_SESSION", "host-session")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-leak")
-    monkeypatch.setenv("OPENAI_API_KEY", "should-not-leak")
-    return log
-
-
-@pytest.fixture
-def engine_settings(tmp_path):
-    return Settings(
-        data_dir=tmp_path / "private-data",
-        frontend_dir=tmp_path / "no-build",
-        engine_commands={
-            "claude_cli": (sys.executable, str(FAKE), "claude"),
-            "codex_cli": (sys.executable, str(FAKE), "codex"),
-        },
-    )
-
-
-@pytest.fixture
-def engine_client(engine_settings, fake):
-    with TestClient(create_app(engine_settings), base_url="http://127.0.0.1:8765") as client:
-        yield client
 
 
 def create_scene(client, title="Street scene", content=None):
@@ -256,7 +168,8 @@ def test_manual_import_validation_and_correction(client):
     )
     assert revised.status_code == 201, revised.text
     detail = revised.json()
-    assert detail["workflow_state"] == "analysis_ready"
+    # No uncertainties left; Subject 1 still needs a character or "Keep original" (Phase 4).
+    assert detail["workflow_state"] == "needs_mapping"
     newest = detail["analyses"][0]
     assert (newest["version"], newest["source"], newest["based_on_id"]) == (
         2,
@@ -330,8 +243,8 @@ def test_prompt_template_versions_and_staleness(client):
         headers=authorization(client),
         json={"analysis": clean},
     ).json()
-    # The saved prompt was built from version 1, so the newer analysis needs a new prompt.
-    assert revised["workflow_state"] == "analysis_ready"
+    # Once the uncertainty is resolved, the unassigned subject is the next step (Phase 4).
+    assert revised["workflow_state"] == "needs_mapping"
 
 
 @pytest.mark.parametrize("engine", ["claude_cli", "codex_cli"])

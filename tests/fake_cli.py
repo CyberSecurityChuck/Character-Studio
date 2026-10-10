@@ -63,6 +63,18 @@ if mode == "slow":
 
 if program == "claude":
     assert "-p" in args
+    polishing = "--tools" in args and args[args.index("--tools") + 1] == ""
+    if polishing and mode in ("ok", "drop"):
+        instruction = args[args.index("-p") + 1]
+        prompt = instruction.split("BEGIN PROMPT\n", 1)[1].split("\nEND PROMPT", 1)[0]
+        polished = prompt.replace("Create one new photorealistic image", "Produce one new image")
+        if mode == "drop":
+            # A careless polish that loses Subject 1's identity instructions.
+            polished = "\n".join(line for line in polished.splitlines() if "Subject 1" not in line)
+        print(
+            json.dumps({"is_error": False, "result": "", "structured_output": {"prompt": polished}})
+        )
+        sys.exit(0)
     if mode == "limit":
         envelope = {"is_error": True, "subtype": "error", "result": "You've hit your usage limit"}
     elif mode == "logged_out_run":

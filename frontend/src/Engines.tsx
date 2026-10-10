@@ -73,6 +73,6 @@ export default function Engines({ token }: { token: string }) {
         <button type="button" className="secondary" disabled={!dirty} onClick={() => setForm(saved)}>Cancel</button>
         <button disabled={!dirty || busy}>Save engine settings</button></div>
     </fieldset></form>}
-    <div className="privacy-note"><strong>What leaves this computer</strong><p>Analyse sends the Base Image to the selected engine’s company (Anthropic for Claude, OpenAI for Codex). Prompts, characters and reference photos are not sent in this phase. Manual analysis sends nothing from the studio.</p></div>
+    <div className="privacy-note"><strong>What leaves this computer</strong><p>Analyse sends the Base Image to the selected engine’s company (Anthropic for Claude, OpenAI for Codex). Polish prompt sends the prompt text and the analysis to Anthropic. Character names and reference photos are not sent in this phase. Manual analysis sends nothing from the studio.</p></div>
   </section>
 }

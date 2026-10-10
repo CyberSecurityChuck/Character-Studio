@@ -52,6 +52,8 @@ class ReferencePhoto(Base):
     frame_x: Mapped[float] = mapped_column(Float, default=0.5)
     frame_y: Mapped[float] = mapped_column(Float, default=0.3)
     frame_zoom: Mapped[float] = mapped_column(Float, default=1.0)
+    # SHA-256 of the unchanged original; set on upload, backfilled at startup.
+    content_hash: Mapped[str | None] = mapped_column(String(64))
 
 
 class CharacterGroup(Base):
@@ -98,6 +100,8 @@ class Scene(Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     workflow_state: Mapped[str] = mapped_column(String(30))
     duplicated_from: Mapped[str | None] = mapped_column(String(32))
+    # Group last chosen to narrow the character pickers; never assigns anyone by itself.
+    mapping_group_id: Mapped[str | None] = mapped_column(String(32))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[str] = mapped_column(String(40))
@@ -137,6 +141,8 @@ class PromptVersion(Base):
     is_polished: Mapped[bool] = mapped_column(Boolean, default=False)
     polished_from_version_id: Mapped[str | None] = mapped_column(String(32))
     engine_version: Mapped[str | None] = mapped_column(String(80))
+    # Character assignments the template draft was built for (workflow.mapping_hash).
+    mapping_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[str] = mapped_column(String(40))
 
 
@@ -156,6 +162,41 @@ class EngineJob(Base):
     error_kind: Mapped[str | None] = mapped_column(String(30))
     error_details: Mapped[str | None] = mapped_column(Text)
     result_id: Mapped[str | None] = mapped_column(String(32))
+    # Polish runs: the prompt version polished, the candidate text and the user's choice.
+    input_id: Mapped[str | None] = mapped_column(String(32))
+    output_text: Mapped[str | None] = mapped_column(Text)
+    decision: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[str] = mapped_column(String(40))
     started_at: Mapped[str | None] = mapped_column(String(40))
     finished_at: Mapped[str | None] = mapped_column(String(40))
+
+
+class SubjectMapping(Base):
+    """What happens to one subject of a scene. Subjects without a row are unresolved."""
+
+    __tablename__ = "subject_mappings"
+    __table_args__ = (UniqueConstraint("scene_id", "subject_label"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    subject_label: Mapped[str] = mapped_column(String(20))
+    action: Mapped[str] = mapped_column(String(20))
+    character_id: Mapped[str | None] = mapped_column(ForeignKey("characters.id"), index=True)
+    # Ordered reference photo ids; the order decides the attached image numbers.
+    reference_ids: Mapped[str] = mapped_column(Text)
+    references_auto: Mapped[bool] = mapped_column(Boolean)
+    # Subjects (labels and boxes) the user confirmed this assignment against.
+    subjects_hash: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[str] = mapped_column(String(40))
+
+
+class Approval(Base):
+    """Immutable approval snapshot; only the invalidation fields are ever written later."""
+
+    __tablename__ = "approvals"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    snapshot_hash: Mapped[str] = mapped_column(String(64))
+    approved_at: Mapped[str] = mapped_column(String(40))
+    invalidated_at: Mapped[str | None] = mapped_column(String(40))
+    invalidated_reason: Mapped[str | None] = mapped_column(Text)

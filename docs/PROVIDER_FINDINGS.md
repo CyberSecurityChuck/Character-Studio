@@ -85,3 +85,10 @@ _Completed 2026-10-10. Approved by the user ("Approve Phase 2.5") on 2026-10-10 
 - Status: `claude auth status` (only `loggedIn` and `subscriptionType` are read) and `codex login status` ("Logged in" text). Nothing else from these outputs is kept.
 - Usage-limit wording is still unobserved; it is matched heuristically and otherwise reported as a generic engine error with the CLI's own text.
 - Not yet run through the studio against the real CLIs; the first real run is the user's during Phase 3 review.
+
+## Phase 4 implementation notes (2026-10-11)
+
+- Polish prompt runs `claude -p "<instruction>" --tools "" --restricted --strict-mcp-config --output-format json --json-schema '{"prompt": string}' --no-session-persistence --permission-prompts none` from its own job folder with stdin closed and the same cleaned environment. `--tools ""` (no tools at all) is the documented form from `claude --help` recorded in Phase 2.5; it has not yet been run against the real CLI by the assistant (the first real polish is the user's, during review).
+- The instruction (fixed rules, the saved prompt, the analysis as compact JSON) is one command-line argument, so the studio refuses polishing above about 24,000 characters (Windows allows about 32,000).
+- The result is read from `structured_output.prompt`, falling back to `result`. Errors use the same signed-out / usage-limit / time-limit handling as analysis. The candidate is stored with the job and only becomes a prompt version when the user accepts it.
+- Nothing is sent to OpenAI in Phase 4. Reference photos are selected and approved but not sent anywhere until Phase 5.

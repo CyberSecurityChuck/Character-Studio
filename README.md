@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2) works today, and so do **Scenes & AI analysis** (Phase 3). Character mapping, approvals and image generation come next, phase by phase. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4) work today. Image generation comes next, phase by phase. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -52,7 +52,8 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 👨‍👩‍👧 | Reusable groups: couples, families, friends | ✅ Available |
 | ♻️ | Crash-safe storage: stale-edit protection, upload/delete recovery | ✅ Available |
 | 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | ✅ Available |
-| 🧑‍🤝‍🧑 | Map people in the scene to saved characters; optional "Polish prompt" | 🗓️ Phase 4 |
+| 🧑‍🤝‍🧑 | Map people in the scene to saved characters, pick reference photos; optional "Polish prompt" | ✅ Available |
+| ✅ | Review screen and approval snapshots that cancel themselves when any input changes | ✅ Available |
 | 🎨 | One-click generation via Codex CLI, results gallery, version history | 🗓️ Phase 5 |
 | 📦 | Batch analysis and generation, multiple variations | 🗓️ Phase 5.5 |
 
@@ -70,9 +71,9 @@ flowchart TB
     end
     subgraph CREATE["② Create"]
         direction LR
-        E["🧑‍🤝‍🧑 Map subjects<br/>to characters"]:::next --> F["✍️ Prompt from template<br/>+ optional Polish"]:::planned
+        E["🧑‍🤝‍🧑 Map subjects<br/>to characters"]:::done --> F["✍️ Prompt from template<br/>+ optional Polish"]:::done
         F --> G{"✅ You<br/>approve"}:::approve
-        G --> H{"🎨 Generate"}:::planned
+        G --> H{"🎨 Generate"}:::next
         H -->|Codex CLI| I["🖼️ Results gallery<br/>never overwritten"]:::planned
         H -->|Manual export / import| I
     end
@@ -86,13 +87,13 @@ flowchart TB
     classDef approve fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:3px
 ```
 
-<sub>🟩 Available · 🟧 Next (Phase 4) · 🟦 Planned · 🟥 Your Approval Gate</sub>
+<sub>🟩 Available · 🟧 Next (Phase 5) · 🟦 Planned · 🟥 Your Approval Gate</sub>
 
-**The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template will enforce this split, so a character's reference photos never change the scene's composition.
+**The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template enforces this split, so a character's reference photos never change the scene's composition.
 
 ## 🤖 How the AI part works
 
-*Analysis works from Phase 3; polishing and generation come in Phases 4–5.* Character Studio does **not** call paid AI APIs. When you click an AI action, it runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
+*Analysis and prompt polishing work today; generation comes in Phase 5.* Character Studio does **not** call paid AI APIs. When you click an AI action, it runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
 
 | Step | Default engine | Alternatives | Uses |
 |---|---|---|---|
@@ -147,7 +148,7 @@ flowchart TB
 | ✅ Scenes, prompts, approvals, results, history | ✍️ **Polish prompt** sends prompt text (no images) to Anthropic |
 | ✅ The database and all logs | 🎨 **Generate** sends the scene and the chosen reference photos to OpenAI |
 
-Today, only **Analyse** sends anything (the Base Image, with location data removed), and only when you click it.
+Today, only **Analyse** (the Base Image, with location data removed) and **Polish prompt** (prompt and analysis text) send anything, and only when you click them. Character names never go into the prompt.
 
 - 🏠 The server only listens on `127.0.0.1`, with host/origin checks and a per-session request token.
 - 📂 Your data lives in a separate folder (default `%USERPROFILE%\Character-Studio-Data`), never inside the source code.
@@ -189,11 +190,11 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
 flowchart TB
     subgraph NOW["✅ Done"]
         direction LR
-        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done
+        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done --> P4["4 · Mapping<br/>& approval"]:::done
     end
     subgraph LATER["🔜 Next → 🗓️ Planned"]
         direction LR
-        P4["4 · Mapping<br/>& approval"]:::next --> P5["5 · Generation<br/>& results"]:::planned --> P55["5.5 · Batch<br/>processing"]:::planned --> P6["6 · Quality<br/>& extras"]:::later
+        P5["5 · Generation<br/>& results"]:::next --> P55["5.5 · Batch<br/>processing"]:::planned --> P6["6 · Quality<br/>& extras"]:::later
     end
     NOW ==> LATER
     style NOW fill:transparent,stroke:#2E7D32,stroke-width:2px

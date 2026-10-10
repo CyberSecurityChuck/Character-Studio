@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-11 — Phase 4: Character Mapping and Approval (local commit, awaiting review)
+
+- Approved by the user ("Approve Phase 4"). The scene workspace is now four steps: Analysis, Characters, Prompt, Review, kept in the address so a refresh keeps the step.
+- Characters: per subject, Use a character / Keep original / Decide later; one character per subject per scene; group filter that never assigns anyone; automatic reference photo choice (primary, closest view to the face angle, then distinct views; up to 3) or manual choice (up to 4, ordered); image numbers shown on the photos. Subject boxes can be moved, resized, added and removed (new analysis version; labels never renumber). A fresh analysis asks the user to re-check assignments.
+- Prompt: the template names each subject's identity images and keep-original subjects; character names never enter the prompt; "Rebuild with the assignments" when assignments change. Required-element check (each subject linked to its image numbers, keep-original instructions, no image numbers beyond those attached).
+- Polish prompt (Claude, text only, no tools): progress, Cancel, clear errors, no retry; side-by-side comparison with word-level highlights; Use polished / Keep original / Edit by hand; missing elements need explicit acceptance; both versions kept with the polished flag.
+- Review and approval: everything the image will be made from, blockers and warnings, cost and engine notes; immutable approval snapshots with content hashes, verified against the files on disk; automatic cancellation with a reason when any input changes (also on photo or character deletion, and after restart); withdraw; approval history. `workflow.require_valid_approval` is the gate Phase 5 must use.
+- Library: delete confirmations explain the effect on scenes; deleting a character makes its subjects undecided; deleting a photo removes it from assignments.
+- Schema `0005_mapping` (additive). 12 new tests (81 total). No dependencies added. See D014.
+
 ## 2026-10-11 — Phase 3 accepted
 
 - The user's follow-up check passed (17/17, 0 problems, "Phase 3 looks good"). Phase 3 is complete. README, status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run, by the user's choice). Phase 4 needs "Approve Phase 4".

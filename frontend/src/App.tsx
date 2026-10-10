@@ -16,8 +16,8 @@ const titles: Record<Page, [string, string]> = {
 }
 
 const upcoming = [
-  { name: 'Mapping & approval', phase: '04', text: 'The right face in the right place.', detail: 'Assign characters to subjects, pick reference photos and approve the prompt.' },
   { name: 'Results', phase: '05', text: 'Every version has a home.', detail: 'Generate from an approved scene and keep every result.' },
+  { name: 'Batch processing', phase: '5.5', text: 'Many scenes, one calm queue.', detail: 'Analyse or generate several approved scenes in a row, pausing when a plan limit is reached.' },
 ]
 
 export default function App() {
@@ -120,7 +120,7 @@ export default function App() {
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7h18M3 17h18" /><circle cx="8" cy="7" r="3" fill="var(--surface)" /><circle cx="16" cy="17" r="3" fill="var(--surface)" /></svg> Studio settings
           </button>
         </nav>
-        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Scene Analysis · Phase 3</span></div>
+        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Mapping & Approval · Phase 4</span></div>
       </aside>
 
       <div className="workspace">
@@ -128,7 +128,7 @@ export default function App() {
           <span className={`connection ${data && !error ? 'online' : ''}`}><span aria-hidden="true" />{loading ? 'Connecting…' : error ? 'Needs attention' : 'Local studio connected'}</span>
         </header>
         <main id="main" tabIndex={-1}>
-          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 03</p>
+          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 04</p>
             <h1 ref={heading} tabIndex={-1}>{page === 'overview' ? (data?.preferences.studio_name || 'Your studio') : titles[page][0]}</h1>
             <p className="intro">{titles[page][1]}</p></div>
             <span className="phase-badge">Local & private</span>
@@ -143,7 +143,7 @@ export default function App() {
               <section className="welcome-panel" aria-labelledby="welcome-title">
                 <div className="welcome-copy"><span className="tiny-label">THE START OF SOMETHING PERSONAL</span>
                   <h2 id="welcome-title">Same characters.<br /><em>New stories.</em></h2>
-                  <p>Save your characters and their reference photos, then add scenes. The studio analyses each Base Image and drafts a prompt you can edit.</p>
+                  <p>Save your characters and their reference photos, then add scenes. The studio analyses each Base Image, you choose who appears where, and you approve the exact prompt and photos.</p>
                   {resume ? <button onClick={() => navigate('scenes', `scenes/${resume.id}`)}>Resume “{resume.title}” <span aria-hidden="true">↗</span></button>
                     : <button onClick={() => navigate('scenes')}>Create your first scene <span aria-hidden="true">↗</span></button>}
                 </div>
@@ -157,7 +157,7 @@ export default function App() {
 
               <section className="readiness" aria-label="Foundation status">
                 <div><span className="status-dot" /><div><strong>Saved on this computer</strong><p>Local database and separate file storage</p></div></div>
-                <div><span className="status-dot" /><div><strong>No paid API connected</strong><p>Analysis runs on your own Claude or ChatGPT sign-in, only when you click</p></div></div>
+                <div><span className="status-dot" /><div><strong>No paid API connected</strong><p>Analysis and polishing run on your own Claude or ChatGPT sign-in, only when you click</p></div></div>
               </section>
 
               {scenes.length > 0 && <><div className="section-title"><h2>Recent scenes</h2><button className="link-button" onClick={() => navigate('scenes')}>All scenes</button></div>

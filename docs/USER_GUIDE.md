@@ -2,7 +2,7 @@
 
 A local-first home for reusable characters, reference scenes and approved image workflows. For the project overview, see the [README](../README.md). Commands below run from the project root folder.
 
-**Current scope: Phase 3 Scene Analysis** (built, in review), on top of the Phase 2 Character Library. Add scenes, analyse them with Claude Code, Codex or manually, correct the analysis and edit the generated prompt. Character mapping, approvals, generation and export/import are not implemented yet; PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
+**Current scope: Phase 4 Character Mapping and Approval** (built, in review), on top of Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt and approve the exact inputs. Generation and export/import are not implemented yet; PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
 
 **How it works (D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
 
@@ -67,7 +67,7 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 ## AI capabilities and costs
 
-Scene analysis runs through the official CLIs (Phase 3). There is no generation endpoint yet, no credential storage and no automatic retry. Paid API access is **disabled**. Paid API-based engines for analysis and generation are planned after the MVP as an opt-in that needs separate approval and asks for cost confirmation on every run.
+Scene analysis and prompt polishing run through the official CLIs (Phases 3–4). There is no generation endpoint yet, no credential storage and no automatic retry. Paid API access is **disabled**. Paid API-based engines for analysis and generation are planned after the MVP as an opt-in that needs separate approval and asks for cost confirmation on every run.
 
 Planned direction (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. The Phase 2.5 spike verified both CLIs' flags, output locations and failure modes; the studio uses only those flags.
 
@@ -78,7 +78,7 @@ Each run uses your plan's allowance and sends data to that provider: **Analyse**
 - Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
 - Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phases 1, 2, 2.5 and 3. Phase 4 and later require explicit approval.
+- Approval covers Phases 1, 2, 2.5, 3 and 4. Phase 5 and later require explicit approval.
 
 For data recovery and current backup limitations see `docs/RECOVERY.md`. Git backs up source history, not private application data.
 
@@ -115,4 +115,22 @@ Analyses are saved as versions with their source and CLI version. Details the an
 
 The **Generation prompt** is written by the studio from the analysis (numbered images, "Subject N" labels, identity and composition locks, negative prompt). Edit it freely, add **Scene changes** and rebuild, copy it, and **Save prompt version**. Saved versions can be loaded back into the editor. If the analysis changes, the studio offers to rebuild the prompt.
 
-**Studio settings → Analysis and generation engines** shows whether Claude Code and Codex are installed and signed in (**Check again** after signing in), the analysis engine (Claude by default, Codex, or Manual), the generation engine for Phase 5, and each engine's time limit. Each run's files are kept in `jobs\<scene>\analysis-<n>\` inside the private data folder.
+**Studio settings → Analysis and generation engines** shows whether Claude Code and Codex are installed and signed in (**Check again** after signing in), the analysis engine (Claude by default, Codex, or Manual), the generation engine for Phase 5, and each engine's time limit. Each run's files are kept in `jobs\<scene>\analysis-<n>\` (or `polish-<n>\`) inside the private data folder.
+
+## Characters, prompt and approval (Phase 4)
+
+A scene has four steps, shown as tabs above the panels: **Analysis**, **Characters**, **Prompt** and **Review**. A tick marks a finished step. The scene opens on the step its saved stage suggests and stays there until you switch; refreshing keeps the step (`#/scenes/<id>/characters`).
+
+**Characters.** Each person found in the Base Image is a subject (Subject 1, Subject 2, …). For each one choose **Use a character**, **Keep original** or **Decide later**, then **Save assignments**. Click a box on the image to jump to its subject. **Choose from** narrows the list to one of your groups; a group never decides who stands where. Each character can appear only once per scene, and characters without reference photos cannot be chosen. Archived characters are hidden unless already assigned.
+
+**Reference photos.** By default the studio picks up to 3: the primary photo, then the view closest to that subject's face angle, then other distinct views. Click photos to choose them yourself (up to 4, in the order clicked), or **Let the studio choose**. The order decides the attached image numbers (Image 1 is always the Base Image).
+
+**Adjust subjects** lets you drag boxes, resize them from the corner (or use the arrow keys; Shift resizes), add a missed person or remove a wrong one. Saving creates a new analysis version. Labels never renumber, so an assignment stays with the same person. If a fresh analysis arrives instead, the studio asks you to check and save the assignments again, because a new analysis may number people differently.
+
+**Prompt.** The template now names each subject's identity images ("Subject 1: take this person's identity only from Image 2 and Image 3") and keeps "Keep original" subjects unchanged. Character names never go into the prompt. If you change assignments after saving a prompt, the studio offers **Rebuild with the assignments**.
+
+**Polish prompt** (optional) asks Claude, through your own Claude Code sign-in, to rewrite the *saved* prompt more clearly under fixed rules: keep every fact, add nothing, keep the subject labels, image numbers and identity instructions. It sends the prompt text and the analysis, never photos. When it finishes, **Compare** shows both versions with removed and added words marked. Choose **Use polished**, **Keep original**, or **Edit by hand**. The studio checks that every subject, image number and keep-original instruction is still there; if anything is missing it warns you and you must tick "Use it anyway" to accept. Both versions are kept. Failures leave the prompt unchanged and offer **Try again** or **Edit by hand**; nothing is retried automatically.
+
+**Review and approve.** The Review step shows the Base Image and analysis version, every subject with its character and reference photos (with image numbers), the full prompt and negative prompt, the generation engine and cost notes. **Before you can approve** lists what is missing (for example an undecided subject or unconfirmed analysis details). **Please check** lists warnings (for example a prompt built before the current assignments); tick the box to approve anyway. **Approve scene** saves an unchangeable snapshot of the exact inputs, including content hashes of the Base Image and reference photos.
+
+An approval stays valid across restarts while nothing changes. Changing the analysis, subjects, assignments, reference photos or prompt (including using a polished version), or deleting a photo or character used in the scene, cancels it and shows why. Renaming a character does not. **Withdraw** cancels it yourself. The approval covers the content, not the engine, so changing the generation engine in Settings keeps it. Approval history keeps every snapshot. Generation itself arrives in Phase 5 and will require a valid approval.

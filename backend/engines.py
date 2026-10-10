@@ -1,4 +1,4 @@
-"""Official `claude` and `codex` CLIs as analysis engines (DECISIONS.md D009).
+"""Official `claude` and `codex` CLIs as analysis and polish engines (DECISIONS.md D009).
 
 Only flags confirmed in Phase 2.5 (docs/PROVIDER_FINDINGS.md) are used. The studio
 launches the programs and reads their output files; it never reads, stores or
@@ -284,6 +284,26 @@ def analysis_command(engine: str, command: list[str], job_dir: Path, schema_json
     ], "events.jsonl"
 
 
+def polish_command(command: list[str], instruction: str, schema_json: str) -> list[str]:
+    """Claude, text only: no tools at all (`--tools ""`), confined and without settings."""
+    return [
+        *command,
+        "-p",
+        instruction,
+        "--tools",
+        "",
+        "--restricted",
+        "--strict-mcp-config",
+        "--output-format",
+        "json",
+        "--json-schema",
+        schema_json,
+        "--no-session-persistence",
+        "--permission-prompts",
+        "none",
+    ]
+
+
 def _tail(path: Path, limit: int = 400) -> str:
     try:
         text = path.read_text(encoding="utf-8", errors="replace").strip()
@@ -308,30 +328,59 @@ def _classify(engine: str, text: str) -> EngineError:
     return EngineError("engine_error", f"{name} reported an error: {shown}")
 
 
-def interpret_analysis(engine: str, job_dir: Path, outcome: ProcessOutcome) -> SceneAnalysisData:
-    """Turn a finished run into a validated analysis, or raise EngineError."""
-    name = ENGINE_NAMES[engine]
+def _check_timeout(engine: str, outcome: ProcessOutcome, fallback: str) -> None:
     if outcome.timed_out:
         raise EngineError(
             "timeout",
-            f"{name} did not finish in time, so the run was stopped. Try again, raise the "
-            "timeout in Studio settings, or do it manually.",
+            f"{ENGINE_NAMES[engine]} did not finish in time, so the run was stopped. Try again, "
+            f"raise the time limit in Studio settings, or {fallback}.",
         )
+
+
+def _claude_envelope(job_dir: Path) -> dict:
+    """Read `--output-format json`; raise EngineError for errors or unexpected output."""
+    engine, name = "claude_cli", ENGINE_NAMES["claude_cli"]
+    raw = (job_dir / "output.json").read_text(encoding="utf-8", errors="replace")
+    if not raw.strip():
+        raise _classify(engine, _tail(job_dir / "stderr.txt") or "No output.")
+    try:
+        envelope = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise EngineError("invalid_output", f"{name} replied in an unexpected format.") from error
+    if not isinstance(envelope, dict):
+        raise EngineError("invalid_output", f"{name} replied in an unexpected format.")
+    if envelope.get("is_error"):
+        raise _classify(engine, str(envelope.get("result") or envelope.get("subtype")))
+    return envelope
+
+
+def interpret_polish(job_dir: Path, outcome: ProcessOutcome, max_length: int) -> str:
+    """Return the polished prompt text, or raise EngineError. The original is never touched."""
+    _check_timeout("claude_cli", outcome, "edit the prompt by hand")
+    try:
+        envelope = _claude_envelope(job_dir)
+    except OSError as error:
+        raise EngineError("engine_error", "Claude's output could not be read.") from error
+    structured = envelope.get("structured_output")
+    if isinstance(structured, dict) and isinstance(structured.get("prompt"), str):
+        text = structured["prompt"]
+    else:
+        text = str(envelope.get("result") or "")
+    text = text.strip()
+    if not text:
+        raise EngineError("invalid_output", "Claude replied without a polished prompt.")
+    if len(text) > max_length:
+        raise EngineError("invalid_output", "Claude's polished prompt is too long to use.")
+    return text
+
+
+def interpret_analysis(engine: str, job_dir: Path, outcome: ProcessOutcome) -> SceneAnalysisData:
+    """Turn a finished run into a validated analysis, or raise EngineError."""
+    name = ENGINE_NAMES[engine]
+    _check_timeout(engine, outcome, "do it manually")
     try:
         if engine == "claude_cli":
-            raw = (job_dir / "output.json").read_text(encoding="utf-8", errors="replace")
-            if not raw.strip():
-                raise _classify(engine, _tail(job_dir / "stderr.txt") or "No output.")
-            try:
-                envelope = json.loads(raw)
-            except json.JSONDecodeError as error:
-                raise EngineError(
-                    "invalid_output", f"{name} replied in an unexpected format."
-                ) from error
-            if not isinstance(envelope, dict):
-                raise EngineError("invalid_output", f"{name} replied in an unexpected format.")
-            if envelope.get("is_error"):
-                raise _classify(engine, str(envelope.get("result") or envelope.get("subtype")))
+            envelope = _claude_envelope(job_dir)
             structured = envelope.get("structured_output")
             if structured is not None:
                 return validate_analysis(structured)

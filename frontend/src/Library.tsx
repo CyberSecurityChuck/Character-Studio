@@ -4,23 +4,25 @@ import { CardMenu, SelectionBar, TextDialog } from './Controls'
 import { replaceRoute, routeParts } from './route'
 
 type Frame = { x: number; y: number; zoom: number }
-type Photo = { id: string; label: string; width: number; height: number; frame?: Frame; thumbnail_url: string; original_url: string }
-type Character = { id: string; name: string; age_category: string; notes: string; archived: boolean; revision: number; primary_photo_id: string | null; photos: Photo[]; group_ids: string[]; created_at: string; updated_at: string; cleanup_pending?: boolean }
-type Group = { id: string; name: string; revision: number; member_ids: string[] }
+export type Photo = { id: string; label: string; width: number; height: number; frame?: Frame; thumbnail_url: string; original_url: string }
+export type Character = { id: string; name: string; age_category: string; notes: string; archived: boolean; revision: number; primary_photo_id: string | null; photos: Photo[]; group_ids: string[]; assigned_scene_count?: number; created_at: string; updated_at: string; cleanup_pending?: boolean }
+export type Group = { id: string; name: string; revision: number; member_ids: string[] }
 const labels = ['Front', 'Left three-quarter', 'Right three-quarter', 'Left profile', 'Right profile', 'Full body', 'Additional']
 const defaultFrame: Frame = { x: 0.5, y: 0.3, zoom: 1 }
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
+// Deleting a character or photo used in scenes changes those scenes; say so before confirming.
+const sceneNote = (scenes: number) => scenes ? ` ${scenes === 1 ? 'One scene uses' : `${scenes} scenes use`} this character: those subjects become undecided and any approval there is cancelled.` : ''
 
 // Sizes are percentages of a square box, so one frame renders identically at every avatar size.
 function frameBox(photo: Photo, frame: Frame) {
   const ratio = photo.width / photo.height
   return { w: Math.max(ratio, 1) * frame.zoom * 100, h: Math.max(1 / ratio, 1) * frame.zoom * 100 }
 }
-function FramedImage({ photo, frame = photo.frame ?? defaultFrame }: { photo: Photo; frame?: Frame }) {
+export function FramedImage({ photo, frame = photo.frame ?? defaultFrame }: { photo: Photo; frame?: Frame }) {
   const { w, h } = frameBox(photo, frame)
   return <img className="framed" src={photo.thumbnail_url} alt="" draggable={false} loading="lazy" style={{ width: `${w}%`, height: `${h}%`, left: `${(100 - w) * frame.x}%`, top: `${(100 - h) * frame.y}%` }} />
 }
-function Avatar({ character, size = 'card' }: { character: Character; size?: 'card' | 'header' | 'mini' }) {
+export function Avatar({ character, size = 'card' }: { character: Character; size?: 'card' | 'header' | 'mini' }) {
   const photo = character.photos.find(p => p.id === character.primary_photo_id)
   return <span className={`avatar avatar-${size}`} aria-hidden="true">{photo ? <FramedImage photo={photo} /> : character.name.slice(0, 1).toLocaleUpperCase()}</span>
 }
@@ -167,7 +169,7 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
     void run(async () => replaceCharacter(await mutate<Character>(`/api/characters/${c.id}/archive`, 'PUT', { revision: c.revision, archived: !c.archived })), c.archived ? `${c.name} restored.` : `${c.name} archived.`)
   }
   function deleteCharacterFromCard(c: Character) {
-    if (!window.confirm(`Permanently delete “${c.name}” and all ${c.photos.length} reference photos? This cannot be undone. Archive instead if you want to keep them.`)) return
+    if (!window.confirm(`Permanently delete “${c.name}” and all ${c.photos.length} reference photos? This cannot be undone. Archive instead if you want to keep them.${sceneNote(c.assigned_scene_count ?? 0)}`)) return
     void run(async () => {
       const result = await mutate<{ cleanup_pending: boolean }>(`/api/characters/${c.id}?revision=${c.revision}`, 'DELETE')
       setCharacters(old => old.filter(x => x.id !== c.id))
@@ -189,7 +191,8 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
     const chosen = characters.filter(c => picked.includes(c.id))
     if (!chosen.length) return
     const count = `${chosen.length} ${chosen.length === 1 ? 'character' : 'characters'}`
-    if (kind === 'delete' && !window.confirm(`Permanently delete ${count} and all their reference photos? This cannot be undone. Archive instead if you want to keep them.`)) return
+    const used = chosen.filter(c => c.assigned_scene_count).length
+    if (kind === 'delete' && !window.confirm(`Permanently delete ${count} and all their reference photos? This cannot be undone. Archive instead if you want to keep them.${used ? ` ${used} of them ${used === 1 ? 'is' : 'are'} assigned in scenes: those subjects become undecided and any approval there is cancelled.` : ''}`)) return
     if (chosen.some(c => touchesOpenEdits(c.id)) && !window.confirm('Discard unsaved edits?')) return
     void run(async () => {
       const failed: string[] = []
@@ -387,7 +390,7 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
                     {isPrimary
                       ? <button className="secondary" disabled={photoLocked} onClick={() => openFraming(p)}>Adjust thumbnail</button>
                       : <button className="secondary" disabled={photoLocked} onClick={() => changePhoto(p, p.label, true)}>Make primary</button>}
-                    <button className="danger secondary" disabled={photoLocked} aria-label={`Delete photo ${i + 1}`} onClick={() => { if (window.confirm('Permanently delete this original photo and its thumbnail? This cannot be undone.')) void run(async () => {
+                    <button className="danger secondary" disabled={photoLocked} aria-label={`Delete photo ${i + 1}`} onClick={() => { if (window.confirm(`Permanently delete this original photo and its thumbnail? This cannot be undone.${selected.assigned_scene_count ? ' Scenes that use it as a reference lose it, and any approval there is cancelled.' : ''}`)) void run(async () => {
                       const c = await mutate<Character>(`/api/photos/${p.id}?revision=${selected.revision}`, 'DELETE'); acceptCharacter(c)
                       if (c.cleanup_pending) throw new Error('Photo removed from the library. A locked file is pending deletion; restart the studio to retry cleanup.')
                     }, 'Photo deleted.') }}>Delete</button>
@@ -402,9 +405,9 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
                 ? <ul className="chip-list" aria-label={`Groups ${selected.name} belongs to`}>{memberOf.map(g => <li key={g.id}><button className="chip" disabled={busy} title={`Open ${g.name} in Groups`} onClick={() => { if (canLeave()) { clearEditors(); setTab('groups'); openGroup(g) } }}>{g.name}<span>{g.member_ids.length}</span></button></li>)}</ul>
                 : <p className="hint">Not in any groups yet.</p>}
             </div>
-            <div className="detail-section"><h3>{selected.archived ? 'Archived character' : 'Remove from the library'}</h3><p className="hint">Archive hides the character and keeps its photos and memberships. Permanent deletion removes the profile, originals, thumbnails and memberships. There is no generation history in this phase.</p>
+            <div className="detail-section"><h3>{selected.archived ? 'Archived character' : 'Remove from the library'}</h3><p className="hint">Archive hides the character and keeps its photos and memberships. Permanent deletion removes the profile, originals, thumbnails and memberships; scenes that used the character keep their subjects, undecided. Past approval records are kept.</p>
               <div className="save-row"><button className="secondary" disabled={photoLocked} onClick={() => void run(async () => acceptCharacter(await mutate<Character>(`/api/characters/${selected.id}/archive`, 'PUT', { revision: selected.revision, archived: !selected.archived })), selected.archived ? 'Character restored.' : 'Character archived.')}>{selected.archived ? 'Restore character' : 'Archive character'}</button>
-                <button className="danger secondary" disabled={photoLocked} onClick={() => { if (window.confirm(`Permanently delete “${selected.name}” and all ${selected.photos.length} reference photos? This cannot be undone. Archive instead if you want to keep them.`)) void run(async () => {
+                <button className="danger secondary" disabled={photoLocked} onClick={() => { if (window.confirm(`Permanently delete “${selected.name}” and all ${selected.photos.length} reference photos? This cannot be undone. Archive instead if you want to keep them.${sceneNote(selected.assigned_scene_count ?? 0)}`)) void run(async () => {
                   const result = await mutate<{cleanup_pending: boolean}>(`/api/characters/${selected.id}?revision=${selected.revision}`, 'DELETE')
                   setCharacters(old => old.filter(c => c.id !== selected.id)); clearEditors()
                   setGroups(await request<Group[]>('/api/groups'))

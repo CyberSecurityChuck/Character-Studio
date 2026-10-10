@@ -1,6 +1,8 @@
 """Local library API. Originals never leave this machine or use client-supplied paths."""
 
+import hashlib
 import io
+import json
 import os
 import shutil
 import warnings
@@ -12,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -23,8 +25,11 @@ from backend.models import (
     GroupMember,
     PendingFileDeletion,
     ReferencePhoto,
+    Scene,
+    SubjectMapping,
 )
 from backend.persistence import writing_session
+from backend.workflow import auto_references, refresh_scenes, scenes_using
 
 router = APIRouter(prefix="/api")
 PhotoLabel = Literal[
@@ -151,6 +156,11 @@ def character_data(session, character):
                 select(GroupMember.group_id).where(GroupMember.character_id == character.id)
             )
         ),
+        "assigned_scene_count": session.scalar(
+            select(func.count(func.distinct(SubjectMapping.scene_id))).where(
+                SubjectMapping.character_id == character.id
+            )
+        ),
     }
 
 
@@ -259,8 +269,18 @@ def delete_character(request: Request, character_id: str, revision: int = Query(
         ):
             touch(require(session, CharacterGroup, group_id))
         session.execute(delete(GroupMember).where(GroupMember.character_id == character_id))
+        # Scenes keep their subjects; the assignment becomes undecided again and any
+        # approval that used this character is cancelled. Approval snapshots are kept.
+        affected = scenes_using(session, character_id)
+        session.execute(
+            update(SubjectMapping)
+            .where(SubjectMapping.character_id == character_id)
+            .values(action="unresolved", character_id=None, reference_ids="[]")
+        )
         session.flush()
         session.delete(item)
+        session.flush()
+        refresh_scenes(session, affected)
     pending = clean_deleted_files(request.app.state.engine, request.app.state.settings, paths)
     return {"deleted": True, "cleanup_pending": pending}
 
@@ -344,6 +364,7 @@ def store_photo(request, character_id, revision, payload):
                     width=width,
                     height=height,
                     created_at=now(),
+                    content_hash=hashlib.sha256(payload).hexdigest(),
                 )
             )
             if not item.primary_photo_id:
@@ -388,6 +409,52 @@ def update_photo(request: Request, photo_id: str, body: PhotoUpdate):
         return character_data(session, item)
 
 
+def drop_from_mappings(session, character, photo_id) -> None:
+    """Remove a deleted photo from scene assignments; any approval using it is cancelled."""
+    affected = set()
+    remaining = list(
+        session.scalars(
+            select(ReferencePhoto)
+            .where(ReferencePhoto.character_id == character.id)
+            .order_by(ReferencePhoto.created_at, ReferencePhoto.id)
+        )
+    )
+    for row in session.scalars(
+        select(SubjectMapping).where(SubjectMapping.character_id == character.id)
+    ):
+        ids = json.loads(row.reference_ids)
+        if photo_id not in ids:
+            continue
+        ids.remove(photo_id)
+        if not ids and row.references_auto and remaining:
+            ids = auto_references(remaining, character.primary_photo_id, "")
+        row.reference_ids = json.dumps(ids)
+        affected.add(row.scene_id)
+    session.flush()
+    refresh_scenes(session, affected)
+
+
+def file_hash(path) -> str | None:
+    """SHA-256 of a stored file, or None when it is missing or unreadable."""
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as file:
+            for block in iter(lambda: file.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def backfill_photo_hashes(engine, settings) -> None:
+    """Photos uploaded before Phase 4 get their content hash once, at startup."""
+    with writing_session(engine) as session:
+        for photo in session.scalars(
+            select(ReferencePhoto).where(ReferencePhoto.content_hash.is_(None))
+        ):
+            photo.content_hash = file_hash(asset_path(settings, photo.original_path))
+
+
 @router.delete("/photos/{photo_id}")
 def delete_photo(request: Request, photo_id: str, revision: int = Query(ge=1)):
     with writing(request) as session:
@@ -403,6 +470,7 @@ def delete_photo(request: Request, photo_id: str, revision: int = Query(ge=1)):
                 .order_by(ReferencePhoto.created_at, ReferencePhoto.id)
                 .limit(1)
             )
+        drop_from_mappings(session, item, photo.id)
         touch(item)
         result = character_data(session, item)
     result["cleanup_pending"] = clean_deleted_files(
@@ -470,5 +538,9 @@ def delete_group(request: Request, group_id: str, revision: int = Query(ge=1)):
         group = require(session, CharacterGroup, group_id)
         check_revision(group, revision)
         session.execute(delete(GroupMember).where(GroupMember.group_id == group_id))
+        # Groups only narrow the pickers, so scenes that used this one simply show everyone.
+        session.execute(
+            update(Scene).where(Scene.mapping_group_id == group_id).values(mapping_group_id=None)
+        )
         session.delete(group)
     return {"deleted": True}

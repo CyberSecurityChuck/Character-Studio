@@ -11,7 +11,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.configuration import Settings, load_settings
 from backend.jobs import JobRunner, reconcile_on_startup
-from backend.library import clean_deleted_files
+from backend.library import backfill_photo_hashes, clean_deleted_files
 from backend.library import router as library_router
 from backend.models import StudioPreferences
 from backend.persistence import SCHEMA_REVISION, open_database
@@ -28,7 +28,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = open_database(settings)
         app.state.settings = settings
         clean_deleted_files(app.state.engine, settings)
+        backfill_photo_hashes(app.state.engine, settings)
         # Runs left over from a previous process are never resumed (DECISIONS.md D010).
+        # Reconciling also re-checks every approval against the current inputs.
         reconcile_on_startup(app.state.engine)
         app.state.runner = JobRunner(app.state.engine, settings)
         app.state.runner.start()
@@ -115,7 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "preferences": preferences,
             "session_token": app.state.session_token,
-            "phase": 3,
+            "phase": 4,
             "max_upload_bytes": settings.max_upload_bytes,
             "schema_revision": SCHEMA_REVISION,
             "data_directory": str(settings.data_dir),

@@ -1,13 +1,14 @@
 """One job runner for every engine run (PLAN.md §12.1, DECISIONS.md D010).
 
 Jobs are persisted before anything starts and run one at a time, oldest first.
-Phase 3 queues a single analysis per click, but several jobs may wait as
+Each click queues a single analysis or polish run, but several jobs may wait as
 not_started. Nothing is ever retried or resumed automatically: after a restart,
 runs that were in progress become Interrupted and waiting ones become Cancelled.
 """
 
 import json
 import threading
+from pathlib import Path
 
 from PIL import Image, ImageOps
 from sqlalchemy import select, update
@@ -20,13 +21,19 @@ from backend.engines import (
     EngineError,
     analysis_command,
     interpret_analysis,
+    interpret_polish,
+    polish_command,
     require_ready,
     resolve_command,
     run_process,
 )
-from backend.models import EngineJob, Scene
+from backend.models import EngineJob, PromptVersion, Scene, SceneAnalysis
 from backend.persistence import writing_session
-from backend.scene_store import add_analysis, now, refresh_workflow
+from backend.prompting import POLISH_SCHEMA, polish_instruction
+from backend.scene_store import latest, now
+from backend.workflow import add_analysis, analysis_of, refresh_workflow
+
+MAX_PROMPT_LENGTH = 40_000
 
 INTERRUPTED_MESSAGE = (
     "The studio stopped while this run was in progress. It may already have used some of your "
@@ -61,15 +68,20 @@ def reconcile_on_startup(engine) -> None:
             refresh_workflow(session, scene)
 
 
-def prepare_analysis_folder(settings: Settings, scene: Scene) -> str:
-    """Create the job folder with a metadata-free copy of the Base Image (PLAN.md §22)."""
-    root = asset_path(settings, f"jobs/{scene.id}")
+def _new_folder(settings: Settings, scene_id: str, kind: str) -> tuple[str, Path]:
+    root = asset_path(settings, f"jobs/{scene_id}")
     root.mkdir(parents=True, exist_ok=True)
     number = 1
-    while (root / f"analysis-{number}").exists():
+    while (root / f"{kind}-{number}").exists():
         number += 1
-    folder = root / f"analysis-{number}"
+    folder = root / f"{kind}-{number}"
     folder.mkdir()
+    return f"jobs/{scene_id}/{kind}-{number}", folder
+
+
+def prepare_analysis_folder(settings: Settings, scene: Scene) -> str:
+    """Create the job folder with a metadata-free copy of the Base Image (PLAN.md §22)."""
+    key, folder = _new_folder(settings, scene.id, "analysis")
     with Image.open(asset_path(settings, scene.original_path)) as source:
         upright = ImageOps.exif_transpose(source).convert("RGB")
         # A fresh image carries no EXIF/GPS or other source metadata.
@@ -78,7 +90,22 @@ def prepare_analysis_folder(settings: Settings, scene: Scene) -> str:
         clean.save(folder / "base.jpg", "JPEG", quality=95)
     (folder / "instruction.txt").write_text(ENGINE_INSTRUCTION, encoding="utf-8")
     (folder / "schema.json").write_text(json.dumps(JSON_SCHEMA, indent=2), encoding="utf-8")
-    return f"jobs/{scene.id}/analysis-{number}"
+    return key
+
+
+def prepare_polish_folder(settings: Settings, scene_id: str, instruction: str) -> str:
+    """Polish runs need no images: the folder only records what was sent."""
+    key, folder = _new_folder(settings, scene_id, "polish")
+    (folder / "instruction.txt").write_text(instruction, encoding="utf-8")
+    return key
+
+
+def polish_input(session, job: EngineJob) -> str:
+    """The instruction for a polish run: fixed rules, the prompt version and its analysis."""
+    prompt = session.get(PromptVersion, job.input_id)
+    analysis = session.get(SceneAnalysis, prompt.analysis_id) if prompt.analysis_id else None
+    analysis = analysis or latest(session, SceneAnalysis, job.scene_id)
+    return polish_instruction(prompt.prompt_text, analysis_of(analysis))
 
 
 class JobRunner:
@@ -158,22 +185,30 @@ class JobRunner:
         with Session(self.engine) as session:
             job = session.get(EngineJob, job_id)
             scene = session.get(Scene, job.scene_id)
-            engine, timeout = job.engine, job.timeout_seconds
+            engine, timeout, kind = job.engine, job.timeout_seconds, job.kind
+            instruction = polish_input(session, job) if kind == "polish" else None
             session.expunge_all()
         try:
             version = require_ready(engine, overrides)
             self._update(job_id, engine_version=version)
             if self._cancel_requested(job_id):
                 raise _Stopped()
-            folder = prepare_analysis_folder(self.settings, scene)
+            if kind == "polish":
+                folder = prepare_polish_folder(self.settings, scene.id, instruction)
+            else:
+                folder = prepare_analysis_folder(self.settings, scene)
             self._update(job_id, job_folder=folder)
             job_dir = asset_path(self.settings, folder)
             command = resolve_command(engine, overrides)
             if command is None:
                 raise EngineError("not_installed", f"{ENGINE_NAMES[engine]} could not be started.")
-            argv, output_name = analysis_command(
-                engine, command, job_dir, json.dumps(JSON_SCHEMA, separators=(",", ":"))
-            )
+            if kind == "polish":
+                schema = json.dumps(POLISH_SCHEMA, separators=(",", ":"))
+                argv, output_name = polish_command(command, instruction, schema), "output.json"
+            else:
+                argv, output_name = analysis_command(
+                    engine, command, job_dir, json.dumps(JSON_SCHEMA, separators=(",", ":"))
+                )
             outcome = run_process(
                 argv,
                 job_dir,
@@ -183,6 +218,14 @@ class JobRunner:
             )
             if outcome.cancelled:
                 raise _Stopped()
+            if kind == "polish":
+                polished = interpret_polish(job_dir, outcome, MAX_PROMPT_LENGTH)
+                with writing_session(self.engine) as session:
+                    job = session.get(EngineJob, job_id)
+                    # Only a candidate: the prompt changes when the user chooses "Use polished".
+                    job.output_text = polished
+                    self._finish(session, job, "completed")
+                return
             data = interpret_analysis(engine, job_dir, outcome)
             with writing_session(self.engine) as session:
                 job = session.get(EngineJob, job_id)

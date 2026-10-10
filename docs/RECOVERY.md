@@ -24,6 +24,12 @@ Each engine run is recorded as `not_started` before anything launches; its job f
 
 Scene creation and duplication use the same path-journal as photo uploads, so interrupted writes are cleaned at startup. Deleting a scene queues its original, thumbnail and job folder for deletion; locked files are retried at startup. Deletion is refused while a run is active.
 
+## Phase 4 mapping and approval recovery
+
+Subject assignments, the chosen group, selected reference photos, polish runs and approval snapshots survive restart. Approvals are never edited: an approval records its inputs (Base Image path and hash, analysis version and hash, subject boxes, prompt version, prompt and negative prompt, each subject's character and reference photo ids, hashes and image numbers). At startup and after every change the studio rebuilds that snapshot from the current data; any difference cancels the approval with a reason (`invalidated_at`, `invalidated_reason`) and keeps the record. Approving re-reads the Base Image and every chosen reference photo from disk and refuses if a file is missing or no longer matches its hash. Reference photos uploaded before Phase 4 get their hash once at startup.
+
+A polish run is an engine job like an analysis (`jobs/<scene>/polish-<n>/`), with the same Interrupted and Cancelled handling. Its result is only a candidate stored with the job; the prompt changes only when the user chooses **Use polished**, so an interrupted or failed polish never alters a prompt. Deleting a character sets its subjects back to undecided; deleting a photo removes it from assignments. Both cancel affected approvals. Deleting a scene removes its assignments and approvals with it.
+
 ## Backups at the current stage
 
 No application backup/restore UI is implemented yet. For an offline manual backup, stop Character Studio, ensure its process has exited, then copy the **entire** private data directory to a separate backup location. Never copy only a running `studio.db`; active SQLite WAL files may contain committed changes. The baseline suite verifies SQLite's supported online backup primitive for the database.
@@ -32,8 +38,7 @@ To manually restore, stop the application, retain the current data directory as 
 
 ## Mandatory later-phase implementation
 
-- Persist scenes, analyses, subject regions, mappings, selected references, draft/settings revisions, prompt versions and workflow stage alongside each feature.
-- Preserve immutable approvals and exact input hashes. Restore approval only for unchanged inputs; changing inputs invalidates eligibility without erasing history.
+- Phase 5 generation must call `backend.workflow.require_valid_approval` in the same transaction that queues the job, and record the approval id with the job.
 - Persist generation jobs and attempts before dispatch. Keep pending/running/completed/failed/cancelled/interrupted/outcome_unknown distinct.
 - An interrupted request that may have reached a provider becomes outcome_unknown; reconcile only through supported provider mechanisms.
 - Never resubmit automatically after restart, timeout or an uncertain response. Provider idempotency and status lookup are capability-dependent, not assumed.
