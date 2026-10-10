@@ -8,15 +8,15 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 
 [![CI](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A0442A.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-early%20development-F59E0B.svg)](#-roadmap)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-quick-start)
+[![Status](https://img.shields.io/badge/Status-Early%20Development-F59E0B.svg)](#-roadmap)
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-quick-start)
 <br/>
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Local-first](https://img.shields.io/badge/local--first-No%20Cloud%20Backend-2E7D32.svg)](#-privacy-by-design)
+[![Local-first](https://img.shields.io/badge/Local--first-No%20Cloud%20Backend-2E7D32.svg)](#-privacy-by-design)
 [![No API keys](https://img.shields.io/badge/AI-No%20API%20Keys-7C3AED.svg)](#-how-the-ai-part-works)
 
 <br/>
