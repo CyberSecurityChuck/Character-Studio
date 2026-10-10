@@ -34,4 +34,5 @@ PLAN.md remains authoritative. On 2026-10-10 the user directed a planning-only c
 
 - Normal app: http://127.0.0.1:8765; data `%USERPROFILE%\Character-Studio-Data`; schema `0003_photo_framing`. Restart is needed after backend changes; a browser refresh suffices for frontend-only builds.
 - Git: determine the checkpoint with `git log`. `Phase_Checks/` is ignored. No remote configured and no push.
-- Next action: wait for the user's decisions on the open plan conflicts reported with the v2.1 change, then an explicit "Approve Phase 2.5" before running the engine verification spike. Phase 3 needs its own approval. Do not start scenes, analysis or generation work without it.
+- The user resolved all eight v2.1 conflicts on 2026-10-10 (recorded in D009's "Resolved" list and PLAN.md). Paid API engines are a planned post-MVP option, not authorized now.
+- Next action: wait for an explicit "Approve Phase 2.5" before running the engine verification spike. Phase 3 needs its own approval. Do not start scenes, analysis or generation work without it.

@@ -39,7 +39,10 @@ Recorded from the user's planning direction on 2026-10-10. Not independently re-
 - The studio never reads, copies, stores, logs or forwards either CLI's login tokens or credential files. It only launches the programs and reads their output.
 - No API keys and no per-use billing. Each run consumes the relevant plan's usage allowance; usage limits can be reached.
 - Per the user, OpenAI's documentation confirms Codex built-in image generation with reference photos and identity preservation. Whether likeness is acceptable for this studio's scenes is a quality check recorded by the spike, not a gate.
-- The optional paid OpenAI API adapter remains disabled.
+  Phase 2.5 must cite the exact official OpenAI page; until then this remains the user's statement.
+- Codex CLI is also a user-selectable analysis engine (Claude is the default). Codex analysis uses the ChatGPT plan's allowance, which may be shared with image generation (to be confirmed).
+- Neither CLI is assumed to confine file reads to its working folder. Phase 2.5 records any supported confinement option; if none exists, that is a known limitation, not a blocker.
+- The optional paid OpenAI API adapter remains disabled. Paid API-based engines for analysis and generation are planned post-MVP, off by default, with separate approval and per-run cost confirmation.
 
 ## Phase 2.5 spike results
 
@@ -54,7 +57,11 @@ _Not run yet. Requires explicit "Approve Phase 2.5"._
 | Confirmed `codex exec` flags (from `codex exec --help`) | — |
 | (b) Claude analysis: JSON clean? duration | — |
 | (b) Claude failure appearance: signed out / usage limit / bad JSON | — |
+| (b2) Codex analysis: JSON clean? duration | — |
+| (b2) Codex analysis failure appearance | — |
+| File-access confinement option: `claude` / `codex` | — |
 | (c) Codex generation: output file location, duration | — |
 | (c) Codex failure appearance | — |
 | (c) Likeness verdict (user) | — |
+| (d) Official OpenAI page cited for reference-photo identity support | — |
 | Notes / sources cited | — |

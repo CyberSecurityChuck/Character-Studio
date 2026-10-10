@@ -486,10 +486,18 @@ uncertainty rather than inventing details.
 
 Use a modular "analysis engine" interface.
 
-The first engine is the Claude Code CLI (`claude -p`),
-run locally on the user's own signed-in Claude Pro
-subscription (DECISIONS.md D009). The interface must
-allow adding Codex as a second analysis engine later.
+Two CLI engines are built in Phase 3, selectable in
+Settings (DECISIONS.md D009):
+
+- Claude Code CLI (`claude -p`) on the user's Claude
+  Pro subscription (default)
+- Codex CLI (`codex exec`) on the user's ChatGPT
+  subscription; this uses the ChatGPT plan's Codex
+  allowance, which may be shared with image generation
+
+The interface must also allow adding a paid API-based
+analysis engine later (post-MVP; see §12.3 and
+Phase 6).
 
 The manual analysis workflow (copy the fixed analysis
 instruction, import the analysis) remains as the
@@ -502,8 +510,9 @@ run is retried automatically.
 Exact CLI flags, output behaviour and failure modes
 must be verified in Phase 2.5 before implementation.
 
-Scene analysis and image generation use different
-engines: Claude for analysis, Codex for images.
+By default, scene analysis and image generation use
+different engines: Claude for analysis, Codex for
+images.
 
 ---
 
@@ -636,13 +645,23 @@ Approval must create an immutable record containing:
 - Negative prompt
 - Subject mappings
 - Selected character references
-- Provider
 - Model/settings
 - Approval timestamp
 
 Use stable identifiers and content hashes where useful.
 
 If any approved input changes, approval becomes invalid.
+
+The approval covers content, not the engine
+(decided 2026-10-10). The same valid approval may be
+used with the Codex engine or the manual bridge
+(including "Export for manual use" after a failed
+Generate) and survives changing the generation engine
+in Settings. Each generation job records the engine
+and version that actually ran. A future paid API
+engine must additionally ask for explicit cost
+confirmation on every run; approval alone never starts
+a paid request.
 
 Do not generate using stale approval records.
 
@@ -689,6 +708,8 @@ the user has installed and signed into on this PC:
 
 - Analysis and "Polish prompt": Claude Code CLI
   (`claude -p`) on the user's Claude Pro subscription
+- Analysis (user-selectable alternative): Codex CLI
+  (`codex exec`)
 - Image generation: Codex CLI (`codex exec` with its
   built-in image generation) on the user's ChatGPT
   subscription (Plus or above)
@@ -711,6 +732,19 @@ Rules:
   option, and is never retried automatically.
 - Record the engine name and CLI version with every
   analysis, prompt version and generation it produces.
+- Confine each run's file access to its job folder
+  using the CLI's own permission/sandbox options where
+  Phase 2.5 confirms they exist. Where none exist, the
+  limitation is recorded in docs/PROVIDER_FINDINGS.md
+  and the engine may still be used (decided
+  2026-10-10).
+- Job statuses: Failed (the CLI reported an error),
+  Cancelled (the user clicked Cancel), Interrupted (the
+  studio stopped mid-run). An Interrupted run may
+  already have used allowance or saved an output; the
+  UI asks the user to check its job folder before
+  "Try again". Nothing is ever resubmitted
+  automatically.
 
 Before implementation, Phase 2.5 must verify and record
 in docs/PROVIDER_FINDINGS.md:
@@ -720,6 +754,7 @@ in docs/PROVIDER_FINDINGS.md:
 - Where generated images are saved
 - Timings and how failures appear (signed out, usage
   limit reached, timeout, malformed output)
+- Whether each CLI can confine file access to a folder
 - Whether attached reference photos keep each person's
   likeness (user's judgement)
 
@@ -754,6 +789,15 @@ unavailable, fail, or the user prefers manual use.
 
 Optional integration. Stays off and is unchanged
 by D009.
+
+Planned post-MVP (user direction, 2026-10-10): the
+application will eventually offer paid API-based
+engines for BOTH scene analysis and image generation,
+selectable alongside the CLI and manual engines. They
+are off by default, need separate explicit approval to
+build, and every paid run needs explicit cost
+confirmation. Design the engine interfaces so these
+can be added without restructuring.
 
 Requirements:
 
@@ -1374,7 +1418,8 @@ Requirements:
 - Provide backup and restore functionality.
 - Document which operations send images externally.
   With the CLI engines: "Analyse" sends the Base Image
-  to Anthropic via Claude Code; "Polish prompt" sends
+  to Anthropic via Claude Code (or to OpenAI via Codex
+  when Codex is the analysis engine); "Polish prompt" sends
   prompt and analysis text (no images) to Anthropic;
   "Generate" sends the Base Image and selected
   reference photos to OpenAI via Codex.
@@ -1546,6 +1591,10 @@ a. Installation and sign-in
    - Confirm the exact flags with `claude --help` and
      `codex exec --help`. Do not assume flags; record
      only the ones that actually exist.
+   - Check each CLI's permission/sandbox options for
+     confining file access to a single folder. Record
+     what exists; if nothing does, record it as a known
+     limitation (not a blocker).
 
 b. Claude analysis test
    - Run `claude -p` non-interactively on a sample
@@ -1554,6 +1603,13 @@ b. Claude analysis test
    - Record whether the JSON comes back clean, how long
      it takes, and how failures look (signed out, usage
      limit reached, bad JSON).
+
+b2. Codex analysis test
+   - Run `codex exec` non-interactively on the same
+     sample scene image with the same analysis
+     instruction and JSON format, read-only.
+   - Record the same items as (b), so the two engines
+     can be compared.
 
 c. Codex generation test
    - Run `codex exec` with a base image plus 2–3
@@ -1567,17 +1623,26 @@ c. Codex generation test
 d. Likeness is a quality check, not a gate
    - Per the user, OpenAI's documentation confirms
      Codex image generation with reference photos and
-     identity preservation. Record test (c)'s result,
-     but proceed with the Codex-based Generate design
-     either way. The manual bridge stays as the
-     fallback.
+     identity preservation. Find and cite the exact
+     official OpenAI page in docs/PROVIDER_FINDINGS.md
+     (documentation reading only).
+   - Record test (c)'s result, but proceed with the
+     Codex-based Generate design either way. The manual
+     bridge stays as the fallback.
+
+Gate (decided 2026-10-10): Generate (Phase 5) and the
+CLI analysis engines (Phase 3) are built only on
+mechanics the spike confirmed: real flags, output
+locations and failure appearances. The user's likeness
+verdict is recorded but does not block Generate.
 
 Deliverable:
 
 - Dated spike results in docs/PROVIDER_FINDINGS.md:
   versions, confirmed flags, commands used, output
-  locations, timings, failure appearances, and the
-  user's likeness verdict.
+  locations, timings, failure appearances, file-access
+  confinement options, the cited OpenAI documentation
+  page, and the user's likeness verdict.
 
 Approval: start only after the user says
 "Approve Phase 2.5". Phase 3 requires its own approval.
@@ -1603,18 +1668,26 @@ Tasks:
 ### Analyse with an engine
 
 - An "Analyse" button on a scene runs analysis through
-  the analysis engine interface. The first engine is
-  the Claude Code CLI. The design must allow adding
-  Codex as a second engine later.
+  the analysis engine interface, using the engine
+  selected in Settings. Two CLI engines are built:
+  Claude Code CLI (default) and Codex CLI. The design
+  must also allow a paid API engine to be added
+  post-MVP.
 - Each run creates a job folder in the private data
   directory, for example
   `Character-Studio-Data\jobs\<scene>\analysis-<n>\`.
 - Copy the Base Image into the job folder (with
   location metadata removed, per §22).
-- Run `claude -p` with the fixed analysis instruction,
-  the working directory set to the job folder, only the
-  Read tool allowed, no network tools, and a timeout.
-  Use only flags confirmed in Phase 2.5.
+- Claude: run `claude -p` with the fixed analysis
+  instruction, the working directory set to the job
+  folder, only the Read tool allowed, no network tools,
+  and a timeout.
+- Codex: run `codex exec` with the same fixed
+  instruction, the job folder as working directory,
+  read-only, and a timeout.
+- For both: use only flags confirmed in Phase 2.5, and
+  confine file access to the job folder where Phase 2.5
+  confirmed an option for it.
 - Capture the output to a file in the job folder.
 - Validate the result against the same schema the
   manual "Import analysis" uses. Flag uncertain items
@@ -1623,8 +1696,8 @@ Tasks:
 - Save the raw output and the engine/version used with
   the analysis record.
 - The prompt is still built by the studio's own
-  template from the validated analysis. Claude does
-  not write the main prompt.
+  template from the validated analysis. The analysis
+  engine does not write the main prompt.
 - The prompt template labels attached images by number
   (Base Image and each reference photo) and uses
   "Subject N" labels, so later polishing and
@@ -1632,12 +1705,15 @@ Tasks:
 
 ### Analysis UI
 
-- Progress state ("Analysing with Claude…") with a
-  Cancel button.
+- Progress state naming the engine ("Analysing with
+  Claude…" / "Analysing with Codex…") with a Cancel
+  button.
 - Clear error messages for: CLI not installed, signed
   out, usage limit reached, timeout, invalid format.
 - Each error offers "Try again" and "Do it manually"
   (the copy-instruction + import-analysis flow).
+- Failed / Cancelled / Interrupted statuses as in
+  §12.1.
 - Never retry automatically.
 
 ### Engine settings
@@ -1646,14 +1722,17 @@ Tasks:
   found and signed in, with a "Check again" button.
   Never read or store credentials.
 - Analysis engine choice: Claude (default), Codex, or
-  Manual.
+  Manual. Both CLI engines are fully selectable; the
+  Codex option notes that it uses the ChatGPT plan's
+  allowance.
 - Generation engine choice: Codex (default) or Manual.
 - Timeout per engine.
 
 Acceptance:
 
-- Scenes can be analyzed via the Claude CLI engine or
-  the manual import, both validated by the same schema
+- Scenes can be analyzed via the Claude CLI engine,
+  the Codex CLI engine or the manual import, all
+  validated by the same schema
 - Engine errors are clearly reported and offer a
   manual fallback; nothing retries automatically
 - Raw output and engine/version are stored with each
@@ -1749,8 +1828,14 @@ Tasks:
   results.
 - "Generate again" and "Variation" each create a new
   result.
-- Interrupted or failed generations are marked as
-  failed and never resubmitted automatically.
+- Failed, Cancelled and Interrupted generations are
+  marked with those distinct statuses (§12.1) and never
+  resubmitted automatically. An Interrupted generation
+  asks the user to check its job folder for a saved
+  image before "Generate again".
+- The approval covers content, not the engine (§11):
+  "Export for manual use" works under the same valid
+  approval.
 - Errors (CLI missing, signed out, plan limit reached,
   timeout, no image produced) show a clear message and
   offer "Export for manual use" (the existing manual
@@ -1783,6 +1868,9 @@ Optional improvements:
 - Batch generation
 - Advanced comparison interface
 - Additional generation providers
+- Optional paid API-based engines for scene analysis
+  and image generation (off by default, separate
+  explicit approval, per-run cost confirmation; §12.3)
 - Encrypted backups
 
 Implement only after the core application works.

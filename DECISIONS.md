@@ -83,3 +83,12 @@
 - Open risk: it is not yet confirmed in practice that Codex's built-in image tool uses attached local reference photos to keep each person's likeness. Phase 2.5 (engine verification spike) records the CLI flags, output locations, timings and failure modes, plus the user's likeness judgement, before Phase 5's Generate button is built on it. The user has stated that OpenAI's documentation confirms reference-photo/identity support, so likeness quality is recorded as a quality check rather than a gate; the manual bridge stays as the fallback either way.
 - The optional paid OpenAI API adapter (PLAN.md §12.3) stays off and unchanged.
 - Approval: user-directed planning change on 2026-10-10. Planning documents only; no application code changed. Phase 2.5 and Phase 3 require explicit approval ("Approve Phase 2.5").
+- Resolved with the user on 2026-10-10 (follow-up to the v2.1 plan):
+  - Spike gate: Generate and the CLI analysis engines are built only on mechanics Phase 2.5 confirmed (flags, output locations, failure appearances). The user's likeness verdict is recorded but does not block Generate.
+  - The "docs confirm identity preservation" statement stays attributed to the user until Phase 2.5 cites the official OpenAI page.
+  - Analysis engines: both Claude CLI (default) and Codex CLI are built and selectable in Phase 3; Codex analysis uses the ChatGPT plan's allowance. Polish prompt stays Claude-only.
+  - Approval covers content, not the engine: the same valid approval works for Codex Generate and for manual export, and survives an engine change in Settings. Each job records the engine actually used.
+  - Job statuses stay distinct: Failed, Cancelled, Interrupted. Interrupted runs ask the user to check the job folder before retrying. Nothing is resubmitted automatically.
+  - The analysis copy of the Base Image has location metadata removed (PLAN §22). Polish prompt uses the same progress/cancel/error handling as Analyse.
+  - File access: confine each CLI run to its job folder where Phase 2.5 finds a supported option; otherwise record the limitation and proceed.
+  - Future direction: paid API-based engines for both analysis and generation will be offered post-MVP. They are off by default, need separate explicit approval to build, and require per-run cost confirmation. Engine interfaces must allow adding them. AGENTS.md reworded to cite D009 and this boundary.

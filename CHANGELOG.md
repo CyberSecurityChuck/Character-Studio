@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-10 — Plan v2.1 conflicts resolved (planning only)
+
+- Recorded the user's answers on the eight v2.1 open questions in D009 and PLAN.md: mechanics-only spike gate; cite the OpenAI identity-support page in the spike; both Claude and Codex analysis engines in Phase 3; approval covers content, not the engine; distinct Failed/Cancelled/Interrupted statuses; GPS stripping for analysis copies; consistent Polish prompt error handling; folder confinement where supported.
+- Planned post-MVP paid API engines for analysis and generation (off by default, separate approval, per-run cost confirmation). AGENTS.md now cites D009 and this boundary.
+- Updated README, PROVIDER_FINDINGS (new spike rows) and RECOVERY. No application code changed.
+
 ## 2026-10-10 — Plan v2.1: CLI bridge first (planning only)
 
 - Recorded D009 "CLI bridge first, manual bridge as fallback": Claude Code CLI for scene analysis and optional prompt polishing, Codex CLI for image generation, manual bridge as fallback. D001 marked superseded as the main approach.

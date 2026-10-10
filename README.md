@@ -4,7 +4,7 @@ A local-first home for reusable characters, reference scenes and approved image 
 
 **Current scope: Phase 2 Character Library.** Create and edit characters, upload multiple reference photos, choose a primary photo, add labels, preview originals, search, and organize groups. Archive/restore or explicitly delete profiles and photos. The overview, saved settings and provider status remain available. Scenes, analysis, approvals, generation and export/import are not implemented yet. PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
 
-**How it will work (planned, D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt, and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
+**How it will work (planned, D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
 
 ## Start and stop
 
@@ -67,11 +67,11 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 ## AI capabilities and costs
 
-AI integration still consists of interfaces and capability metadata only. There is no generation endpoint, credential storage or automatic retry behavior. Paid OpenAI API access is **disabled** and stays off.
+AI integration still consists of interfaces and capability metadata only. There is no generation endpoint, credential storage or automatic retry behavior. Paid API access is **disabled**. Paid API-based engines for analysis and generation are planned after the MVP as an opt-in that needs separate approval and asks for cost confirmation on every run.
 
-Planned direction (DECISIONS.md D009): the studio runs `claude -p` for scene analysis and optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. Both CLI paths are **unverified** until the Phase 2.5 verification spike records their real flags, output locations and failure modes.
+Planned direction (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. Both CLI paths are **unverified** until the Phase 2.5 verification spike records their real flags, output locations and failure modes.
 
-Each run uses your plan's allowance and sends data to that provider: **Analyse** sends the Base Image to Anthropic; **Polish prompt** sends prompt and analysis text to Anthropic; **Generate** sends the Base Image and chosen reference photos to OpenAI. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
+Each run uses your plan's allowance and sends data to that provider: **Analyse** sends the Base Image to Anthropic (or to OpenAI if Codex is the analysis engine); **Polish prompt** sends prompt and analysis text to Anthropic; **Generate** sends the Base Image and chosen reference photos to OpenAI. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
 
 ## Continuity and recovery
 

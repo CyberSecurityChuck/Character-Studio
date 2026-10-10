@@ -30,7 +30,7 @@ To manually restore, stop the application, retain the current data directory as 
 - An interrupted request that may have reached a provider becomes outcome_unknown; reconcile only through supported provider mechanisms.
 - Never resubmit automatically after restart, timeout or an uncertain response. Provider idempotency and status lookup are capability-dependent, not assumed.
 - A repeated generation needs explicit confirmation. Changed inputs require renewed approval. Local cancellation does not prove remote cancellation or absence of charges.
-- CLI engine runs (D009: `claude -p` analysis/polish, `codex exec` generation) persist their job record and job folder before launch. A run interrupted by a restart, timeout or cancel is marked failed/interrupted with its job folder kept for inspection, and is never relaunched automatically.
+- CLI engine runs (D009: `claude -p` or `codex exec` analysis, `claude -p` polish, `codex exec` generation) persist their job record and job folder before launch. Statuses stay distinct: Failed (CLI error), Cancelled (user cancel), Interrupted (studio stopped mid-run). Job folders are kept for inspection; an Interrupted run may already have used allowance or saved an output, so the user checks its folder before retrying. Nothing is relaunched automatically.
 - Keep exported manual (fallback) jobs waiting for user import, preserving package and approval identifiers. Imported results record user-supplied provenance honestly.
 - Version outputs rather than overwriting. Character/reference deletion must offer explicit choices without silently corrupting history.
 - Use atomic file writes, versioned asset keys and consistency-aware backups. Verify recovery with synthetic/authorized inputs.
