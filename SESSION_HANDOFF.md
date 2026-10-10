@@ -4,7 +4,7 @@ Checkpoint: 2026-10-11 IST (+05:30)
 
 ## Objective and authorization
 
-The user said **"Approve Phase 3"** on 2026-10-10 (Asia/Kolkata). Phase 3 (Scene Analysis) is implemented and committed locally. The user completed `Phase_Checks/Phase3_Review_Report.md` (42/42, 0 problems, verdict "needs fixes first" for refinements). The refinements (D013) are done and committed locally as a second commit. The user now checks them with `Phase_Checks/Phase3_Followup_Checklist.html` and exports `Phase3_Followup_Report.md`. **Do not push** until the user approves the push. Do not start Phase 4 without "Approve Phase 4".
+The user said **"Approve Phase 3"** on 2026-10-10 (Asia/Kolkata). Phase 3 (Scene Analysis) is **complete and accepted** (2026-10-11): `Phase_Checks/Phase3_Review_Report.md` (42/42, refinements requested) and `Phase_Checks/Phase3_Followup_Report.md` (17/17, "Phase 3 looks good"). The user approved pushing `main` once for the Phase 3 commits and declined running CI. Every later push needs new approval. Do not start Phase 4 without "Approve Phase 4".
 
 Standing rules: no project file changes without the user's approval (describe, then wait for a yes; reading, testing and running the app are fine). No paid API calls or keys (D009). Every engine run is started by the user; never retried or resumed automatically. Never read or store CLI logins.
 
@@ -29,4 +29,4 @@ Standing rules: no project file changes without the user's approval (describe, t
 - Git: local commit for Phase 3 on `main`; not pushed. `origin` is the private `CyberSecurityChuck/Character-Studio`. Push only `main`, never `backup/pre-public-rewrite` or `refs/codex/*`. CI on request only.
 - Gotchas carried from the spike: CLIs need clean environments; Codex exit 0 can still mean no image (Phase 5); usage-limit messages were never observed and are matched heuristically.
 - Review refinements (D013): `frontend/src/Controls.tsx` (InfoTip, CardMenu, TextDialog, SelectionBar, `sentence`), card menus and Select mode in `Library.tsx` and `Scenes.tsx`, ⓘ tips in `Engines.tsx`, "Stopping…" state, Groups panel height rule. No backend changes.
-- Next action: wait for the user's follow-up report. Fix reported problems only with approval. After the user approves, push `main` (and optionally run CI). Phase 4 requires "Approve Phase 4".
+- Next action: wait for "Approve Phase 4" (Character Mapping and Approval). At the end of each phase: update docs, commit locally, create `Phase_Checks/PhaseN_Review_Checklist.html`, and push only after the user's review approval.

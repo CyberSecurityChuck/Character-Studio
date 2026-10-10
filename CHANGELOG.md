@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-11 — Phase 3 accepted
+
+- The user's follow-up check passed (17/17, 0 problems, "Phase 3 looks good"). Phase 3 is complete. README, status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run, by the user's choice). Phase 4 needs "Approve Phase 4".
+
 ## 2026-10-11 — Phase 3 review refinements (local commit, awaiting follow-up check)
 
 - From the user's Phase 3 review: ⋯ card menus and a Select mode on Scenes (Rename, Duplicate, Delete; bulk Delete), Characters (Rename, Archive/Restore, Delete; bulk Archive/Restore/Delete) and Groups (Rename, Delete; bulk Delete), with a shared rename dialog.

@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2) works today, and **Scenes & AI analysis** (Phase 3) is built and in review. Character mapping, approvals and image generation come next, phase by phase. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2) works today, and so do **Scenes & AI analysis** (Phase 3). Character mapping, approvals and image generation come next, phase by phase. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -51,7 +51,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🎯 | Adjustable round thumbnails (drag and zoom; originals never altered) | ✅ Available |
 | 👨‍👩‍👧 | Reusable groups: couples, families, friends | ✅ Available |
 | ♻️ | Crash-safe storage: stale-edit protection, upload/delete recovery | ✅ Available |
-| 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | 🧪 Phase 3 (in review) |
+| 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | ✅ Available |
 | 🧑‍🤝‍🧑 | Map people in the scene to saved characters; optional "Polish prompt" | 🗓️ Phase 4 |
 | 🎨 | One-click generation via Codex CLI, results gallery, version history | 🗓️ Phase 5 |
 | 📦 | Batch analysis and generation, multiple variations | 🗓️ Phase 5.5 |
@@ -62,15 +62,15 @@ Recreating a photo with different people usually means re-uploading the same ref
 flowchart TB
     subgraph PREP["① Prepare"]
         direction LR
-        A["📚 Character Library<br/>save people once"]:::done --> B["🖼️ Base Image<br/>the scene to recreate"]:::next
-        B --> C{"🔍 Analyse"}:::next
-        C -->|Claude Code| D["📝 Structured<br/>scene analysis"]:::next
+        A["📚 Character Library<br/>save people once"]:::done --> B["🖼️ Base Image<br/>the scene to recreate"]:::done
+        B --> C{"🔍 Analyse"}:::done
+        C -->|Claude Code| D["📝 Structured<br/>scene analysis"]:::done
         C -->|Codex| D
         C -->|Manual import| D
     end
     subgraph CREATE["② Create"]
         direction LR
-        E["🧑‍🤝‍🧑 Map subjects<br/>to characters"]:::planned --> F["✍️ Prompt from template<br/>+ optional Polish"]:::planned
+        E["🧑‍🤝‍🧑 Map subjects<br/>to characters"]:::next --> F["✍️ Prompt from template<br/>+ optional Polish"]:::planned
         F --> G{"✅ You<br/>approve"}:::approve
         G --> H{"🎨 Generate"}:::planned
         H -->|Codex CLI| I["🖼️ Results gallery<br/>never overwritten"]:::planned
@@ -86,7 +86,7 @@ flowchart TB
     classDef approve fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:3px
 ```
 
-<sub>🟩 Available · 🟧 Phase 3 (built, in review) · 🟦 Planned · 🟥 Your Approval Gate</sub>
+<sub>🟩 Available · 🟧 Next (Phase 4) · 🟦 Planned · 🟥 Your Approval Gate</sub>
 
 **The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template will enforce this split, so a character's reference photos never change the scene's composition.
 
@@ -116,9 +116,9 @@ flowchart TB
         API["⚙️ FastAPI service<br/>bound to 127.0.0.1 only"]:::core
         DB[("🗄️ SQLite<br/>versioned migrations")]:::store
         FS[("📁 Private data folder<br/>photos · thumbnails · results")]:::store
-        Q["🧵 Job runner<br/>one job at a time"]:::planned
-        CL["claude CLI"]:::planned
-        CX["codex CLI"]:::planned
+        Q["🧵 Job runner<br/>one job at a time"]:::core
+        CL["claude CLI"]:::cli
+        CX["codex CLI"]:::cli
         UI <-->|"token-protected local API"| API
         API --> DB
         API --> FS
@@ -132,12 +132,12 @@ flowchart TB
     classDef ui fill:#0EA5E9,stroke:#0369A1,color:#ffffff,stroke-width:2px
     classDef core fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:2px
     classDef store fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
-    classDef planned fill:#5C6BC0,stroke:#3949AB,color:#ffffff,stroke-width:2px,stroke-dasharray: 5 3
+    classDef cli fill:#5C6BC0,stroke:#3949AB,color:#ffffff,stroke-width:2px
     classDef cloud fill:#64748B,stroke:#334155,color:#ffffff,stroke-width:2px
     style PC fill:transparent,stroke:#A0442A,stroke-width:2px
 ```
 
-<sub>Dashed boxes are planned (Phase 3 onward). The app itself has no cloud backend.</sub>
+<sub>The CLIs run on your computer under your own sign-ins. The app itself has no cloud backend.</sub>
 
 ## 🔒 Privacy by design
 
@@ -162,7 +162,7 @@ Today, only **Analyse** sends anything (the Base Image, with location data remov
 > Character Studio currently targets **Windows 10/11**.
 
 **You need:** [Node.js 24 LTS](https://nodejs.org/) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.12 for you.
-For the upcoming AI features you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude Pro plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. You don't need them for the Character Library.
+For AI scene analysis (and later, generation) you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude Pro plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. The Character Library and manual analysis work without them.
 
 ```powershell
 git clone https://github.com/CyberSecurityChuck/Character-Studio.git
@@ -187,13 +187,13 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
 
 ```mermaid
 flowchart TB
-    subgraph NOW["✅ Done → 🧪 In review"]
+    subgraph NOW["✅ Done"]
         direction LR
-        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::next
+        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done
     end
-    subgraph LATER["🗓️ Planned"]
+    subgraph LATER["🔜 Next → 🗓️ Planned"]
         direction LR
-        P4["4 · Mapping<br/>& approval"]:::planned --> P5["5 · Generation<br/>& results"]:::planned --> P55["5.5 · Batch<br/>processing"]:::planned --> P6["6 · Quality<br/>& extras"]:::later
+        P4["4 · Mapping<br/>& approval"]:::next --> P5["5 · Generation<br/>& results"]:::planned --> P55["5.5 · Batch<br/>processing"]:::planned --> P6["6 · Quality<br/>& extras"]:::later
     end
     NOW ==> LATER
     style NOW fill:transparent,stroke:#2E7D32,stroke-width:2px
