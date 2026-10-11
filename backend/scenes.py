@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 from starlette.concurrency import run_in_threadpool
 
 from backend.analysis_schema import (
@@ -31,6 +31,7 @@ from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
 from backend.library import clean_deleted_files, decode_image, file_hash
 from backend.models import (
     Approval,
+    Batch,
     Character,
     CharacterGroup,
     EngineJob,
@@ -193,6 +194,33 @@ def require_idle(session, scene_id, action: str) -> None:
 RECOVERABLE = ("failed", "cancelled", "interrupted")
 
 
+def batch_place(job: EngineJob):
+    """Where a batch item stands in its batch, for "Image 2 of 4" and "Batch paused"."""
+    session = object_session(job)
+    batch = session.get(Batch, job.batch_id) if job.batch_id and session else None
+    if batch is None:
+        return None
+    order = list(
+        session.scalars(
+            select(EngineJob.id)
+            .where(EngineJob.batch_id == batch.id)
+            .order_by(EngineJob.created_at, EngineJob.batch_position, EngineJob.id)
+        )
+    )
+    return {
+        "id": batch.id,
+        "status": batch.status,
+        "pause_kind": batch.pause_kind,
+        "position": order.index(job.id) + 1,
+        "total": len(order),
+        "scene_items": session.scalar(
+            select(func.count()).where(
+                EngineJob.batch_id == batch.id, EngineJob.scene_id == job.scene_id
+            )
+        ),
+    }
+
+
 def job_data(request, job: EngineJob | None):
     if job is None:
         return None
@@ -208,6 +236,8 @@ def job_data(request, job: EngineJob | None):
             job.kind == "generation" and job.status in RECOVERABLE and job.job_folder is not None
         ),
         "engine_version": job.engine_version,
+        "batch": batch_place(job) if job.status in ("not_started", "running") else None,
+        "batch_id": job.batch_id,
         "status": job.status,
         "error_kind": job.error_kind,
         "error_details": job.error_details,
@@ -327,6 +357,7 @@ def mapping_detail(session, scene: Scene):
                     "reference_ids": [p.id for p in item.photos],
                     "references_auto": item.references_auto,
                     "confirmed": item.confirmed,
+                    "suggested": item.suggested,
                     "images": list(item.images),
                     "problems": item.problems,
                 }

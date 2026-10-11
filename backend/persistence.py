@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0006_generation"
+SCHEMA_REVISION = "0007_batches"
 
 
 def open_database(settings: Settings) -> Engine:

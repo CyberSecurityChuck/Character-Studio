@@ -1,9 +1,11 @@
 """One job runner for every engine run (PLAN.md §12.1, DECISIONS.md D010).
 
 Jobs are persisted before anything starts and run one at a time, oldest first.
-Each click queues a single analysis, polish or generation run, but several jobs may wait as
-not_started. Nothing is ever retried or resumed automatically: after a restart,
-runs that were in progress become Interrupted and waiting ones become Cancelled.
+A click queues a single analysis, polish or generation run; a batch (Phase 5.5) queues
+several items that wait as not_started and run only while their batch is running.
+Single runs go before waiting batch items. Nothing is ever retried or resumed
+automatically: after a restart, runs that were in progress become Interrupted, waiting
+single runs become Cancelled, and batches are paused with their remaining items kept.
 """
 
 import json
@@ -11,7 +13,7 @@ import threading
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.analysis_schema import ENGINE_INSTRUCTION, JSON_SCHEMA
@@ -36,7 +38,7 @@ from backend.generation import (
     snapshot_of,
     store_codex_images,
 )
-from backend.models import EngineJob, PromptVersion, Scene, SceneAnalysis
+from backend.models import Batch, EngineJob, PromptVersion, Scene, SceneAnalysis
 from backend.persistence import writing_session
 from backend.prompting import POLISH_SCHEMA, polish_instruction
 from backend.scene_store import latest, now
@@ -49,6 +51,26 @@ INTERRUPTED_MESSAGE = (
     "plan's allowance or saved output, so check its job folder before trying again."
 )
 NOT_STARTED_MESSAGE = "The studio stopped before this run started. Nothing was sent."
+NOT_SENT_CANCEL = "Cancelled before it started. Nothing was sent."
+RESTART_PAUSE_MESSAGE = (
+    "The studio stopped while this batch was running. Nothing continues on its own: a run "
+    "that was in progress is marked Interrupted, and the remaining items have not started."
+)
+# A plan limit or sign-in problem would fail every following item, so batches pause instead.
+PAUSE_KINDS = ("usage_limit", "signed_out", "not_installed")
+
+
+def pause_batches(session, engine: str, kind: str, details: str, batch_id: str | None) -> None:
+    """Pause the job's own batch and every other running batch that uses the same engine."""
+    for batch in session.scalars(
+        select(Batch).where(
+            Batch.status == "running", or_(Batch.id == batch_id, Batch.engine == engine)
+        )
+    ):
+        batch.status = "paused"
+        batch.pause_kind = kind
+        batch.pause_details = details
+        batch.updated_at = now()
 
 
 def reconcile_on_startup(engine) -> None:
@@ -63,9 +85,13 @@ def reconcile_on_startup(engine) -> None:
                 finished_at=now(),
             )
         )
+        batches = select(Batch.id)
         session.execute(
             update(EngineJob)
-            .where(EngineJob.status == "not_started")
+            .where(
+                EngineJob.status == "not_started",
+                or_(EngineJob.batch_id.is_(None), EngineJob.batch_id.not_in(batches)),
+            )
             .values(
                 status="cancelled",
                 error_kind="not_started",
@@ -73,6 +99,18 @@ def reconcile_on_startup(engine) -> None:
                 finished_at=now(),
             )
         )
+        # Batch items keep waiting, but only until the user clicks Continue.
+        for batch in session.scalars(select(Batch).where(Batch.status == "running")):
+            waiting = session.scalar(
+                select(EngineJob.id)
+                .where(EngineJob.batch_id == batch.id, EngineJob.status == "not_started")
+                .limit(1)
+            )
+            if waiting:
+                batch.status = "paused"
+                batch.pause_kind = "restart"
+                batch.pause_details = RESTART_PAUSE_MESSAGE
+                batch.updated_at = now()
         for scene in session.scalars(select(Scene)):
             refresh_workflow(session, scene)
 
@@ -146,7 +184,7 @@ class JobRunner:
         with writing_session(self.engine) as session:
             job = session.get(EngineJob, job_id)
             if job is not None and job.status == "not_started":
-                self._finish(session, job, "cancelled", "cancelled", "Cancelled before it started.")
+                self._finish(session, job, "cancelled", "cancelled", NOT_SENT_CANCEL)
 
     def _cancel_requested(self, job_id: str) -> bool:
         with self._lock:
@@ -163,16 +201,29 @@ class JobRunner:
 
     def _claim_next(self) -> str | None:
         with writing_session(self.engine) as session:
+            running = select(Batch.id).where(Batch.status == "running")
             job = session.scalar(
                 select(EngineJob)
-                .where(EngineJob.status == "not_started")
-                .order_by(EngineJob.created_at, EngineJob.id)
+                .where(
+                    EngineJob.status == "not_started",
+                    or_(EngineJob.batch_id.is_(None), EngineJob.batch_id.in_(running)),
+                )
+                .order_by(
+                    EngineJob.batch_id.is_not(None),
+                    EngineJob.created_at,
+                    EngineJob.batch_position,
+                    EngineJob.id,
+                )
                 .limit(1)
             )
             if job is None:
                 return None
             job.status = "running"
             job.started_at = now()
+            scene = session.get(Scene, job.scene_id)
+            if scene is not None:
+                # A batch item leaves "Waiting" as soon as it starts.
+                refresh_workflow(session, scene)
             return job.id
 
     def _finish(self, session, job, status, kind=None, details=None) -> None:
@@ -180,6 +231,8 @@ class JobRunner:
         job.error_kind = kind
         job.error_details = details
         job.finished_at = now()
+        if status == "failed" and kind in PAUSE_KINDS:
+            pause_batches(session, job.engine, kind, details, job.batch_id)
         session.flush()
         scene = session.get(Scene, job.scene_id)
         if scene is not None:
@@ -195,10 +248,16 @@ class JobRunner:
             job = session.get(EngineJob, job_id)
             scene = session.get(Scene, job.scene_id)
             engine, timeout, kind = job.engine, job.timeout_seconds, job.kind
+            batch_id = job.batch_id
             instruction = polish_input(session, job) if kind == "polish" else None
             session.expunge_all()
         try:
-            version = require_ready(engine, overrides)
+            try:
+                version = require_ready(engine, overrides)
+            except EngineError as error:
+                if batch_id is not None and error.kind in PAUSE_KINDS:
+                    raise _NotSent(error) from error
+                raise
             self._update(job_id, engine_version=version)
             if self._cancel_requested(job_id):
                 raise _Stopped()
@@ -253,6 +312,21 @@ class JobRunner:
                 )
                 job.result_id = analysis.id
                 self._finish(session, job, "completed")
+        except _NotSent as stop:
+            # Checked before anything was sent: the item waits again and its batch pauses.
+            with writing_session(self.engine) as session:
+                job = session.get(EngineJob, job_id)
+                batch = session.get(Batch, batch_id)
+                with self._lock:
+                    cancelled = job_id in self._cancelled
+                if batch is None or batch.status == "cancelled" or cancelled:
+                    self._finish(session, job, "cancelled", "cancelled", NOT_SENT_CANCEL)
+                else:
+                    job.status, job.started_at = "not_started", None
+                    pause_batches(session, engine, stop.error.kind, stop.error.message, batch_id)
+                    scene = session.get(Scene, job.scene_id)
+                    if scene is not None:
+                        refresh_workflow(session, scene)
         except _Stopped:
             with writing_session(self.engine) as session:
                 job = session.get(EngineJob, job_id)
@@ -330,6 +404,12 @@ class JobRunner:
 
 class _Stopped(Exception):
     pass
+
+
+class _NotSent(Exception):
+    def __init__(self, error: EngineError):
+        super().__init__(error.message)
+        self.error = error
 
 
 def job_folder_path(settings: Settings, job: EngineJob) -> str | None:

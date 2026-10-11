@@ -292,10 +292,12 @@ export function ImportDialog({ scene, token, data, preselect, onClose, onImporte
 /** Step 05: generate from the approval, then compare and keep results. */
 export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, exportOpen, onExportOpen, onGenerate, onChanged, onRefresh, onGo }: {
   scene: SceneDetail; data: Bootstrap; generationEngine: string; busy: boolean; runStatus: ReactNode; exportOpen: boolean; onExportOpen: (open: boolean) => void
-  onGenerate: (mode: 'generate' | 'variation') => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
+  onGenerate: (mode: 'generate' | 'variation', count: number) => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
 }) {
   const [selecting, setSelecting] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  // Several images from this approval run as a small batch, one after another (Phase 5.5).
+  const [count, setCount] = useState(1)
   const timing = scene.generation_timing
   async function removePackage(e: ExportPackage) {
     const imported = e.result_count ? ` The ${plural(e.result_count, 'result')} you imported from it ${e.result_count === 1 ? 'is' : 'are'} kept and stay${e.result_count === 1 ? 's' : ''} linked to ${e.result_count === 1 ? 'its' : 'their'} approval.` : ''
@@ -317,9 +319,14 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
   const references = scene.subjects.reduce((sum, s) => sum + (s.action === 'replace' ? s.images.length : 0), 0)
   const running = !!scene.active_job
   const shown = scene.results.find(r => r.id === viewing)
+  const estimate = timing.average_seconds != null && count > 1 ? ` (about ${duration(timing.average_seconds * count)} in all)` : ''
   const again = (mode: 'generate' | 'variation') => {
-    const what = mode === 'variation' ? 'Make a variation' : 'Generate again'
-    if (window.confirm(`${what}? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance. Earlier results are kept.`)) onGenerate(mode)
+    const what = count > 1 ? (mode === 'variation' ? `Make ${count} variations` : `Generate ${count} more images`) : mode === 'variation' ? 'Make a variation' : 'Generate again'
+    const runs = count > 1 ? `This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex` : 'This sends the approved images to OpenAI via Codex once more'
+    if (window.confirm(`${what}? ${runs} and using your ChatGPT plan’s image allowance. Earlier results are kept.`)) onGenerate(mode, count)
+  }
+  const first = () => {
+    if (count === 1 || window.confirm(`Generate ${count} images? This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex and using your ChatGPT plan’s image allowance.`)) onGenerate('generate', count)
   }
   return <>
     {runStatus}
@@ -329,17 +336,22 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
     </div> : <div className="generate-card">
       <div className="generate-copy">
         <strong>{fromApproval.length ? `${plural(fromApproval.length, 'result')} from this approval` : 'Ready to generate'}</strong>
-        <p>{codex ? <>Generate sends the Base Image and {plural(references, 'reference photo')} to OpenAI via Codex, using your own ChatGPT sign-in. Each attempt uses your plan’s image allowance. It runs once per click and is never retried on its own.</>
+        <p>{codex ? <>Generate sends the Base Image and {plural(references, 'reference photo')} to OpenAI via Codex, using your own ChatGPT sign-in. Each image is one run from your plan’s image allowance; several images run one after another. Nothing is retried on its own.</>
           : <>Manual generation is selected in Studio settings. Export the package, make the image in any app, then import it here. Nothing is sent from the studio.</>}</p>
         <p className="hint">Approved {formatDate(approval.approved_at)} · prompt version {approval.prompt_version}{approval.is_polished ? ' (polished)' : ''} · {scene.total_images} {scene.total_images === 1 ? 'image' : 'images'} attached</p>
         {timing.average_seconds != null && <p className="hint">Codex has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
       </div>
       {codex ? <>
         <div className="generate-actions">
+          <div className="image-count" role="group" aria-label="Images per click">
+            <button type="button" className="secondary compact icon-only" aria-label="Fewer images" disabled={busy || running || count <= 1} onClick={() => setCount(c => c - 1)}>−</button>
+            <span aria-live="polite">{count} {count === 1 ? 'image' : 'images'}</span>
+            <button type="button" className="secondary compact icon-only" aria-label="More images" disabled={busy || running || count >= 10} onClick={() => setCount(c => c + 1)}>+</button>
+          </div>
           {fromApproval.length ? <>
-            <button type="button" disabled={busy || running} onClick={() => again('generate')}><Spark /> Generate again</button>
-            <button type="button" className="secondary" disabled={busy || running} onClick={() => again('variation')}>Variation</button>
-          </> : <button type="button" disabled={busy || running} onClick={() => onGenerate('generate')}><Spark /> Generate image</button>}
+            <button type="button" disabled={busy || running} onClick={() => again('generate')}><Spark /> {count > 1 ? `Generate ${count} more` : 'Generate again'}</button>
+            <button type="button" className="secondary" disabled={busy || running} onClick={() => again('variation')}>{count > 1 ? `${count} variations` : 'Variation'}</button>
+          </> : <button type="button" disabled={busy || running} onClick={first}><Spark /> {count > 1 ? `Generate ${count} images` : 'Generate image'}</button>}
         </div>
         <p className="manual-links">Prefer another app? <button type="button" className="link-button" disabled={busy} onClick={() => onExportOpen(true)}>Export for manual use</button> · <button type="button" className="link-button" disabled={busy} onClick={() => setImporting(null)}>Import result</button></p>
       </> : <div className="generate-actions">

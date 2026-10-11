@@ -33,6 +33,9 @@ MAX_REFERENCES = 4
 # Codex image generation was verified with the Base Image plus 2 reference photos
 # (docs/PROVIDER_FINDINGS.md). Larger sets are allowed but flagged as untested.
 TESTED_REFERENCE_TOTAL = 4
+# subjects_hash of an assignment suggested from a group (Phase 5.5): never equal to a
+# fingerprint, so the user must check and save it before the scene can be approved.
+SUGGESTED = "suggested"
 VIEW_ORDER = (
     "Front",
     "Left three-quarter",
@@ -120,6 +123,7 @@ class SubjectPlan:
     confirmed: bool
     images: tuple[int, ...] = ()
     problems: list[str] = field(default_factory=list)
+    suggested: bool = False
 
 
 @dataclass
@@ -154,7 +158,13 @@ class Plan:
     @property
     def blockers(self) -> list[str]:
         problems = [p for s in self.subjects for p in s.problems]
-        if any(not s.confirmed for s in self.subjects if s.action != "unresolved"):
+        if any(s.suggested for s in self.subjects):
+            problems.insert(
+                0,
+                "Some assignments are suggestions from a group. Check them and save the "
+                "assignments to confirm.",
+            )
+        elif any(not s.confirmed for s in self.subjects if s.action != "unresolved"):
             problems.insert(
                 0,
                 "The subjects changed after you assigned characters. Check the assignments "
@@ -188,6 +198,7 @@ def build_plan(session, scene: Scene, analysis_row: SceneAnalysis) -> Plan:
             photos if row.action == "replace" else [],
             row.references_auto,
             row.subjects_hash == fingerprint,
+            suggested=row.subjects_hash == SUGGESTED,
         )
         if row.action == "unresolved":
             plan.problems.append(f"Choose a character or Keep original for {subject.label}.")
@@ -453,7 +464,10 @@ def refresh_workflow(session, scene: Scene) -> None:
     revalidate_approval(session, scene)
     job = active_job(session, scene.id)
     analysis = latest(session, SceneAnalysis, scene.id)
-    if job:
+    if job and job.status == "not_started" and job.batch_id:
+        # Waiting for its turn in a batch (which may be paused); nothing has been sent yet.
+        state = "waiting_generation" if job.kind == "generation" else "waiting_analysis"
+    elif job:
         state = {"polish": "polishing", "generation": "generating"}.get(job.kind, "analysing")
     elif analysis is None:
         state = "needs_analysis"

@@ -156,7 +156,9 @@ class EngineJob(Base):
     engine: Mapped[str] = mapped_column(String(20))
     engine_version: Mapped[str | None] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(20), index=True)
-    batch_id: Mapped[str | None] = mapped_column(String(32))
+    batch_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    # Order inside its batch; batch items wait as not_started until their turn (Phase 5.5).
+    batch_position: Mapped[int | None] = mapped_column(Integer)
     job_folder: Mapped[str | None] = mapped_column(String(200))
     timeout_seconds: Mapped[int] = mapped_column(Integer)
     error_kind: Mapped[str | None] = mapped_column(String(30))
@@ -173,6 +175,26 @@ class EngineJob(Base):
     created_at: Mapped[str] = mapped_column(String(40))
     started_at: Mapped[str | None] = mapped_column(String(40))
     finished_at: Mapped[str | None] = mapped_column(String(40))
+
+
+class Batch(Base):
+    """Several engine runs started together (Phase 5.5). Its items are engine jobs.
+
+    status records the user's intent: running, paused (by the user, a plan limit or a
+    restart) or cancelled. Progress is derived from the items, never stored twice.
+    """
+
+    __tablename__ = "batches"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    engine: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    pause_kind: Mapped[str | None] = mapped_column(String(30))
+    pause_details: Mapped[str | None] = mapped_column(Text)
+    # Generation: {"count": images per scene, "mode": "generate" | "variation"}.
+    settings_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[str] = mapped_column(String(40))
 
 
 class SubjectMapping(Base):

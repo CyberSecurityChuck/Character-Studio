@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, getBootstrap, request, savePreferences, type Bootstrap } from './api'
 
 import Backups from './Backups'
+import { BatchList } from './Batches'
 import Engines from './Engines'
 import Library from './Library'
 import { replaceRoute, routeParts } from './route'
@@ -19,7 +20,6 @@ const titles: Record<Page, [string, string]> = {
 }
 
 const upcoming = [
-  { name: 'Batch processing', phase: '5.5', text: 'Many scenes, one calm queue.', detail: 'Analyse or generate several approved scenes in a row, pausing when a plan limit is reached.' },
   { name: 'Quality and refinements', phase: '06', text: 'Closer, one detail at a time.', detail: 'Optional extras such as region-based editing, fidelity checks and saved presets.' },
 ]
 
@@ -127,7 +127,7 @@ export default function App() {
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7h18M3 17h18" /><circle cx="8" cy="7" r="3" fill="var(--surface)" /><circle cx="16" cy="17" r="3" fill="var(--surface)" /></svg> Studio settings
           </button>
         </nav>
-        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Generation & Results · Phase 5</span></div>
+        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Batch processing · Phase 5.5</span></div>
       </aside>
 
       <div className="workspace">
@@ -135,7 +135,7 @@ export default function App() {
           <span className={`connection ${data && !error ? 'online' : ''}`}><span aria-hidden="true" />{loading ? 'Connecting…' : error ? 'Needs attention' : 'Local studio connected'}</span>
         </header>
         <main id="main" tabIndex={-1}>
-          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 05</p>
+          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 5.5</p>
             <h1 ref={heading} tabIndex={-1}>{page === 'overview' ? (data?.preferences.studio_name || 'Your studio') : titles[page][0]}</h1>
             <p className="intro">{titles[page][1]}</p></div>
             <span className="phase-badge">Local & private</span>
@@ -166,6 +166,8 @@ export default function App() {
                 <div><span className="status-dot" /><div><strong>Saved on this computer</strong><p>Local database and separate file storage</p></div></div>
                 <div><span className="status-dot" /><div><strong>No paid API connected</strong><p>Analysis, polishing and generation run on your own Claude or ChatGPT sign-in, only when you click</p></div></div>
               </section>
+
+              <BatchList token={data.session_token} activeOnly title="Batches in progress" onOpenScene={(id, step) => navigate('scenes', `scenes/${id}/${step}`)} />
 
               {scenes.length > 0 && <><div className="section-title"><h2>Recent scenes</h2><button className="link-button" onClick={() => navigate('scenes')}>All scenes</button></div>
                 <section className="recent-scenes" aria-label="Recent scenes">{recent.map(s => <div key={s.id} className="scene-card"><button className="card-main" onClick={() => navigate('scenes', `scenes/${s.id}`)}>

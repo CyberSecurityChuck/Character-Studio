@@ -60,6 +60,12 @@ if args == ["login", "status"]:
 
 if mode == "slow":
     time.sleep(120)
+# Batch tests hold a run until the test creates the gate file, then it behaves like "ok".
+gate = os.environ.get("FAKE_CLI_GATE")
+if gate:
+    deadline = time.monotonic() + 60
+    while not os.path.exists(gate) and time.monotonic() < deadline:
+        time.sleep(0.05)
 
 if program == "claude":
     assert "-p" in args

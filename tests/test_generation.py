@@ -383,12 +383,16 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
         _ada, scene = approved_scene(client)
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
+        # Undo 0007 (batches) and 0006 (generation) to recreate a Phase 4 database.
+        db.execute("DROP TABLE batches")
+        db.execute("DROP INDEX ix_engine_jobs_batch_id")
+        db.execute("ALTER TABLE engine_jobs DROP COLUMN batch_position")
         db.execute("DROP TABLE generation_results")
         db.execute("ALTER TABLE engine_jobs DROP COLUMN settings_json")
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0006_generation"
+        assert client.get("/api/health").json()["schema_revision"] == "0007_batches"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []

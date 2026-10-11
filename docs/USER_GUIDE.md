@@ -2,7 +2,7 @@
 
 A local-first home for reusable characters, reference scenes and approved image workflows. For the project overview, see the [README](../README.md). Commands below run from the project root folder.
 
-**Current scope: Phase 5 Generation and Results** (complete), on top of Phase 4 Character Mapping and Approval, Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt, approve the exact inputs, then generate with Codex or export the package for any app and import the result. Batch processing (Phase 5.5) is not implemented yet. Do not upload personal photographs into the source folder.
+**Current scope: Phase 5.5 Batch Processing**, on top of Phase 5 Generation and Results, Phase 4 Character Mapping and Approval, Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt, approve the exact inputs, then generate with Codex or export the package for any app and import the result. Several scenes can be added, analysed and generated as one batch. Do not upload personal photographs into the source folder.
 
 **How it works (D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
 
@@ -78,7 +78,7 @@ Each run uses your plan's allowance and sends data to that provider: **Analyse**
 - Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
 - Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phases 1, 2, 2.5, 3, 4 and 5. Phase 5.5 and later require explicit approval.
+- Approval covers Phases 1, 2, 2.5, 3, 4, 5 and 5.5. Phase 6 requires explicit approval.
 
 For data recovery see **Backups and restore** below and `docs/RECOVERY.md`. Git backs up source history, not private application data.
 
@@ -152,6 +152,18 @@ If a run fails (not installed, signed out, usage limit, time limit, or "finished
 **Results** lists every result of the scene, newest first, with its source (Codex, Codex variation, recovered, or Imported), how long Codex took to make it, and "Earlier approval" when the inputs have changed since. The Generate box also shows the average time per image of your finished Codex runs (even while Manual is the generation engine), a guide for planning batches later; imported and recovered results have no time because the studio did not measure them. Open a result to see it alone, **Side by side** with the Base Image, or with a **Slider** that reveals one over the other. The viewer lists the prompt and analysis versions and the character assignments it was made from, and offers **Mark as preferred**, **Download** and **Delete**. Each result card also has a **⋯** menu with the same three actions, and **Select** lets you tick several results to download (one image, or several as one zip), mark or unmark as preferred, or delete together. A scene can have any number of preferred results. The **Results** page in the sidebar shows every result from every scene, with search, "Preferred only" and the same Select mode, and the Overview shows the latest results.
 
 Deleting a scene deletes its results and run folders. Deleting a character or photo keeps existing results and approval records.
+
+## Batches (Phase 5.5)
+
+**Several scenes at once.** In **+ New scene**, choose several images (up to 30): each becomes its own scene, titled from its file name (you can edit the titles first). The new scenes stay selected, ready for **Analyse**.
+
+**Analyse selected.** On the Scenes page, **Select** scenes and choose **Analyse**. A dialog shows how many runs it makes and which plan allowance it uses, and which scenes are skipped (already analysed, unless you tick the option, or with a run in progress). Runs go one after another with the analysis engine chosen in Studio settings, at most 50 per batch. Each analysis is reviewed on its own scene, with uncertain details flagged as usual.
+
+**Suggest from group.** Select analysed scenes and choose **Suggest from group**: pick a group and arrange its members from left to right. Each scene gets those characters as *suggestions*, matched to its people from left to right; scenes without an analysis, approved scenes and (unless you tick the option) scenes that already have assignments are skipped. Nothing is sent anywhere. A scene with suggestions cannot be approved until you open its Characters step, check who is where and click **Confirm assignments**.
+
+**Generate approved scenes.** Each scene still needs its own approval. Choose **Generate approved scenes** (or Select scenes, then **Generate**): tick the scenes, choose **Images per scene** (1–5) and **New image** or **Variation**. The dialog shows the total ("8 images from your ChatGPT plan's allowance") and an estimate from earlier runs on this computer. A batch makes at most 20 images, because image generation uses the allowance quickly. Each run uses that scene's own approval and is checked again just before it starts. On a scene's Generate step, the **− / +** control makes up to 10 images from that one approval in one click.
+
+**While a batch runs.** The Scenes page (and the Overview) shows each batch with a progress bar, done / failed / not started counts and every item. Waiting scenes show **Waiting to analyse** or **Waiting to generate** and cannot be edited; open one and click **Remove from batch** to take it out. **Pause** lets the run in progress finish and starts nothing new; **Continue** starts the rest; **Cancel remaining** cancels everything that has not started (cancel a running item with **Cancel run**). A failed item is marked Failed and the next one starts. If the plan limit is reached, or the engine is signed out or missing, the batch pauses with the reason; when signed out, the item that found it waits again because nothing was sent. **Continue** checks the sign-in first. If the studio stops during a batch, the running item becomes Interrupted and the batch is paused: nothing continues until you click Continue. When a batch has finished, **Try failed again** runs its failed items once more as new items, and **Remove from list** hides it (its runs and results are kept). Nothing in a batch is ever retried on its own.
 
 ## Backups and restore
 

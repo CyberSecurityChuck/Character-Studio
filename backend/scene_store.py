@@ -25,9 +25,15 @@ def next_version(session, model, scene_id) -> int:
 
 
 def active_job(session, scene_id):
+    """The running job, else the next one waiting (a scene may have several batch items)."""
     return session.scalar(
         select(EngineJob)
         .where(EngineJob.scene_id == scene_id, EngineJob.status.in_(ACTIVE_STATUSES))
-        .order_by(EngineJob.created_at)
+        .order_by(
+            (EngineJob.status != "running"),
+            EngineJob.created_at,
+            EngineJob.batch_position,
+            EngineJob.id,
+        )
         .limit(1)
     )

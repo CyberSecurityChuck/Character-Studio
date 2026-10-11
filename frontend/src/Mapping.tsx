@@ -136,7 +136,8 @@ export function MappingPanel({ scene, token, characters, groups, busy, highlight
   const assigned = new Set(Object.values(draft).map(d => d.character_id).filter(Boolean) as string[])
   const members = new Set(groups.find(g => g.id === group)?.member_ids ?? [])
   const choices = characters.filter(c => (!c.archived || assigned.has(c.id)) && (!group || members.has(c.id) || assigned.has(c.id)))
-  const stale = scene.subjects.some(s => s.action !== 'unresolved' && !s.confirmed)
+  const suggested = scene.subjects.some(s => s.suggested)
+  const stale = !suggested && scene.subjects.some(s => s.action !== 'unresolved' && !s.confirmed)
   const set = (label: string, next: Partial<Draft>) => setDraft(old => ({ ...old, [label]: { ...old[label], ...next } }))
   const takenBy = (id: string, label: string) => Object.entries(draft).find(([other, d]) => other !== label && d.action === 'replace' && d.character_id === id)?.[0]
 
@@ -161,7 +162,8 @@ export function MappingPanel({ scene, token, characters, groups, busy, highlight
         </select></div>
       <button type="button" className="secondary" disabled={busy || dirty || !!scene.active_job} title={dirty ? 'Save or cancel your assignments first' : undefined} onClick={onAdjust}>Adjust subjects</button>
     </div>
-    <p className="hint group-hint">A group only shortens the list. It never decides who stands where.</p>
+    {!suggested && <p className="hint group-hint">A group only shortens the list. It never decides who stands where.</p>}
+    {suggested && <p className="notice-line warning-line">These assignments are suggestions from {groups.find(g => g.id === scene.mapping_group_id)?.name ? `the group “${groups.find(g => g.id === scene.mapping_group_id)?.name}”` : 'a group'}, placed from left to right. Check who is where, change anything that is wrong, then save to confirm.</p>}
     {stale && <p className="notice-line warning-line">The analysis changed after you assigned characters, so subjects may be numbered differently. Check each subject, then save.</p>}
     {!scene.subjects.length && <p className="notice-line">No people were found in this image, so there is nothing to assign. You can add a subject with Adjust subjects.</p>}
     <div className="assign-list">
@@ -201,9 +203,9 @@ export function MappingPanel({ scene, token, characters, groups, busy, highlight
       })}
     </div>
     <div className="panel-actions">
-      <span className="spacer">{dirty ? 'Unsaved changes' : 'All assignments saved'}</span>
+      <span className="spacer">{dirty ? 'Unsaved changes' : suggested ? 'Suggested, not confirmed yet' : stale ? 'Check and save again' : 'All assignments saved'}</span>
       <button type="button" className="secondary" disabled={!dirty || busy} onClick={() => { const [d, g] = JSON.parse(savedKey); setDraft(d); setGroup(g) }}>Cancel</button>
-      <button type="button" disabled={!dirty || busy} onClick={save}>Save assignments</button>
+      <button type="button" disabled={(!dirty && !suggested && !stale) || busy} onClick={save}>{suggested && !dirty ? 'Confirm assignments' : 'Save assignments'}</button>
     </div>
   </>
 }

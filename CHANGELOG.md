@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-11 — Phase 5.5: Batch Processing (local commit, awaiting review)
+
+- Approved by the user ("Approve Phase 5.5").
+- New scene accepts several images; each becomes a scene titled from its file name, and the new scenes stay selected for analysis.
+- Scenes Select mode: **Analyse** (one run per scene with the selected engine), **Suggest from group**, **Generate** (approved scenes only) and Delete. **Generate approved scenes** on the toolbar lists every approved scene. Each start dialog shows the run count, which plan allowance it uses, an estimate from earlier runs and what is skipped.
+- Batches run one at a time and show progress on the Scenes page, the Overview and the scene itself: Pause, Continue, Cancel remaining, Cancel run, Try failed again, Remove from list. A failed item never stops the batch; usage limit, sign-out or a missing engine pauses it; a restart pauses it with the running item marked Interrupted. Nothing continues or retries on its own.
+- Several images from one approval: the Generate step's − / + control (up to 10) queues them as a small batch.
+- Group suggestions fill assignments left to right as suggestions that block approval until the user confirms them on the Characters step. Stages "Waiting to analyse" / "Waiting to generate".
+- Schema `0007_batches` (additive: `batches`; `engine_jobs.batch_position`). New `backend/batches.py`, `frontend/src/Batches.tsx`, `tests/test_batches.py` (8 tests, 106 total); the fake CLI can hold a run (`FAKE_CLI_GATE`). No dependencies added. See D020.
+
 ## 2026-10-11 — Phase 5 accepted
 
 - The user's second follow-up check passed (9/9, 0 problems, "Phase 5 looks good"). Phase 5 (Generation and Results, with the package-copies pop-up and backups/restore) is complete. Status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). Phase 5.5 needs "Approve Phase 5.5".

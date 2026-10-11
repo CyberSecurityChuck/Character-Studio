@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4) and **generation & results** (Phase 5) work today. Batch processing comes next. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4), **generation & results** (Phase 5) and **batch processing** (Phase 5.5) work today. Quality features come next. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -56,7 +56,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🧑‍🤝‍🧑 | Map people in the scene to saved characters, pick reference photos; optional "Polish prompt" | ✅ Available |
 | ✅ | Review screen and approval snapshots that cancel themselves when any input changes | ✅ Available |
 | 🎨 | One-click generation via Codex CLI from an approval, manual export/import, results gallery with Base Image comparison | ✅ Available |
-| 📦 | Batch analysis and generation, multiple variations | 🗓️ Phase 5.5 |
+| 📦 | Several scenes at once: upload, analyse and generate approved scenes in a queue that pauses at plan limits; several images per click; group suggestions | ✅ Available |
 
 ## 🔄 How it works
 
@@ -191,11 +191,11 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
 flowchart TB
     subgraph NOW["✅ Done"]
         direction LR
-        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done --> P4["4 · Mapping<br/>& approval"]:::done --> P5["5 · Generation<br/>& results"]:::done
+        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done --> P4["4 · Mapping<br/>& approval"]:::done --> P5["5 · Generation<br/>& results"]:::done --> P55["5.5 · Batch<br/>processing"]:::done
     end
     subgraph LATER["🔜 Next → 🗓️ Planned"]
         direction LR
-        P55["5.5 · Batch<br/>processing"]:::next --> P6["6 · Quality<br/>& extras"]:::later
+        P6["6 · Quality<br/>& extras"]:::next
     end
     NOW ==> LATER
     style NOW fill:transparent,stroke:#2E7D32,stroke-width:2px
