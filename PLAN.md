@@ -1971,6 +1971,15 @@ needs "Approve Phase 6". DECISIONS.md D021.
 - API keys: entered by the user, stored outside the
   repository, never logged, exported or sent to any
   other provider.
+- Provider shortlist (re-verify at Phase 6 start;
+  details in D021): analysis with Gemini, Anthropic and
+  OpenAI; generation and editing with OpenAI Images,
+  Gemini image models, Imagen on Vertex AI, FLUX (Black
+  Forest Labs) and Stability AI. fal.ai or Replicate
+  only with the user's explicit OK (intermediaries).
+  Starting set: Gemini, Anthropic, OpenAI for analysis;
+  OpenAI and Gemini for generation, plus FLUX or
+  Stability AI for masked region editing.
 
 ---
 
