@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-11 — Phase 5 follow-up fixes (local commit, awaiting second follow-up check)
+
+- From the user's follow-up check (`Phase_Checks/Phase5_Followup_Report.md`: 19/19 steps, 2 flagged, "Needs fixes first"). Approved with "Yes, go ahead".
+- Step 3: the average generation time was shown only while Codex was the generation engine; the user's studio was set to Manual. It now always shows when there are finished Codex runs.
+- Step 13: backup actions (Download, Check, Delete, Copy path) are compact buttons with line icons instead of text links.
+- Step 19: manual package actions (Download, Import result, Copy folder path) use the same buttons, and packages can be deleted (`DELETE /api/exports/{id}`): the folder is removed after a confirmation, imported results are kept with their approval and lose only the package link.
+- No schema change, no dependencies added. 98 tests pass (1 new). See D019.
+
 ## 2026-10-11 — Phase 5 review fixes (local commit, awaiting follow-up check)
 
 - From the user's Phase 5 review (`Phase_Checks/Phase5_Review_Report.md`: 29/29 steps, 0 problems flagged, "Needs fixes first" because of two notes). The `phase5-additions` branch (package copies, backups) was fast-forwarded into `main` first.

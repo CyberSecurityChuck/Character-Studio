@@ -128,3 +128,16 @@ export function CopiesDialog({ title, message, copies, onChoose }: { title: stri
     </div>
   </dialog>
 }
+
+const glyphs = {
+  download: <><path d="M12 4v11" /><path d="M7.5 10.5L12 15l4.5-4.5" /><path d="M5 19h14" /></>,
+  check: <><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" /><path d="M8.8 12.2l2.2 2.2 4.2-4.6" /></>,
+  trash: <><path d="M4.5 7h15" /><path d="M9.5 7V4.8h5V7" /><path d="M6.5 7l.9 12.2h9.2L17.5 7" /><path d="M10.2 10.5v5.5M13.8 10.5v5.5" /></>,
+  folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+  import: <><path d="M12 15V4" /><path d="M7.5 8.5L12 4l4.5 4.5" /><path d="M5 14v5h14v-5" /></>,
+}
+
+/** Small line icon used inside compact action buttons. */
+export function Glyph({ name }: { name: keyof typeof glyphs }) {
+  return <svg className="inline-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{glyphs[name]}</svg>
+}

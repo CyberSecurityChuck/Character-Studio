@@ -443,3 +443,21 @@ def test_deleting_can_remove_package_copies_only_when_asked(engine_client, fake)
     mapping = zipped.read("mapping.txt").decode()
     assert "Ada" not in mapping and "Subject 1 (Deleted character)" in mapping
     assert sorted(p.name for p in Path(job["job_folder"]).glob("image-*.jpg")) == ["image-1.jpg"]
+
+
+def test_manual_package_can_be_deleted_and_imports_are_kept(client, settings):
+    _ada, scene = approved_scene(client)
+    created = export(client, scene)
+    export_id = created["export_id"]
+    folder = Path(created["scene"]["exports"][0]["job_folder"])
+    imported = import_result(client, scene, export_id=export_id)["results"][0]
+    assert folder.is_dir() and imported["job_id"] == export_id
+    gone = client.delete(f"/api/exports/{export_id}", headers=authorization(client)).json()
+    assert gone["cleanup_pending"] is False and gone["scene"]["exports"] == []
+    assert not folder.exists()
+    [kept] = gone["scene"]["results"]
+    assert kept["id"] == imported["id"] and kept["job_id"] is None
+    assert kept["approval_id"] == scene["approval"]["current"]["id"]
+    assert client.get(f"/api/exports/{export_id}/package").status_code == 404
+    again = client.delete(f"/api/exports/{export_id}", headers=authorization(client))
+    assert again.status_code == 404

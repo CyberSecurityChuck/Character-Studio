@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request, send } from './api'
+import { Glyph } from './Controls'
 
 type Counts = { characters: number; photos: number; scenes: number; results: number }
 type Item = { name: string; size: number; created_at: string | null; counts: Counts | null; problem?: string }
@@ -56,13 +57,13 @@ export default function Backups({ token }: { token: string }) {
           {item.problem && <span className="frame-error">{item.problem}</span>}
           {result === 'checking' ? <span className="hint">Checking every file…</span> : result ? <span className={result.ok ? 'check-ok' : 'frame-error'}>{result.ok ? `Checked: all ${result.files} files match.` : result.problem}</span> : null}</div>
         <span className="backup-actions">
-          <a className="link-button" href={`/api/backups/${item.name}/download`} download>Download</a>
-          <button type="button" className="link-button" disabled={result === 'checking'} onClick={() => void check(item.name)}>Check</button>
-          <button type="button" className="link-button danger-link" onClick={() => void remove(item)}>Delete</button>
+          <a className="button-link compact" href={`/api/backups/${item.name}/download`} download><Glyph name="download" />Download</a>
+          <button type="button" className="secondary compact" disabled={result === 'checking'} onClick={() => void check(item.name)}><Glyph name="check" />{result === 'checking' ? 'Checking…' : 'Check'}</button>
+          <button type="button" className="danger secondary compact" onClick={() => void remove(item)}><Glyph name="trash" />Delete</button>
         </span>
       </li>
     })}</ul>)}
-    {state && <p className="hint backup-folder">Saved in <code>{state.folder}</code> <button type="button" className="link-button" onClick={() => void copy(state.folder)}>Copy path</button></p>}
+    {state && <div className="backup-folder"><span className="hint">Saved in</span> <code>{state.folder}</code> <button type="button" className="secondary compact" onClick={() => void copy(state.folder)}><Glyph name="folder" />Copy path</button></div>}
     <div className="privacy-note"><strong>Keep a copy elsewhere, and restoring</strong><p>Backups sit in your data folder, so copy or download them to another drive as well. To restore, stop the studio with Stop-Studio.cmd, then double-click Restore-Studio.cmd (or drop a backup file onto it). It checks the backup first and keeps your current data folder, renamed, so nothing is lost.</p></div>
   </section>
 }

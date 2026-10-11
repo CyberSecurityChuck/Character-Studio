@@ -15,7 +15,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -157,6 +157,26 @@ def create_export(request, scene_id: str, body: ExportInput):
 async def export_package(request: Request, scene_id: str, body: ExportInput):
     """Manual bridge (PLAN.md §12.2): the same files Generate would send, for any app."""
     return await run_in_threadpool(create_export, request, scene_id, body)
+
+
+@router.delete("/exports/{export_id}")
+def delete_export(request: Request, export_id: str):
+    """Remove a manual package and its files. Results imported from it are kept."""
+    with writing(request) as session:
+        job = session.get(EngineJob, export_id)
+        if job is None or job.kind != "export":
+            raise HTTPException(404, "This package no longer exists. Reload the scene.")
+        scene_id, folder = job.scene_id, job.job_folder
+        # Imported results keep their approval (their exact inputs); only the package link goes.
+        session.execute(
+            update(GenerationResult).where(GenerationResult.job_id == export_id).values(job_id=None)
+        )
+        session.merge(PendingFileDeletion(path=folder))
+        session.delete(job)
+    pending = clean_deleted_files(request.app.state.engine, request.app.state.settings, [folder])
+    with Session(request.app.state.engine) as session:
+        scene = require_scene(session, scene_id)
+        return {"cleanup_pending": pending, "scene": scene_detail(request, session, scene)}
 
 
 @router.get("/exports/{export_id}/package")

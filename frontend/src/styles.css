@@ -684,3 +684,11 @@ button .inline-icon { margin-right: 6px; }
 button.compact { min-height: 32px; padding: 4px 12px; font-size: 12px; }
 .result-card .card-main { grid-template-columns: minmax(0, 1fr); }
 .result-copy { min-width: 0; }
+/* Compact action buttons with an icon (backups, manual packages). */
+button.compact, .button-link.compact { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; }
+button.compact .inline-icon, .button-link.compact .inline-icon { width: 15px; height: 15px; flex: none; }
+.backup-actions, .package-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.backup-actions .link-button, .package-actions .link-button { min-height: 34px; }
+.backup-folder { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 14px; font-size: 13px; }
+.backup-folder code { overflow-wrap: anywhere; }
+.package-list li { align-items: start; }

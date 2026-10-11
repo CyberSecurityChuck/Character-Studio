@@ -191,3 +191,10 @@
 - Decision (user's choice): "preferred" is a favourite mark; a scene may have any number of preferred results. This replaces D016's one-per-scene rule.
 - Decision: result selection follows D013: ⋯ menu per card, Select mode with a selection bar, bulk actions calling the single-result endpoints one by one and reporting failures by name. One selected image downloads as itself; several come as one zip built in `exports/` and deleted after it is sent.
 - Approval: the user's Phase 5 review report and the answers "Several per scene" and "Yes, go ahead" (2026-10-11).
+
+## D019 — Phase 5 follow-up fixes (2026-10-11)
+
+- Decision: the average generation time describes past Codex runs, so it is shown whatever the current generation engine is.
+- Decision: row actions in Backups and Manual packages are compact secondary buttons with a line icon (`Glyph` in `Controls.tsx`), destructive ones with the red outline, replacing text links.
+- Decision: a manual package can be deleted. Its folder goes through the deletion queue and its job record is removed. Results imported from it are kept and remain linked to their approval snapshot (their exact inputs); their `job_id` is cleared, so only the package link is lost. Downloaded copies are outside the studio's control and the confirmation says so. Package numbers come from the remaining folders, so a later package may reuse a deleted package's number.
+- Approval: the user's follow-up report and "Yes, go ahead" (2026-10-11).

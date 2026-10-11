@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
-import { CardMenu, SelectionBar, type MenuItem } from './Controls'
+import { CardMenu, Glyph, SelectionBar, type MenuItem } from './Controls'
 import type { SceneDetail } from './Scenes'
 
 export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[] }
@@ -295,7 +295,18 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
   onGenerate: (mode: 'generate' | 'variation') => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
 }) {
   const [selecting, setSelecting] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const timing = scene.generation_timing
+  async function removePackage(e: ExportPackage) {
+    const imported = e.result_count ? ` The ${plural(e.result_count, 'result')} you imported from it ${e.result_count === 1 ? 'is' : 'are'} kept and stay${e.result_count === 1 ? 's' : ''} linked to ${e.result_count === 1 ? 'its' : 'their'} approval.` : ''
+    if (!window.confirm(`Delete package ${e.number}? Its folder is removed from this computer: the copies of the approved photos, the prompt files and the zip.${imported} Packages you already downloaded are not affected.`)) return
+    setDeleting(e.id)
+    try {
+      const done = await send<{ scene: SceneDetail; cleanup_pending: boolean }>(`/api/exports/${e.id}`, 'DELETE', token)
+      onChanged(done.scene, done.cleanup_pending ? `Package ${e.number} removed from the list. Some files are locked and will be deleted after a restart.` : `Package ${e.number} deleted.`)
+    } catch (err) { setNote(err instanceof Error ? err.message : 'The package could not be deleted.') }
+    finally { setDeleting(null) }
+  }
   const token = data.session_token
   const [viewing, setViewing] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null | false>(false)
@@ -321,7 +332,7 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
         <p>{codex ? <>Generate sends the Base Image and {plural(references, 'reference photo')} to OpenAI via Codex, using your own ChatGPT sign-in. Each attempt uses your plan’s image allowance. It runs once per click and is never retried on its own.</>
           : <>Manual generation is selected in Studio settings. Export the package, make the image in any app, then import it here. Nothing is sent from the studio.</>}</p>
         <p className="hint">Approved {formatDate(approval.approved_at)} · prompt version {approval.prompt_version}{approval.is_polished ? ' (polished)' : ''} · {scene.total_images} {scene.total_images === 1 ? 'image' : 'images'} attached</p>
-        {codex && timing.average_seconds != null && <p className="hint">Codex has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
+        {timing.average_seconds != null && <p className="hint">Codex has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
       </div>
       {codex ? <>
         <div className="generate-actions">
@@ -350,9 +361,10 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
       <ul>{scene.exports.map(e => <li key={e.id}>
         <div><strong>Package {e.number}</strong> <span className="hint">{formatDate(e.created_at)} · {e.approval_current ? 'current approval' : 'earlier approval'}{e.photos_removed ? ` · ${plural(e.photos_removed, 'photo')} removed` : ''}</span></div>
         <span className={`run-status ${e.result_count ? 'completed' : ''}`}>{e.result_count ? `${plural(e.result_count, 'result')} imported` : 'Waiting for import'}</span>
-        <span className="package-actions"><a className="link-button" href={e.download_url} download>Download</a>
-          <button type="button" className="link-button" onClick={() => setImporting(e.id)}>Import result</button>
-          {e.job_folder && <button type="button" className="link-button" onClick={() => copyText(e.job_folder!, setNote)}>Copy folder path</button>}</span>
+        <span className="package-actions"><a className="button-link compact" href={e.download_url} download><Glyph name="download" />Download</a>
+          <button type="button" className="secondary compact" disabled={busy || deleting === e.id} onClick={() => setImporting(e.id)}><Glyph name="import" />Import result</button>
+          {e.job_folder && <button type="button" className="secondary compact" onClick={() => copyText(e.job_folder!, setNote)}><Glyph name="folder" />Copy folder path</button>}
+          <button type="button" className="danger secondary compact" disabled={busy || deleting === e.id} onClick={() => void removePackage(e)}><Glyph name="trash" />{deleting === e.id ? 'Deleting…' : 'Delete'}</button></span>
       </li>)}</ul></details>}
     <p className="library-status" role="status">{note}</p>
 
