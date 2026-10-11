@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-11 — Phase 4 accepted
+
+- The user's follow-up check passed after the comparison fix ("Phase 4 accepted"). Phase 4 is complete. Status, handoff and user guide updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). Phase 5 needs "Approve Phase 5".
+
 ## 2026-10-11 — Phase 4 review fixes (local commit, awaiting follow-up check)
 
 - From the user's Phase 4 review (34/34 steps, "Needs fixes first"). Approved with "Yes, please go ahead with all four fixes".

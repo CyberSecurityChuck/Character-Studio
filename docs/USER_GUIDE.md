@@ -2,7 +2,7 @@
 
 A local-first home for reusable characters, reference scenes and approved image workflows. For the project overview, see the [README](../README.md). Commands below run from the project root folder.
 
-**Current scope: Phase 4 Character Mapping and Approval** (built, in review), on top of Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt and approve the exact inputs. Generation and export/import are not implemented yet; PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
+**Current scope: Phase 4 Character Mapping and Approval** (complete), on top of Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt and approve the exact inputs. Generation and export/import are not implemented yet; PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
 
 **How it works (D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
 
