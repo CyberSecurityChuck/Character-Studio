@@ -33,6 +33,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import func, select
 
 from backend.configuration import ASSET_DIRECTORIES, Settings, asset_path
+from backend.keystore import KEY_DIRECTORY
 from backend.models import Character, GenerationResult, ReferencePhoto, Scene
 from backend.persistence import writing_session
 
@@ -294,6 +295,9 @@ def restore_backup(path: Path, data_dir: Path) -> tuple[Path, Path | None]:
     if previous is not None and (previous / "backups").is_dir():
         # Keep every backup reachable from the studio after restoring.
         (previous / "backups").rename(data_dir / "backups")
+    if previous is not None and (previous / KEY_DIRECTORY).is_dir():
+        # API keys are never in backups (Phase 6A); keep the ones saved on this PC.
+        (previous / KEY_DIRECTORY).rename(data_dir / KEY_DIRECTORY)
     return data_dir, previous
 
 

@@ -7,6 +7,7 @@ import time
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -383,7 +384,21 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
         _ada, scene = approved_scene(client)
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
-        # Undo 0007 (batches) and 0006 (generation) to recreate a Phase 4 database.
+        # Undo 0008 (API engines), 0007 (batches) and 0006 (generation) to recreate a
+        # Phase 4 database, including the Phase 3 engine settings CHECK constraint.
+        db.execute(
+            "CREATE TABLE old_settings (id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "analysis_engine VARCHAR(20) NOT NULL "
+            "CHECK (analysis_engine IN ('claude_cli', 'codex_cli', 'manual')), "
+            "generation_engine VARCHAR(20) NOT NULL, claude_timeout INTEGER NOT NULL, "
+            "codex_timeout INTEGER NOT NULL, revision INTEGER NOT NULL)"
+        )
+        db.execute(
+            "INSERT INTO old_settings SELECT id, analysis_engine, generation_engine, "
+            "claude_timeout, codex_timeout, revision FROM engine_settings"
+        )
+        db.execute("DROP TABLE engine_settings")
+        db.execute("ALTER TABLE old_settings RENAME TO engine_settings")
         db.execute("DROP TABLE batches")
         db.execute("DROP INDEX ix_engine_jobs_batch_id")
         db.execute("ALTER TABLE engine_jobs DROP COLUMN batch_position")
@@ -392,10 +407,23 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0007_batches"
+        assert client.get("/api/health").json()["schema_revision"] == "0008_api_engines"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []
+        # The rebuilt tables accept the API engines and still refuse unknown ones.
+        settings_now = client.get("/api/engines/settings").json()
+        assert settings_now["api_timeout"] == 180 and settings_now["api_models"] == {}
+    with sqlite3.connect(settings.data_dir / "studio.db") as db:
+        db.execute("UPDATE engine_settings SET analysis_engine = 'gemini_api'")
+        db.execute("UPDATE scene_analyses SET source = 'openai_api'")
+        for statement in (
+            "UPDATE engine_settings SET analysis_engine = 'other'",
+            "UPDATE scene_analyses SET source = 'other'",
+        ):
+            with pytest.raises(sqlite3.IntegrityError):
+                db.execute(statement)
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_deleting_can_remove_package_copies_only_when_asked(engine_client, fake):

@@ -9,11 +9,14 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from backend.api_engines import API_ENGINES
+from backend.api_settings import router as api_settings_router
 from backend.backup import BackupRunner, clean_partial
 from backend.backups_api import router as backups_router
 from backend.batches import router as batches_router
 from backend.configuration import Settings, load_settings
 from backend.jobs import JobRunner, reconcile_on_startup
+from backend.keystore import key_info
 from backend.library import backfill_photo_hashes, clean_deleted_files
 from backend.library import router as library_router
 from backend.models import StudioPreferences
@@ -123,11 +126,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "preferences": preferences,
             "session_token": app.state.session_token,
-            "phase": 5.5,
+            "phase": 6,
             "max_upload_bytes": settings.max_upload_bytes,
             "schema_revision": SCHEMA_REVISION,
             "data_directory": str(settings.data_dir),
-            "paid_operations_enabled": False,
+            # True once an API key is saved; every paid run still needs confirmation.
+            "paid_operations_enabled": any(
+                key_info(settings, engine)["saved"] for engine in API_ENGINES
+            ),
             "providers": PROVIDERS,
         }
 
@@ -148,6 +154,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(results_router)
     app.include_router(backups_router)
     app.include_router(batches_router)
+    app.include_router(api_settings_router)
 
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):

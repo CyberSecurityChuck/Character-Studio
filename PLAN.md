@@ -1937,8 +1937,9 @@ Implement only after the core application works.
 
 ### Phase 6 planning notes (user direction, 2026-10-11)
 
-Recorded before approval; not built yet. Phase 6 still
-needs "Approve Phase 6". DECISIONS.md D021.
+Recorded before approval. Approved with "Approve Phase 6"
+(2026-10-11) and delivered as sub-steps 6A–6D;
+see DECISIONS.md D021 and D022.
 
 - Scope: the user wants all the items above.
 - API engines: Phase 6 adds an API provider layer for

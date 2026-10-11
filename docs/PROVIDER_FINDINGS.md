@@ -110,3 +110,19 @@ Sources: https://ai.google.dev/gemini-api/docs/pricing and https://ai.google.dev
 - Image models: Nano Banana 2.1, Nano Banana 2 (`gemini-3.1-flash-image`), Nano Banana 2 Lite, Nano Banana Pro (`gemini-3-pro-image`); `gemini-2.5-flash-image` is deprecated and shuts down on 2026-10-02. Model names change often, so do not hard-code them.
 - Editing: text-instructed and conversational edits of a supplied image; up to 14 reference images in total, of which up to 4 (Flash) or 5 (Pro) can be "character" images for consistency; Lite takes no character images. No mask or inpainting is documented. Likeness preservation is not quantified.
 - Every generated image carries a SynthID watermark. The user must have the rights to the images uploaded.
+
+## Phase 6 start: re-checked facts (2026-10-11; nothing real was called)
+
+Sources read 2026-10-11: https://ai.google.dev/gemini-api/docs/pricing (page "Last updated 2026-10-09"), https://developers.openai.com/api/docs/guides/image-generation, https://developers.openai.com/api/docs/pricing, https://docs.bfl.ai/ and BFL's FLUX.1 Fill [pro] API reference. Stability AI's developer pages did not render for the fetcher, so its prices and editing features are **unverified** and it is not built.
+
+- Gemini: the free tier still lists text/vision models (3.8/3.6 Flash, 3 Flash Preview, 3.5/3.1 Flash-Lite, 2.5 Pro/Flash/Flash-Lite, Gemma 4) as free. Every image-output model is "Not available" on the free tier. Paid per-image (Standard): Nano Banana 2.1 about $0.034 (1K); Nano Banana 2 (`gemini-3.1-flash-image`) $0.067 (1K); Nano Banana 2 Lite $0.034; Nano Banana Pro (`gemini-3-pro-image`) $0.134 (1K/2K). `gemini-2.5-flash-image` shut down on 2026-10-02.
+- OpenAI Images: models listed as `gpt-image-2.5-sunburst` (editing precision) and `gpt-image-2.5-flare` (fast). The edits endpoint accepts several images (examples use four) and a mask on the first image; masking is prompt-based and "may not follow the mask's exact shape". Quality low…max, sizes up to a 3840 px edge (above 2560×1440 experimental). Pricing is per token; use OpenAI's calculator.
+- Black Forest Labs: FLUX 3 is the headline family; FLUX.2 and FLUX.1 Kontext remain. FLUX.1 Fill [pro] (`POST https://api.bfl.ai/v1/flux-pro-1.0-fill`, header `x-key`) inpaints with a black/white mask or an alpha channel. Results are polled. No free credits are mentioned.
+- Model names change often; the studio stores the user's chosen model and suggests only `gemini-2.5-flash`.
+
+## Phase 6A implementation notes (2026-10-11)
+
+- Endpoints: Gemini `POST /v1beta/models/{model}:generateContent` (`x-goog-api-key`), list `GET /v1beta/models` (filtered to `generateContent`). Anthropic `POST /v1/messages` (`x-api-key`, `anthropic-version: 2023-06-01`) with a forced `save_scene_analysis` tool, list `GET /v1/models`. OpenAI `POST /v1/chat/completions` (`Authorization: Bearer`) with `response_format: json_object`, list `GET /v1/models` (filtered to likely chat models).
+- Usage recorded: Gemini `promptTokenCount` and `candidatesTokenCount + thoughtsTokenCount`; Anthropic `input_tokens`/`output_tokens`; OpenAI `prompt_tokens`/`completion_tokens`.
+- Error mapping and blocked/cut-off replies are described in DECISIONS.md D022. Gemini reports an invalid key as HTTP 400 "API key not valid", which is matched by text.
+- All of this is tested only against a local fake server. The first real run is the user's, during the Phase 6A review; until then the engines are `unverified` in the provider registry.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-11 — Phase 6A: API provider layer and analysis engines
+
+- Approved by the user ("Approve Phase 6"). Phase 6 is delivered in sub-steps 6A–6D; this is 6A. See D022.
+- Studio settings: three new analysis engines (**Gemini API**, **Anthropic API**, **OpenAI API**), a model field per engine, an API time limit and a new **API keys** panel (Save, Replace, Remove, Test key). Keys are protected with Windows DPAPI in `<data dir>/keys/`, never shown again, never backed up and kept across a restore.
+- Every API run asks first: a dialog shows what is sent, to which company, the model, run count, typical tokens from earlier runs and a prices link. The server refuses API runs, batches, Continue and Try failed again without that confirmation. Runs record the model and the token usage the provider reports.
+- API batches pause on a refused key, a missing model or a rate/quota/spending limit. Cancel and time-outs explain that a request already received may still be charged. Nothing is retried.
+- Schema `0008_api_engines` (rebuilds two tables to widen CHECK constraints; adds two settings columns). Migrations run with foreign keys off and a full `foreign_key_check` before commit.
+- New `backend/keystore.py`, `backend/api_engines.py`, `backend/api_settings.py`, `frontend/src/ApiEngines.tsx`, `tests/test_api_engines.py` (15 tests against a local fake of the three APIs; 121 total). No dependencies added.
+
 ## 2026-10-11 — Phase 5.5 accepted
 
 - The user's review passed (`Phase_Checks/Phase5.5_Review_Report.md`: 20/20 steps, 0 problems, "Phase 5.5 looks good", no notes), including real Claude and Codex batches. Phase 5.5 (Batch Processing) is complete. Status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). Phase 6 needs "Approve Phase 6".

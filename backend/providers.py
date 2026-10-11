@@ -1,4 +1,8 @@
-"""Provider registry: the official CLIs (D009) and the manual bridge. No paid API is used."""
+"""Provider registry: the official CLIs (D009), the manual bridge and the optional API engines.
+
+API engines (Phase 6, D022) do nothing until the user saves a key, selects the engine
+and confirms the possible charge for each run or batch.
+"""
 
 from enum import StrEnum
 from typing import Literal, Protocol
@@ -113,11 +117,39 @@ PROVIDERS = (
         multiple_references=True,
         pricing="No calls from Character Studio. The other app's usage limits apply.",
     ),
+    # Not yet run against the real services by the studio, hence "unverified".
+    ProviderCapabilities(
+        id="gemini_api",
+        name="Gemini API",
+        status="unverified",
+        description="Scene analysis with your own Google AI Studio key. Analyse sends the "
+        "Base Image, without location data, to Google.",
+        analysis=True,
+        sends_images_externally=True,
+        formats=("jpeg",),
+        pricing="Free-tier keys are not charged for analysis with free models; billed keys are "
+        "charged per use. Each run asks for confirmation.",
+    ),
+    ProviderCapabilities(
+        id="anthropic_api",
+        name="Anthropic API",
+        status="unverified",
+        description="Scene analysis with your own Anthropic API key. Analyse sends the Base "
+        "Image, without location data, to Anthropic.",
+        analysis=True,
+        sends_images_externally=True,
+        formats=("jpeg",),
+        pricing="Charged per use to your Anthropic API account. Each run asks for confirmation.",
+    ),
     ProviderCapabilities(
         id="openai_api",
         name="OpenAI API",
-        status="disabled",
-        description="Separate API billing is outside the approved scope.",
-        pricing="Disabled. No API credentials are requested or used.",
+        status="unverified",
+        description="Scene analysis with your own OpenAI API key. Analyse sends the Base Image, "
+        "without location data, to OpenAI.",
+        analysis=True,
+        sends_images_externally=True,
+        formats=("jpeg",),
+        pricing="Charged per use to your OpenAI API account. Each run asks for confirmation.",
     ),
 )

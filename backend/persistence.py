@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0007_batches"
+SCHEMA_REVISION = "0008_api_engines"
 
 
 def open_database(settings: Settings) -> Engine:
@@ -29,9 +29,20 @@ def open_database(settings: Settings) -> Engine:
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
     try:
-        with engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, "head")
+        with engine.connect() as connection:
+            # SQLite changes a CHECK constraint by rebuilding the table, which its documented
+            # procedure does with foreign keys off; every reference is verified before commit.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+            try:
+                with connection.begin():
+                    config.attributes["connection"] = connection
+                    command.upgrade(config, "head")
+                    if connection.exec_driver_sql("PRAGMA foreign_key_check").first():
+                        raise RuntimeError("The database upgrade would break saved references.")
+            finally:
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                connection.commit()
     except Exception:
         engine.dispose()
         raise

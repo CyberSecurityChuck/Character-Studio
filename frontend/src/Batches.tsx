@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { request, send } from './api'
+import { ChargeSummary, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { Avatar, type Character, type Group } from './Library'
 import { duration } from './Results'
 import type { SceneSummary } from './Scenes'
@@ -20,14 +21,14 @@ export const MAX_ANALYSIS_RUNS = 50
 export const MAX_GENERATION_RUNS = 20
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-const allowance: Record<string, string> = { claude_cli: 'your Claude plan’s allowance', codex_cli: 'your ChatGPT plan’s allowance' }
-const sendsTo: Record<string, string> = { claude_cli: 'Anthropic via Claude Code', codex_cli: 'OpenAI via Codex' }
-const engineNames: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex' }
+const allowance: Record<string, string> = { claude_cli: 'your Claude plan’s allowance', codex_cli: 'your ChatGPT plan’s allowance', gemini_api: 'your Google API key (may be charged)', anthropic_api: 'your Anthropic API key (charged per use)', openai_api: 'your OpenAI API key (charged per use)' }
 const stateLabels: Record<Batch['state'], string> = { running: 'Running', pausing: 'Pausing after this run', paused: 'Paused', cancelling: 'Stopping', cancelled: 'Cancelled', finished: 'Finished' }
 const itemLabels: Record<string, string> = { not_started: 'Not started', running: 'Running', completed: 'Done', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
-const pauseTitles: Record<string, (engine: string) => string> = {
+const pauseTitles: Record<string, (name: string, engine: string) => string> = {
   user: () => 'Paused by you',
-  usage_limit: engine => `Paused: ${engine}’s plan limit appears to be reached`,
+  usage_limit: (name, engine) => isApiEngine(engine) ? `Paused: ${name} reports a rate, quota or spending limit` : `Paused: ${name}’s plan limit appears to be reached`,
+  key_problem: engine => `Paused: ${engine} did not accept the key`,
+  model_problem: engine => `Paused: ${engine} does not offer the chosen model`,
   signed_out: engine => `Paused: ${engine} is signed out`,
   not_installed: engine => `Paused: ${engine} could not be started`,
   restart: () => 'Paused when the studio stopped',
@@ -43,10 +44,13 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
   const problems = counts.failed + counts.interrupted
   const what = batch.kind === 'generation' ? 'image' : 'analysis'
   const runs = (n: number) => batch.kind === 'generation' ? plural(n, 'image') : `${n} ${n === 1 ? 'analysis' : 'analyses'}`
+  // API engines: continuing or retrying may be charged, so the server needs the confirmation.
+  const charged = isApiEngine(batch.engine)
+  const chargeLine = charged ? ' Each run may be charged to your account by the provider; nothing is retried on its own.' : ''
   async function act(path: string, method = 'POST', question?: string) {
     if (question && !window.confirm(question)) return
     setBusy(true); setError('')
-    try { await send(`/api/batches/${batch.id}${path}`, method, token); onChanged() }
+    try { await send(`/api/batches/${batch.id}${path}`, method, token, charged && ['/continue', '/retry'].includes(path) ? { confirm_charges: true } : undefined); onChanged() }
     catch (e) { setError(e instanceof Error ? e.message : 'That did not work. Reload and try again.') }
     finally { setBusy(false) }
   }
@@ -80,20 +84,20 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
       {batch.state === 'running' && batch.estimate_seconds != null && <span className="hint">about {duration(batch.estimate_seconds + (counts.running ? batch.average_seconds ?? 0 : 0))} left</span>}
     </p>
     {batch.state === 'paused' && batch.pause_kind && <div className="check-box warning batch-paused">
-      <strong>{(pauseTitles[batch.pause_kind] ?? pauseTitles.user)(engineNames[batch.engine] ?? batch.engine_name)}</strong>
+      <strong>{(pauseTitles[batch.pause_kind] ?? pauseTitles.user)(engineNames[batch.engine] ?? batch.engine_name, batch.engine)}</strong>
       {batch.pause_details && <p>{batch.pause_details}</p>}
-      <p>{plural(remaining, 'item')} {remaining === 1 ? 'is' : 'are'} waiting. Nothing continues on its own{batch.pause_kind === 'usage_limit' ? '; wait until your limit resets, then continue' : batch.pause_kind === 'signed_out' ? '; sign in again, then continue' : ''}.</p>
+      <p>{plural(remaining, 'item')} {remaining === 1 ? 'is' : 'are'} waiting. Nothing continues on its own{batch.pause_kind === 'usage_limit' ? '; wait until your limit resets, then continue' : batch.pause_kind === 'signed_out' ? '; sign in again, then continue' : batch.pause_kind === 'key_problem' || batch.pause_kind === 'model_problem' ? '; check the key and model in Studio settings, then continue' : ''}.</p>
     </div>}
     {batch.state === 'pausing' && <p className="hint">The run in progress finishes first; nothing new starts after it.</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
     <div className="batch-actions">
       {batch.state === 'running' && <button type="button" className="secondary compact" disabled={busy} onClick={() => void act('/pause')}>Pause</button>}
       {batch.state === 'paused' && <button type="button" className="compact" disabled={busy}
-        onClick={() => void act('/continue', 'POST', `Continue the batch? ${runs(remaining)} ${remaining === 1 ? 'runs' : 'run'} one after another, using ${allowance[batch.engine]}.`)}>Continue</button>}
+        onClick={() => void act('/continue', 'POST', `Continue the batch? ${runs(remaining)} ${remaining === 1 ? 'runs' : 'run'} one after another, using ${allowance[batch.engine]}.${chargeLine}`)}>Continue</button>}
       {['running', 'pausing', 'paused'].includes(batch.state) && remaining > 0 && <button type="button" className="danger secondary compact" disabled={busy}
         onClick={() => void act('/cancel', 'POST', `Cancel the ${plural(remaining, 'item')} that ${remaining === 1 ? 'has' : 'have'} not started? Nothing is sent for them.${counts.running ? ' The run in progress continues; you can cancel it in the list below.' : ''}`)}>Cancel remaining</button>}
       {!isActive(batch) && batch.retryable > 0 && <button type="button" className="secondary compact" disabled={busy}
-        onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.`)}>Try failed again ({batch.retryable})</button>}
+        onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.${chargeLine}`)}>Try failed again ({batch.retryable})</button>}
       {!isActive(batch) && <button type="button" className="link-button" disabled={busy} onClick={() => void act('', 'DELETE')}>Remove from list</button>}
     </div>
     <details className="batch-items" open={!collapsed && isActive(batch) && batch.total <= 6}>
@@ -174,6 +178,12 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [average, setAverage] = useState<number | null>(null)
+  const apiEngines = useApiEngines()
+  const [model, setModel] = useState<string | null>(null)
+  const charged = isApiEngine(engine)
+  useEffect(() => {
+    if (charged) request<{ api_models: Record<string, { analysis?: string }> }>('/api/engines/settings').then(s => setModel(s.api_models[engine]?.analysis ?? null), () => undefined)
+  }, [charged, engine])
   useEffect(() => {
     request<{ analysis: Record<string, number | null>; generation: number | null }>('/api/batches/timing')
       .then(t => setAverage(kind === 'generation' ? t.generation : t.analysis[engine] ?? null), () => setAverage(null))
@@ -201,7 +211,7 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
     setBusy(true); setError('')
     try {
       const result = kind === 'analysis'
-        ? await send<BatchStart>('/api/batches/analysis', 'POST', token, { scene_ids: queued.map(s => s.id), include_analysed: includeAnalysed })
+        ? await send<BatchStart>('/api/batches/analysis', 'POST', token, { scene_ids: queued.map(s => s.id), include_analysed: includeAnalysed, ...(charged ? { confirm_charges: true } : {}) })
         : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode })
       onStarted(result)
     } catch (e) { setError(e instanceof Error ? e.message : 'The batch could not be started.'); setBusy(false) }
@@ -226,19 +236,20 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
       </>}
       {kind === 'analysis' && analysed > 0 && <label className="checkbox-label"><input type="checkbox" checked={includeAnalysed} disabled={busy} onChange={e => setIncludeAnalysed(e.target.checked)} />
         <span>Also analyse the {plural(analysed, 'scene')} that already {analysed === 1 ? 'has' : 'have'} an analysis. A new version is added; an approval is cancelled when it arrives.</span></label>}
+      {runs > 0 && charged && apiEngines.byId[engine] && <ChargeSummary engine={apiEngines.byId[engine]} model={model} runs={runs} />}
       {runs > 0 && <div className="check-box batch-summary">
         <strong>{kind === 'generation' ? `${plural(runs, 'image')} from ${allowance[engine]}` : `${runs} ${runs === 1 ? 'run' : 'runs'} from ${allowance[engine]}`}</strong>
         <ul>
-          <li>{kind === 'generation' ? 'Each run sends one scene’s Base Image and approved reference photos' : 'Each run sends one Base Image'} to {sendsTo[engine]}, using your own sign-in.</li>
+          <li>{kind === 'generation' ? 'Each run sends one scene’s Base Image and approved reference photos' : 'Each run sends one Base Image'} to {sendsTo[engine]}{charged ? '' : ', using your own sign-in'}.</li>
           <li>They run one after another, never at the same time{average ? `: about ${duration(average * runs)} in all, going by earlier runs on this computer` : ''}.</li>
-          <li>A failed item is marked Failed and the next one starts. A plan limit or signing out pauses the batch until you continue it. Nothing is retried on its own.</li>
+          <li>A failed item is marked Failed and the next one starts. {charged ? 'A refused key or a rate or spending limit' : 'A plan limit or signing out'} pauses the batch until you continue it. Nothing is retried on its own.</li>
         </ul>
       </div>}
       {runs > limit && <p className="frame-error" role="alert">A batch makes at most {limit} {kind === 'generation' ? 'images, because image generation uses your allowance quickly' : 'runs'}. Choose fewer.</p>}
       <SkippedList items={skipped} />
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button>
-        <button type="button" disabled={busy || !runs || runs > limit} onClick={() => void start()}>{busy ? 'Starting…' : kind === 'generation' ? `Generate ${plural(runs, 'image')}` : `Analyse ${plural(runs, 'scene')}`}</button></div>
+        <button type="button" disabled={busy || !runs || runs > limit} onClick={() => void start()}>{busy ? 'Starting…' : kind === 'generation' ? `Generate ${plural(runs, 'image')}` : `Analyse ${plural(runs, 'scene')}${charged ? ' and accept charges' : ''}`}</button></div>
     </div>
   </Dialog>
 }

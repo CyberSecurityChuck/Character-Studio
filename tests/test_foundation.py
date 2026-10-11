@@ -23,9 +23,11 @@ def test_health_and_provider_registry_are_honest(client):
         "claude_cli": "available",
         "codex_cli": "available",
         "manual_bridge": "available",
-        "openai_api": "disabled",
+        "gemini_api": "unverified",
+        "anthropic_api": "unverified",
+        "openai_api": "unverified",
     }
-    # Phase 5: Codex and the manual bridge generate; the paid API stays off.
+    # Phase 6A: API engines analyse only; Codex and the manual bridge generate.
     assert {p["id"] for p in data["providers"] if p["generation"]} == {"codex_cli", "manual_bridge"}
     assert client.get("/api/generate").status_code == 404
     assert client.post("/api/generate", headers=authorization(client)).status_code == 405

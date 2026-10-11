@@ -85,6 +85,10 @@ class EngineSettings(Base):
     generation_engine: Mapped[str] = mapped_column(String(20))
     claude_timeout: Mapped[int] = mapped_column(Integer)
     codex_timeout: Mapped[int] = mapped_column(Integer)
+    # API engines (Phase 6): one time limit and the chosen model per engine and purpose,
+    # e.g. {"gemini_api": {"analysis": "gemini-2.5-flash"}}. Keys live in backend.keystore.
+    api_timeout: Mapped[int] = mapped_column(Integer)
+    api_models_json: Mapped[str] = mapped_column(Text)
     revision: Mapped[int] = mapped_column(Integer)
 
 

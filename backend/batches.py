@@ -16,6 +16,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from backend.api_engines import (
+    API_ENGINES,
+    charge_confirmation,
+    engine_label,
+    engine_timeout,
+    is_api_engine,
+)
 from backend.engines import ENGINE_NAMES, SIGN_IN_HELP, engine_status
 from backend.generation import (
     MAX_GENERATION_INSTRUCTION,
@@ -23,6 +30,7 @@ from backend.generation import (
     run_seconds,
     snapshot_of,
 )
+from backend.keystore import key_info
 from backend.models import (
     Batch,
     Character,
@@ -36,7 +44,7 @@ from backend.models import (
     SubjectMapping,
 )
 from backend.scene_store import active_job, latest, now
-from backend.scenes import writing
+from backend.scenes import api_run_settings, writing
 from backend.workflow import (
     SUGGESTED,
     ApprovalError,
@@ -63,6 +71,13 @@ class AnalysisBatchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scene_ids: list[str] = Field(min_length=1, max_length=MAX_ANALYSIS_RUNS)
     include_analysed: bool = False
+    # API engines: the user confirmed that every run in the batch may be charged.
+    confirm_charges: bool = False
+
+
+class ChargeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm_charges: bool = False
 
 
 class GenerationItem(BaseModel):
@@ -144,7 +159,7 @@ def batch_data(session, batch: Batch) -> dict:
         "id": batch.id,
         "kind": batch.kind,
         "engine": batch.engine,
-        "engine_name": ENGINE_NAMES.get(batch.engine, batch.engine),
+        "engine_name": engine_label(batch.engine),
         "status": batch.status,
         "state": batch_state(batch, counts),
         "pause_kind": batch.pause_kind,
@@ -232,7 +247,9 @@ def timing(request: Request):
     """Average run times on this PC, for the estimate shown before a batch starts."""
     with Session(request.app.state.engine) as session:
         return {
-            "analysis": {e: average_seconds(session, "analysis", e) for e in ENGINE_NAMES},
+            "analysis": {
+                e: average_seconds(session, "analysis", e) for e in [*ENGINE_NAMES, *API_ENGINES]
+            },
             "generation": average_seconds(session, "generation", "codex_cli"),
         }
 
@@ -255,8 +272,9 @@ def analyse_selected(request: Request, body: AnalysisBatchInput):
             raise HTTPException(
                 409, "Manual analysis is selected in Studio settings, so nothing can be queued."
             )
-        timeout = settings.claude_timeout if engine == "claude_cli" else settings.codex_timeout
-        batch = _new_batch(session, "analysis", engine, {})
+        run = api_run_settings(request, settings, engine, body.confirm_charges)
+        timeout = engine_timeout(settings, engine)
+        batch = _new_batch(session, "analysis", engine, run)
         skipped, queued = [], []
         for scene_id in body.scene_ids:
             scene = session.get(Scene, scene_id)
@@ -278,6 +296,7 @@ def analyse_selected(request: Request, body: AnalysisBatchInput):
                     scene_id=scene.id,
                     engine=engine,
                     status="not_started",
+                    settings_json=json.dumps(run) if run else None,
                     batch_id=batch.id,
                     batch_position=position,
                     timeout_seconds=timeout,
@@ -389,6 +408,12 @@ def pause(request: Request, batch_id: str):
 
 
 def _check_engine(request, engine: str) -> None:
+    if is_api_engine(engine):
+        if not key_info(request.app.state.settings, engine)["saved"]:
+            raise HTTPException(
+                409, f"No {API_ENGINES[engine].name} key is saved. Add one, then continue."
+            )
+        return
     status = engine_status(engine, request.app.state.settings.engine_commands)
     name = ENGINE_NAMES[engine]
     if not status["installed"]:
@@ -400,10 +425,12 @@ def _check_engine(request, engine: str) -> None:
 
 
 @router.post("/batches/{batch_id}/continue")
-async def continue_batch(request: Request, batch_id: str):
+async def continue_batch(request: Request, batch_id: str, body: ChargeInput | None = None):
     """Only the user continues a paused batch; sign-in is checked first (nothing is sent)."""
     with Session(request.app.state.engine) as session:
         engine = require_batch(session, batch_id).engine
+    if is_api_engine(engine) and not (body and body.confirm_charges):
+        raise HTTPException(409, charge_confirmation(engine))
     await run_in_threadpool(_check_engine, request, engine)
     with writing(request) as session:
         batch = require_batch(session, batch_id)
@@ -457,10 +484,12 @@ def cancel_remaining(request: Request, batch_id: str):
 
 
 @router.post("/batches/{batch_id}/retry", status_code=202)
-def retry_failed(request: Request, batch_id: str):
+def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = None):
     """The user's explicit choice to run failed items once more, as new items."""
     with writing(request) as session:
         batch = require_batch(session, batch_id)
+        if is_api_engine(batch.engine) and not (body and body.confirm_charges):
+            raise HTTPException(409, charge_confirmation(batch.engine))
         items = _items(session, batch.id)
         if any(j.status in ("not_started", "running") for j in items):
             raise HTTPException(409, "Wait until the batch has finished, then try again.")
@@ -507,7 +536,10 @@ def retry_failed(request: Request, batch_id: str):
                         scene_id=scene.id,
                         engine=batch.engine,
                         status="not_started",
-                        settings_json=json.dumps({"retry_of": job.id}),
+                        # The retry runs with the model the batch was confirmed for.
+                        settings_json=json.dumps(
+                            {**json.loads(batch.settings_json), "retry_of": job.id}
+                        ),
                         batch_id=batch.id,
                         batch_position=position,
                         timeout_seconds=job.timeout_seconds,

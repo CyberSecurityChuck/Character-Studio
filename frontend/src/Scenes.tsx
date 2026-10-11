@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
+import { ChargeDialog, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { BatchDialog, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
 import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
@@ -23,7 +24,7 @@ export type AnalysisData = {
 type Analysis = { id: string; version: number; source: string; engine_version: string | null; has_raw_output: boolean; based_on_id: string | null; created_at: string; analysis: AnalysisData; confirmed_uncertainties: Uncertainty[] }
 export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
 export type BatchPlace = { id: string; status: string; pause_kind: string | null; position: number; total: number; scene_items: number }
-export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
+export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
 export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null }
 export type SubjectAssignment = { label: string; bounding_box: Box; position: string; summary: string; action: 'replace' | 'keep' | 'unresolved'; character_id: string | null; reference_ids: string[]; references_auto: boolean; confirmed: boolean; suggested: boolean; images: number[]; problems: string[] }
 export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_id: string; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
@@ -36,7 +37,7 @@ export type SceneDetail = SceneSummary & {
   approvals: ApprovalRecord[]; pending_polish: PendingPolish | null
   results: Result[]; exports: ExportPackage[]; generation_timing: { runs: number; average_seconds: number | null }
 }
-type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; revision: number }
+type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number; api_models: Record<string, { analysis?: string }>; revision: number }
 type Step = 'analysis' | 'characters' | 'prompt' | 'review' | 'generate'
 
 type SubjectField = 'position' | 'pose_summary' | 'body_direction' | 'torso_orientation' | 'shoulder_alignment' | 'head_direction' | 'facial_viewing_angle' | 'eye_direction' | 'expression' | 'arms_and_hands' | 'legs_and_feet' | 'outfit' | 'hairstyle' | 'accessories'
@@ -45,11 +46,10 @@ const subjectFields: [SubjectField, string][] = [['position', 'Position'], ['pos
 const cameraFields: [CameraField, string][] = [['height', 'Height'], ['direction', 'Direction'], ['shot_type', 'Shot type'], ['framing', 'Framing'], ['perspective', 'Perspective']]
 const sceneFields: ['environment' | 'lighting' | 'color_palette' | 'atmosphere', string][] = [['environment', 'Environment'], ['lighting', 'Lighting and shadows'], ['color_palette', 'Colour palette'], ['atmosphere', 'Atmosphere']]
 export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate' }
-const sourceLabels: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex', manual_import: 'Manual import', user_edit: 'Your edit' }
-const engineLabels: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex', manual: 'Manual' }
+const sourceLabels: Record<string, string> = { ...engineNames, manual_import: 'Manual import', user_edit: 'Your edit' }
+const engineLabels = engineNames
 const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
 const kindLabels: Record<string, string> = { analysis: 'Analysis', polish: 'Polish', generation: 'Generation', export: 'Manual export' }
-const sendsTo: Record<string, string> = { claude_cli: 'Anthropic via Claude Code', codex_cli: 'OpenAI via Codex' }
 const steps: { id: Step; number: string; label: string }[] = [{ id: 'analysis', number: '01', label: 'Analysis' }, { id: 'characters', number: '02', label: 'Characters' }, { id: 'prompt', number: '03', label: 'Prompt' }, { id: 'review', number: '04', label: 'Review' }, { id: 'generate', number: '05', label: 'Generate' }]
 const stepFor: Record<string, Step> = { needs_analysis: 'analysis', analysing: 'analysis', review_analysis: 'analysis', needs_mapping: 'characters', analysis_ready: 'prompt', polishing: 'prompt', prompt_saved: 'review', approved: 'generate', generating: 'generate', generated: 'generate', waiting_analysis: 'analysis', waiting_generation: 'generate' }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -320,6 +320,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const [confirmed, setConfirmed] = useState<Uncertainty[]>([])
   const [showBoxes, setShowBoxes] = useState(true)
   const [manual, setManual] = useState(false)
+  // API engines: the charge confirmation shown before a run is queued.
+  const [chargeAsk, setChargeAsk] = useState<{ note?: string } | null>(null)
+  const apiEngines = useApiEngines()
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
   const [dismissed, setDismissed] = useState<string[]>([])
@@ -451,11 +454,15 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   }
   const confirmApprovedEdit = (what: string) => !approved || window.confirm(`${what} cancels the current approval. Continue?`)
 
-  const analyse = () => run(async () => {
-    if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id])
-    const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/analyse`, 'POST', token)
-    setScene(detail); onChanged()
-  })
+  const analyse = (confirmed = false, note?: string) => {
+    if (isApiEngine(engine) && !confirmed) { void apiEngines.reload(); setChargeAsk({ note }); return }
+    return run(async () => {
+      if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id])
+      const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/analyse`, 'POST', token, isApiEngine(engine) ? { confirm_charges: true } : undefined)
+      setScene(detail); onChanged()
+    })
+  }
+  const againNote = `The current analysis is kept as a version${approved ? ', and the approval is cancelled when the new analysis arrives' : ''}.`
   const cancel = () => {
     const job = scene.active_job
     if (!job) return
@@ -599,7 +606,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
             : showJobNotice && lastAnalysisJob ? <JobNotice job={lastAnalysisJob} busy={busy || engine === 'manual' || !!scene.active_job} onRetry={() => void analyse()} onManual={() => setManual(true)} manualLabel="Do it manually" onDismiss={() => setDismissed(d => [...d, lastAnalysisJob.id])} /> : null}
 
           {!current && !scene.active_job && !showJobNotice && <div className="analyse-start">
-            <p>{engine === 'manual' ? 'Manual analysis is selected in Studio settings. Copy the instruction into another app, then paste its reply here.' : <>Analyse sends the Base Image to {sendsTo[engine]}, using your own sign-in and your plan's allowance. It runs once, only when you click.</>}</p>
+            <p>{engine === 'manual' ? 'Manual analysis is selected in Studio settings. Copy the instruction into another app, then paste its reply here.' : isApiEngine(engine) ? <>Analyse sends the Base Image to {sendsTo[engine]}. It runs once, only after you confirm that it may be charged.</> : <>Analyse sends the Base Image to {sendsTo[engine]}, using your own sign-in and your plan's allowance. It runs once, only when you click.</>}</p>
             <div className="save-row">{engine !== 'manual' && <button disabled={busy} onClick={() => void analyse()}><Icon name="spark" /> Analyse with {engineLabels[engine]}</button>}
               <button className={engine === 'manual' ? '' : 'secondary'} onClick={() => setManual(true)}>Do it manually</button></div>
           </div>}
@@ -614,7 +621,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
               <span className="spacer" />
               {shown.id === current?.id ? <>
                 <button className="secondary" disabled={busy || !!scene.active_job} onClick={startEdit}><Icon name="edit" /> Edit</button>
-                {engine !== 'manual' && !showJobNotice && <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => { if (window.confirm(`Analyse again with ${engineLabels[engine]}? This sends the Base Image again and uses your plan's allowance. The current analysis is kept as a version${approved ? ', and the approval is cancelled when the new analysis arrives' : ''}.`)) void analyse() }}>Analyse again</button>}
+                {engine !== 'manual' && !showJobNotice && <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => { if (isApiEngine(engine)) void analyse(false, `This sends the Base Image again. ${againNote}`); else if (window.confirm(`Analyse again with ${engineLabels[engine]}? This sends the Base Image again and uses your plan's allowance. ${againNote}`)) void analyse() }}>Analyse again</button>}
                 {!showJobNotice && <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => setManual(true)}>Import</button>}
               </> : <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => current && saveRevision(shown.analysis, shown.confirmed_uncertainties, current, `Version ${shown.version} restored as the current analysis.`)}>Restore as current</button>}
             </div>
@@ -707,7 +714,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         </section>
 
         {scene.jobs.length > 0 && <details className="panel run-history"><summary>Engine runs ({scene.jobs.length})</summary>
-          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
+          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}{j.usage?.input_tokens != null ? ` · ${j.usage.input_tokens.toLocaleString()} in, ${(j.usage.output_tokens ?? 0).toLocaleString()} out tokens` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
             {j.job_folder && <button type="button" className="link-button" onClick={() => copyText(j.job_folder!, setMessage)}><Icon name="folder" /> Copy folder path</button>}</li>)}</ul>
         </details>}
       </div>
@@ -715,6 +722,8 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     <dialog ref={manualRef} className="image-dialog manual-dialog" aria-labelledby="manual-title" onClose={() => setManual(false)}>
       {manual && <ManualAnalysis scene={scene} token={token} onClose={() => setManual(false)} onImported={detail => { setManual(false); if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id]); void accept(detail, !promptDirty).then(() => setMessage(`Analysis version ${detail.analyses[0].version} imported.`)) }} />}
     </dialog>
+    {chargeAsk && apiEngines.byId[engine] && <ChargeDialog engine={apiEngines.byId[engine]} model={engines?.api_models[engine]?.analysis ?? null} runs={1} note={chargeAsk.note}
+      onConfirm={() => void analyse(true)} onClose={() => setChargeAsk(null)} />}
     {historyOpen && <PromptHistory scene={scene} token={token} editorDirty={promptDirty} onClose={() => setHistoryOpen(false)}
       onLoad={prompt => { if (restorePrompt(prompt)) setHistoryOpen(false) }}
       onDeleted={(detail, wasCurrent, version) => { void accept(detail, wasCurrent).then(() => setMessage(`Prompt version ${version} deleted.`)) }} />}

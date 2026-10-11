@@ -65,3 +65,9 @@ For a manual copy instead, stop the studio and copy the **entire** data folder; 
 - Keep exported manual (fallback) jobs waiting for user import, preserving package and approval identifiers. Imported results record user-supplied provenance honestly.
 - Version outputs rather than overwriting. Character/reference deletion must offer explicit choices without silently corrupting history.
 - Use atomic file writes, versioned asset keys and consistency-aware backups. Verify recovery with synthetic/authorized inputs.
+
+## Phase 6A API engine recovery
+
+API analyses are ordinary `analysis` engine jobs whose engine is `gemini_api`, `anthropic_api` or `openai_api`. The confirmed model is stored in the job's `settings_json` when it is queued and the reported token usage is added on completion. Restart handling is unchanged: a run in progress becomes Interrupted (its request may have reached the provider and been charged), waiting single runs are cancelled and waiting batch items stay until Continue. Continue and Try failed again on an API batch need the user's charge confirmation again. Keys live in `<data folder>/keys/` (Windows DPAPI, current user), outside backups. A restore moves that folder into the restored data folder. A key that cannot be decrypted (another Windows account or PC) reports "Enter it again" and nothing is sent.
+
+Schema `0008_api_engines` rebuilds `engine_settings` and `scene_analyses` with the same rows. All migrations now run with `PRAGMA foreign_keys=OFF`, and `PRAGMA foreign_key_check` must return nothing before the upgrade commits.

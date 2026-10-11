@@ -375,7 +375,7 @@ button .inline-icon { margin-right: 6px; }
 .choice-card:hover { border-color: #b9b5ac; }
 .choice-card.selected { border-color: var(--accent); background: var(--accent-soft); }
 .choice-card input { width: 16px; height: 16px; flex: none; margin: 0; accent-color: var(--accent); }
-.engine-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.engine-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
 .engine-fields .label-row { margin-top: 20px; }
 .privacy-note { margin-top: 22px; padding: 14px 16px; border-radius: 8px; background: var(--background); font-size: 12px; }
 .privacy-note p { margin-top: 4px; color: var(--muted); line-height: 1.6; }
@@ -778,3 +778,25 @@ label.change-files:focus-within { outline: 3px solid var(--accent); outline-offs
 @media (max-width: 560px) { .batch-card { padding: 14px; } .batch-head { flex-direction: column; } .batch-items li { grid-template-columns: 36px minmax(0, 1fr); } .batch-items img { width: 36px; height: 27px; } .batch-items .run-status { grid-column: 2; text-align: left; } .image-count { width: 100%; justify-content: space-between; } }
 @media (prefers-reduced-motion: reduce) { .batch-bar .running { animation: none; } }
 .generate-actions .image-count button { flex: none; }
+
+/* Phase 6A: API engines (keys, models, charge confirmation) */
+.choice-note { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.engine-choice.api-models { margin-top: 22px; }
+.engine-choice.api-models .engine-fields .label-row { margin-top: 8px; }
+.api-keys-panel > p { color: var(--muted); max-width: 860px; }
+.api-key-list { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 12px; }
+.api-key-row { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; }
+.api-key-head { display: flex; gap: 12px; align-items: baseline; }
+.api-key-head > div:nth-child(2) { flex: 1; min-width: 0; }
+.api-key-head strong { margin-right: 8px; }
+.api-key-head .status-dot { background: var(--muted); }
+.api-key-head .status-dot.ready { background: var(--success); }
+.api-key-head .hint { margin-top: 2px; }
+.api-key-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.api-key-form { display: flex; gap: 10px; margin-top: 12px; padding-left: 18px; }
+.api-key-form input { flex: 1; min-width: 0; }
+.api-key-row > .hint, .api-key-row > .frame-error { margin: 8px 0 0 18px; }
+.charge-dialog { width: min(560px, 94vw); }
+.charge-box { margin-top: 14px; }
+.charge-box a { color: inherit; font-weight: 600; }
+@media (max-width: 700px) { .api-key-head { flex-wrap: wrap; } .api-key-actions { width: 100%; justify-content: flex-start; padding-left: 18px; } .api-key-form { flex-wrap: wrap; padding-left: 0; } }

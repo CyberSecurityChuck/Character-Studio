@@ -17,6 +17,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.analysis_schema import ENGINE_INSTRUCTION, JSON_SCHEMA
+from backend.api_engines import API_ENGINES, ApiCancelled, is_api_engine, require_key, run_analysis
 from backend.configuration import Settings, asset_path
 from backend.engines import (
     ENGINE_NAMES,
@@ -57,7 +58,8 @@ RESTART_PAUSE_MESSAGE = (
     "that was in progress is marked Interrupted, and the remaining items have not started."
 )
 # A plan limit or sign-in problem would fail every following item, so batches pause instead.
-PAUSE_KINDS = ("usage_limit", "signed_out", "not_installed")
+# For API engines the same holds for a refused key, a missing model or a spending limit.
+PAUSE_KINDS = ("usage_limit", "signed_out", "not_installed", "key_problem", "model_problem")
 
 
 def pause_batches(session, engine: str, kind: str, details: str, batch_id: str | None) -> None:
@@ -250,8 +252,12 @@ class JobRunner:
             engine, timeout, kind = job.engine, job.timeout_seconds, job.kind
             batch_id = job.batch_id
             instruction = polish_input(session, job) if kind == "polish" else None
+            run_settings = json.loads(job.settings_json or "{}")
             session.expunge_all()
         try:
+            if is_api_engine(engine):
+                self._run_api_analysis(job_id, scene, engine, timeout, run_settings, batch_id)
+                return
             try:
                 version = require_ready(engine, overrides)
             except EngineError as error:
@@ -327,13 +333,14 @@ class JobRunner:
                     scene = session.get(Scene, job.scene_id)
                     if scene is not None:
                         refresh_workflow(session, scene)
-        except _Stopped:
+        except _Stopped as stop:
             with writing_session(self.engine) as session:
                 job = session.get(EngineJob, job_id)
                 if self._stop.is_set():
                     self._finish(session, job, "interrupted", "interrupted", INTERRUPTED_MESSAGE)
                 else:
-                    self._finish(session, job, "cancelled", "cancelled", "You cancelled this run.")
+                    message = stop.args[0] if stop.args else "You cancelled this run."
+                    self._finish(session, job, "cancelled", "cancelled", message)
         except EngineError as error:
             with writing_session(self.engine) as session:
                 job = session.get(EngineJob, job_id)
@@ -352,6 +359,55 @@ class JobRunner:
         finally:
             with self._lock:
                 self._cancelled.discard(job_id)
+
+    def _run_api_analysis(self, job_id, scene, engine, timeout, run_settings, batch_id) -> None:
+        """One request to the provider's API with the model confirmed when it was queued."""
+        model = run_settings.get("model")
+        try:
+            if not model:
+                raise EngineError(
+                    "model_problem", "No model was recorded for this run, so nothing was sent."
+                )
+            require_key(self.settings, engine)
+        except EngineError as error:
+            if batch_id is not None and error.kind in PAUSE_KINDS:
+                raise _NotSent(error) from error
+            raise
+        if self._cancel_requested(job_id):
+            raise _Stopped()
+        folder = prepare_analysis_folder(self.settings, scene)
+        self._update(job_id, job_folder=folder, engine_version=model)
+        job_dir = asset_path(self.settings, folder)
+        try:
+            data, usage = run_analysis(
+                self.settings,
+                engine,
+                model,
+                job_dir,
+                timeout,
+                lambda: self._cancel_requested(job_id),
+            )
+        except ApiCancelled as error:
+            company = API_ENGINES[engine].company
+            raise _Stopped(
+                f"You cancelled this run. If the request had already reached {company}, it may "
+                "still finish there and be charged; nothing from it is saved."
+            ) from error
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            job.settings_json = json.dumps({**run_settings, "usage": usage})
+            scene = session.get(Scene, job.scene_id)
+            analysis = add_analysis(
+                session,
+                scene,
+                data,
+                engine,
+                engine_version=model,
+                raw_output_path=f"{folder}/response.json",
+                job_id=job_id,
+            )
+            job.result_id = analysis.id
+            self._finish(session, job, "completed")
 
     def _run_generation(self, job_id: str, timeout: int) -> None:
         """One Codex image run from the approval recorded with the job (PLAN.md Phase 5)."""

@@ -24,10 +24,21 @@ from backend.analysis_schema import (
     parse_analysis_text,
     validate_analysis,
 )
+from backend.api_engines import (
+    API_ENGINES,
+    charge_confirmation,
+    check_model_name,
+    chosen_model,
+    engine_label,
+    engine_timeout,
+    is_api_engine,
+    models_of,
+)
 from backend.configuration import asset_path
 from backend.engines import ENGINE_NAMES, engine_status
 from backend.generation import generation_timing, result_data, run_seconds
 from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
+from backend.keystore import key_info
 from backend.library import clean_deleted_files, decode_image, file_hash
 from backend.models import (
     Approval,
@@ -166,13 +177,39 @@ class WithdrawInput(BaseModel):
     approval_id: str = Field(max_length=32)
 
 
+AnalysisEngine = Literal[
+    "claude_cli", "codex_cli", "manual", "gemini_api", "anthropic_api", "openai_api"
+]
+
+
 class EngineSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    analysis_engine: Literal["claude_cli", "codex_cli", "manual"]
+    analysis_engine: AnalysisEngine
     generation_engine: Literal["codex_cli", "manual"]
     claude_timeout: int = Field(ge=30, le=1800)
     codex_timeout: int = Field(ge=30, le=1800)
+    api_timeout: int = Field(default=180, ge=30, le=1800)
+    # {"gemini_api": {"analysis": "<model>"}}; only known engines and purposes.
+    api_models: dict[str, dict[Literal["analysis"], str]] = Field(default_factory=dict)
     revision: int = Field(ge=1)
+
+    @field_validator("api_models")
+    @classmethod
+    def known_models(cls, value):
+        cleaned = {}
+        for engine, purposes in value.items():
+            if engine not in API_ENGINES:
+                raise ValueError("Unknown API engine.")
+            chosen = {k: check_model_name(v) for k, v in purposes.items() if v.strip()}
+            if chosen:
+                cleaned[engine] = chosen
+        return cleaned
+
+
+class AnalyseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # API engines only: the user confirmed that this run may be charged (PLAN.md §12.3).
+    confirm_charges: bool = False
 
 
 def writing(request):
@@ -229,7 +266,9 @@ def job_data(request, job: EngineJob | None):
         "kind": job.kind,
         "scene_id": job.scene_id,
         "engine": job.engine,
-        "engine_name": ENGINE_NAMES.get(job.engine, "Manual"),
+        "engine_name": engine_label(job.engine),
+        "model": json.loads(job.settings_json or "{}").get("model"),
+        "usage": json.loads(job.settings_json or "{}").get("usage"),
         "mode": json.loads(job.settings_json or "{}").get("mode"),
         # A generation that did not finish may still have saved an image in Codex's folder.
         "recoverable": (
@@ -950,8 +989,26 @@ def save_scene_mappings(request: Request, scene_id: str, body: MappingsInput):
         return scene_detail(request, session, scene)
 
 
+def api_run_settings(request, settings: EngineSettings, engine: str, confirmed: bool) -> dict:
+    """Checks before queuing an API analysis; returns the job settings (the model used)."""
+    if not is_api_engine(engine):
+        return {}
+    if not confirmed:
+        raise HTTPException(409, charge_confirmation(engine))
+    model = chosen_model(settings, engine)
+    if model is None:
+        raise HTTPException(
+            409, f"Choose a model for the {API_ENGINES[engine].name} in Studio settings first."
+        )
+    if not key_info(request.app.state.settings, engine)["saved"]:
+        raise HTTPException(
+            409, f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings."
+        )
+    return {"model": model}
+
+
 @router.post("/scenes/{scene_id}/analyse", status_code=202)
-def analyse_scene(request: Request, scene_id: str):
+def analyse_scene(request: Request, scene_id: str, body: AnalyseInput | None = None):
     with writing(request) as session:
         scene = require_scene(session, scene_id)
         settings = session.get(EngineSettings, 1)
@@ -962,6 +1019,7 @@ def analyse_scene(request: Request, scene_id: str):
             )
         if active_job(session, scene_id):
             raise HTTPException(409, "An engine job is already running for this scene.")
+        run = api_run_settings(request, settings, engine, bool(body and body.confirm_charges))
         session.add(
             EngineJob(
                 id=uuid4().hex,
@@ -969,9 +1027,8 @@ def analyse_scene(request: Request, scene_id: str):
                 scene_id=scene_id,
                 engine=engine,
                 status="not_started",
-                timeout_seconds=settings.claude_timeout
-                if engine == "claude_cli"
-                else settings.codex_timeout,
+                settings_json=json.dumps(run) if run else None,
+                timeout_seconds=engine_timeout(settings, engine),
                 created_at=now(),
             )
         )
@@ -1243,6 +1300,8 @@ def settings_data(item: EngineSettings):
         "generation_engine": item.generation_engine,
         "claude_timeout": item.claude_timeout,
         "codex_timeout": item.codex_timeout,
+        "api_timeout": item.api_timeout,
+        "api_models": models_of(item),
         "revision": item.revision,
     }
 
@@ -1259,8 +1318,16 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
         item = session.get(EngineSettings, 1)
         if item.revision != body.revision:
             raise HTTPException(409, "Engine settings changed in another window. Reload first.")
-        for key, value in body.model_dump(exclude={"revision"}).items():
+        engine = body.analysis_engine
+        if is_api_engine(engine):
+            name = API_ENGINES[engine].name
+            if not (body.api_models.get(engine) or {}).get("analysis"):
+                raise HTTPException(422, f"Choose a model for the {name} before selecting it.")
+            if not key_info(request.app.state.settings, engine)["saved"]:
+                raise HTTPException(422, f"Save a {name} key before selecting it.")
+        for key, value in body.model_dump(exclude={"revision", "api_models"}).items():
             setattr(item, key, value)
+        item.api_models_json = json.dumps(body.api_models, sort_keys=True)
         item.revision += 1
         return settings_data(item)
 

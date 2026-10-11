@@ -27,6 +27,8 @@ class Settings(BaseModel):
     max_image_pixels: int = Field(default=40_000_000, ge=1, le=100_000_000)
     # Tests only: replace the official CLIs with fakes. Never read from the environment.
     engine_commands: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    # Tests only: point API engines at a local fake server. Never read from the environment.
+    api_base_urls: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("data_dir")
     @classmethod
