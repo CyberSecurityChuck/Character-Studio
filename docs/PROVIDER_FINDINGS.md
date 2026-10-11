@@ -101,3 +101,12 @@ _Completed 2026-10-10. Approved by the user ("Approve Phase 2.5") on 2026-10-10 
 - Failures: `error` / `turn.failed` events and the final message are classified as signed out, usage limit or a generic error with Codex's own text; a run that ends without a reported image is "no image". Usage-limit wording for image generation is still unobserved and matched heuristically.
 - Recovery reads only one run's `generated_images\<thread_id>\` folder and only when the user clicks "Look for a saved image". The studio never reads Codex's login files.
 - Not yet run through the studio against the real Codex CLI by the assistant (each run uses the user's image allowance); the first real Generate is the user's, during the Phase 5 review. Multi-person likeness is untested.
+
+## Google Gemini API (desk research for Phase 6, 2026-10-11; nothing built or called)
+
+Sources: https://ai.google.dev/gemini-api/docs/pricing and https://ai.google.dev/gemini-api/docs/image-generation (read 2026-10-11). Re-verify before building.
+
+- Free tier: text and vision models (for example the 2.5 and 3.x Flash and Flash-Lite families, 2.5 Pro) are "Free of charge", so a free AI Studio key can test scene analysis. All image-output models are "Not available" on the free tier, so generation needs billing.
+- Image models: Nano Banana 2.1, Nano Banana 2 (`gemini-3.1-flash-image`), Nano Banana 2 Lite, Nano Banana Pro (`gemini-3-pro-image`); `gemini-2.5-flash-image` is deprecated and shuts down on 2026-10-02. Model names change often, so do not hard-code them.
+- Editing: text-instructed and conversational edits of a supplied image; up to 14 reference images in total, of which up to 4 (Flash) or 5 (Pro) can be "character" images for consistency; Lite takes no character images. No mask or inpainting is documented. Likeness preservation is not quantified.
+- Every generated image carries a SynthID watermark. The user must have the rights to the images uploaded.

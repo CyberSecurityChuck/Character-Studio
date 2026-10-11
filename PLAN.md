@@ -1935,6 +1935,43 @@ Optional improvements:
 
 Implement only after the core application works.
 
+### Phase 6 planning notes (user direction, 2026-10-11)
+
+Recorded before approval; not built yet. Phase 6 still
+needs "Approve Phase 6". DECISIONS.md D021.
+
+- Scope: the user wants all the items above.
+- API engines: Phase 6 adds an API provider layer for
+  analysis and generation, selectable beside the CLI
+  and manual engines. It must cover the Anthropic API
+  and the OpenAI API (the user may use them later),
+  plus other relevant providers that the assistant
+  researches and recommends at Phase 6 start.
+- Google Gemini API (Google AI Studio key) is the
+  first test provider, because the user can get a free
+  key.
+- Free tier, checked 2026-10-11 (re-verify at Phase 6
+  start): Gemini text and vision models used for
+  analysis are free of charge; image output ("Nano
+  Banana" image models) is not available on the free
+  tier. So a free key can test analysis only. Testing
+  generation needs billing enabled, which falls under
+  the paid-run rules (§12.3: off by default, explicit
+  cost confirmation per run).
+- Region editing and selective replacement: Gemini
+  image models edit by text instruction and accept
+  reference images (up to 4–5 "character" images,
+  depending on the model) but document no mask or
+  inpainting. They can attempt "change only Subject 2"
+  edits by instruction, without pixel-exact protection
+  of the rest of the image. Mask-based editing needs a
+  provider that documents masks; research which ones
+  at Phase 6 start. Gemini output carries a SynthID
+  watermark.
+- API keys: entered by the user, stored outside the
+  repository, never logged, exported or sent to any
+  other provider.
+
 ---
 
 # 25. TESTING STRATEGY
