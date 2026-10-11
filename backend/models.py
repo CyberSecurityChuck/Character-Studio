@@ -258,3 +258,40 @@ class GenerationResult(Base):
     recovered: Mapped[bool] = mapped_column(Boolean, default=False)
     is_preferred: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[str] = mapped_column(String(40))
+
+
+class QualityCheck(Base):
+    """A user-started identity and composition check of one result (Phase 6B, D023).
+
+    A model's opinion, never a measurement: scores 1-5 per aspect and per subject (0 means
+    "could not judge"), stored as validated JSON next to the engine that produced it.
+    """
+
+    __tablename__ = "quality_checks"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    result_id: Mapped[str] = mapped_column(ForeignKey("generation_results.id"), index=True)
+    job_id: Mapped[str | None] = mapped_column(String(32))
+    engine: Mapped[str] = mapped_column(String(20))
+    engine_version: Mapped[str | None] = mapped_column(String(80))
+    schema_version: Mapped[int] = mapped_column(Integer)
+    data_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40))
+
+
+class GenerationPreset(Base):
+    """Reusable settings: scene changes and negative additions for the prompt, and how many
+    images one click makes (Phase 6B). Applying a preset only fills fields; prompts are
+    still saved and approved by the user.
+    """
+
+    __tablename__ = "generation_presets"
+    __table_args__ = (CheckConstraint("images BETWEEN 1 AND 10"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    scene_changes: Mapped[str] = mapped_column(Text, default="")
+    negative_additions: Mapped[str] = mapped_column(Text, default="")
+    images: Mapped[int] = mapped_column(Integer, default=1)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[str] = mapped_column(String(40))

@@ -15,7 +15,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -43,8 +43,10 @@ from backend.models import (
     EngineSettings,
     GenerationResult,
     PendingFileDeletion,
+    QualityCheck,
     Scene,
 )
+from backend.quality import latest_check, preset_name
 from backend.scene_store import now
 from backend.scenes import RECOVERABLE, require_idle, require_scene, scene_detail, visible, writing
 from backend.workflow import (
@@ -61,6 +63,7 @@ class GenerateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approval_id: str = Field(max_length=32)
     mode: Literal["generate", "variation"] = "generate"
+    preset_id: str | None = Field(default=None, max_length=32)
 
 
 class ExportInput(BaseModel):
@@ -105,6 +108,9 @@ def generate(request: Request, scene_id: str, body: GenerateInput):
                 "This prompt is too long to send to Codex in one run. Shorten it, or use "
                 "Export for manual use.",
             )
+        run_settings = {"mode": body.mode}
+        if preset := preset_name(session, body.preset_id):
+            run_settings["preset"] = preset
         session.add(
             EngineJob(
                 id=uuid4().hex,
@@ -113,7 +119,7 @@ def generate(request: Request, scene_id: str, body: GenerateInput):
                 engine="codex_cli",
                 status="not_started",
                 input_id=approval.id,
-                settings_json=json.dumps({"mode": body.mode}),
+                settings_json=json.dumps(run_settings),
                 timeout_seconds=settings.codex_timeout,
                 created_at=now(),
             )
@@ -339,6 +345,7 @@ def results(request: Request):
                 session.get(Approval, result.approval_id),
                 current[result.scene_id],
                 session.get(EngineJob, result.job_id) if result.job_id else None,
+                latest_check(session, result.id),
             )
             data["scene_title"] = scene.title
             data["scene_image_url"] = f"/api/scenes/{scene.id}/image/original"
@@ -410,6 +417,16 @@ def delete_result(request: Request, result_id: str):
     with writing(request) as session:
         result = require_result(session, result_id)
         scene_id = result.scene_id
+        waiting = session.scalar(
+            select(EngineJob.id).where(
+                EngineJob.kind == "check",
+                EngineJob.input_id == result_id,
+                EngineJob.status.in_(("not_started", "running")),
+            )
+        )
+        if waiting:
+            raise HTTPException(409, "A quality check of this result is running. Cancel it first.")
+        session.execute(delete(QualityCheck).where(QualityCheck.result_id == result_id))
         paths = [result.original_path, result.thumbnail_path]
         for path in paths:
             session.merge(PendingFileDeletion(path=path))

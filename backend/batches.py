@@ -43,6 +43,7 @@ from backend.models import (
     SceneAnalysis,
     SubjectMapping,
 )
+from backend.quality import preset_name
 from backend.scene_store import active_job, latest, now
 from backend.scenes import api_run_settings, writing
 from backend.workflow import (
@@ -92,6 +93,7 @@ class GenerationBatchInput(BaseModel):
     items: list[GenerationItem] = Field(min_length=1, max_length=MAX_GENERATION_RUNS)
     count: int = Field(default=1, ge=1, le=MAX_IMAGES_PER_SCENE)
     mode: str = Field(default="generate", pattern="^(generate|variation)$")
+    preset_id: str | None = Field(default=None, max_length=32)
 
 
 class GroupSuggestionInput(BaseModel):
@@ -331,8 +333,12 @@ def generate_approved(request: Request, body: GenerationBatchInput):
                 "Manual generation is selected in Studio settings. Choose Codex there to "
                 "generate several scenes in a row.",
             )
+        preset = preset_name(session, body.preset_id)
         batch = _new_batch(
-            session, "generation", "codex_cli", {"count": body.count, "mode": body.mode}
+            session,
+            "generation",
+            "codex_cli",
+            {"count": body.count, "mode": body.mode} | ({"preset": preset} if preset else {}),
         )
         skipped, queued = [], []
         for item in body.items:
@@ -380,6 +386,8 @@ def _generation_job(
     batch, scene_id, approval_id, mode, position, timeout, retry_of=None, stamp=None
 ):
     settings = {"mode": mode} | ({"retry_of": retry_of} if retry_of else {})
+    if preset := json.loads(batch.settings_json).get("preset"):
+        settings["preset"] = preset
     return EngineJob(
         id=uuid4().hex,
         kind="generation",

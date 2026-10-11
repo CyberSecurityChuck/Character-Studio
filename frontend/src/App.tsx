@@ -4,6 +4,7 @@ import { ApiError, getBootstrap, request, savePreferences, type Bootstrap } from
 import Backups from './Backups'
 import { BatchList } from './Batches'
 import Engines from './Engines'
+import { PresetsPanel } from './Presets'
 import Library from './Library'
 import { replaceRoute, routeParts } from './route'
 import ResultsGallery, { ResultCard, type Result } from './Results'
@@ -20,7 +21,6 @@ const titles: Record<Page, [string, string]> = {
 }
 
 const upcoming = [
-  { name: 'Quality checks and presets', phase: '6B', text: 'See how close it came.', detail: 'Identity and composition checks, saved generation presets and side-by-side comparison.' },
   { name: 'Editing and API images', phase: '6C', text: 'Closer, one detail at a time.', detail: 'Region editing, replacing one person, and image engines that use your own API keys.' },
   { name: 'Encrypted backups', phase: '6D', text: 'Private, even as a file.', detail: 'Password-protected backups that restore the same way.' },
 ]
@@ -129,7 +129,7 @@ export default function App() {
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7h18M3 17h18" /><circle cx="8" cy="7" r="3" fill="var(--surface)" /><circle cx="16" cy="17" r="3" fill="var(--surface)" /></svg> Studio settings
           </button>
         </nav>
-        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">API engines · Phase 6A</span></div>
+        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Quality and presets · Phase 6B</span></div>
       </aside>
 
       <div className="workspace">
@@ -137,7 +137,7 @@ export default function App() {
           <span className={`connection ${data && !error ? 'online' : ''}`}><span aria-hidden="true" />{loading ? 'Connecting…' : error ? 'Needs attention' : 'Local studio connected'}</span>
         </header>
         <main id="main" tabIndex={-1}>
-          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 6A</p>
+          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 6B</p>
             <h1 ref={heading} tabIndex={-1}>{page === 'overview' ? (data?.preferences.studio_name || 'Your studio') : titles[page][0]}</h1>
             <p className="intro">{titles[page][1]}</p></div>
             <span className="phase-badge">Local & private</span>
@@ -199,6 +199,7 @@ export default function App() {
               </section>
               <section className="panel storage-panel" aria-labelledby="storage-title"><span className="tiny-label">LOCAL BY DEFAULT</span><h2 id="storage-title">Your files stay with you</h2><p>Application data lives separately from the source code.</p><label>Data folder</label><code>{data.data_directory}</code><p className="hint">Changing this location is a setup task: see the User Guide. Backups below cover everything in this folder that the studio manages.</p></section>
               <Engines token={data.session_token} />
+              <PresetsPanel token={data.session_token} />
               <Backups token={data.session_token} />
             </div>}
           </>}

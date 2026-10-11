@@ -11,13 +11,22 @@ single runs become Cancelled, and batches are paused with their remaining items 
 import json
 import threading
 from pathlib import Path
+from uuid import uuid4
 
 from PIL import Image, ImageOps
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
-from backend.analysis_schema import ENGINE_INSTRUCTION, JSON_SCHEMA
-from backend.api_engines import API_ENGINES, ApiCancelled, is_api_engine, require_key, run_analysis
+from backend.analysis_schema import ENGINE_INSTRUCTION, JSON_SCHEMA, AnalysisFormatError
+from backend.api_engines import (
+    API_ENGINES,
+    ApiCancelled,
+    StructuredTask,
+    is_api_engine,
+    require_key,
+    run_analysis,
+    run_structured,
+)
 from backend.configuration import Settings, asset_path
 from backend.engines import (
     ENGINE_NAMES,
@@ -29,6 +38,7 @@ from backend.engines import (
     require_ready,
     resolve_command,
     run_process,
+    structured_reply,
 )
 from backend.generation import (
     PackageError,
@@ -39,9 +49,18 @@ from backend.generation import (
     snapshot_of,
     store_codex_images,
 )
-from backend.models import Batch, EngineJob, PromptVersion, Scene, SceneAnalysis
+from backend.models import (
+    Batch,
+    EngineJob,
+    GenerationResult,
+    PromptVersion,
+    QualityCheck,
+    Scene,
+    SceneAnalysis,
+)
 from backend.persistence import writing_session
 from backend.prompting import POLISH_SCHEMA, polish_instruction
+from backend.quality import CHECK_SCHEMA, CHECK_SCHEMA_VERSION, prepare_check_folder, validate_check
 from backend.scene_store import latest, now
 from backend.workflow import add_analysis, analysis_of, check_approval, refresh_workflow
 
@@ -255,6 +274,9 @@ class JobRunner:
             run_settings = json.loads(job.settings_json or "{}")
             session.expunge_all()
         try:
+            if kind == "check":
+                self._run_check(job_id, engine, timeout, run_settings)
+                return
             if is_api_engine(engine):
                 self._run_api_analysis(job_id, scene, engine, timeout, run_settings, batch_id)
                 return
@@ -407,6 +429,99 @@ class JobRunner:
                 job_id=job_id,
             )
             job.result_id = analysis.id
+            self._finish(session, job, "completed")
+
+    def _run_check(self, job_id, engine, timeout, run_settings) -> None:
+        """One quality check of a result (Phase 6B): the approval's images plus the result."""
+        api = is_api_engine(engine)
+        if api:
+            model = run_settings.get("model")
+            if not model:
+                raise EngineError(
+                    "model_problem", "No model was recorded for this run, so nothing was sent."
+                )
+            require_key(self.settings, engine)
+            version = model
+        else:
+            version = require_ready(engine, self.settings.engine_commands)
+        if self._cancel_requested(job_id):
+            raise _Stopped()
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            result = session.get(GenerationResult, job.input_id)
+            if result is None:
+                raise EngineError(
+                    "missing_file",
+                    "The result was deleted before the check started. Nothing was sent.",
+                )
+            try:
+                folder, names, cli_text, api_text = prepare_check_folder(
+                    self.settings, session, result
+                )
+            except PackageError as error:
+                raise EngineError("missing_file", f"{error} Nothing was sent.") from error
+            result_id, scene_id = result.id, result.scene_id
+        self._update(job_id, job_folder=folder, engine_version=version)
+        job_dir = asset_path(self.settings, folder)
+        stop = lambda: self._cancel_requested(job_id)  # noqa: E731
+        usage = None
+        if api:
+            task = StructuredTask(
+                api_text, CHECK_SCHEMA, "save_quality_check", "Save the quality check.", names
+            )
+            try:
+                value, usage = run_structured(
+                    self.settings, engine, version, job_dir, timeout, stop, task
+                )
+            except ApiCancelled as error:
+                company = API_ENGINES[engine].company
+                raise _Stopped(
+                    f"You cancelled this run. If the request had already reached {company}, it "
+                    "may still finish there and be charged; nothing from it is saved."
+                ) from error
+        else:
+            command = resolve_command(engine, self.settings.engine_commands)
+            if command is None:
+                raise EngineError("not_installed", f"{ENGINE_NAMES[engine]} could not be started.")
+            argv, output_name = analysis_command(
+                engine,
+                command,
+                job_dir,
+                json.dumps(CHECK_SCHEMA, separators=(",", ":")),
+                instruction=cli_text,
+                images=names,
+            )
+            outcome = run_process(argv, job_dir, job_dir / output_name, timeout, should_stop=stop)
+            if outcome.cancelled:
+                raise _Stopped()
+            value = structured_reply(engine, job_dir, outcome, "try again later")
+        try:
+            data = validate_check(value)
+        except AnalysisFormatError as error:
+            name = API_ENGINES[engine].company if api else ENGINE_NAMES[engine]
+            detail = str(error)
+            raise EngineError(
+                "invalid_output", f"{name} replied, but {detail[:1].lower()}{detail[1:]}"
+            ) from error
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            if usage is not None:
+                job.settings_json = json.dumps({**run_settings, "usage": usage})
+            if session.get(GenerationResult, result_id) is None:
+                raise EngineError("missing_file", "The result was deleted while it was checked.")
+            check = QualityCheck(
+                id=uuid4().hex,
+                scene_id=scene_id,
+                result_id=result_id,
+                job_id=job_id,
+                engine=engine,
+                engine_version=version,
+                schema_version=CHECK_SCHEMA_VERSION,
+                data_json=data.model_dump_json(),
+                created_at=now(),
+            )
+            session.add(check)
+            job.result_id = check.id
             self._finish(session, job, "completed")
 
     def _run_generation(self, job_id: str, timeout: int) -> None:

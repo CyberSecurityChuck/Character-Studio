@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-12 — Phase 6B: quality checks, presets and comparison
+
+- Started at the user's request; 6A and 6B will be reviewed together with one checklist. See D023.
+- **Quality check** in the result viewer: the selected analysis engine compares a result with its Base Image and approved reference photos and scores composition (seven aspects) and each person's identity from 1 to 5, with notes, a summary and things worth fixing. One run per click, cancellable; API engines ask to confirm charges. Result cards show the latest check. Checks are kept per result and can be deleted.
+- **Comparison view**: Result, Side by side, Slider, Overlay and Difference, against the Base Image or another result, with shared zoom and pan and optional subject boxes. Select 2–4 results of a scene and choose **Compare** to see them all next to the Base Image.
+- **Generation presets** (Studio settings → Generation presets): scene changes, negative additions and images per click. Apply on the Prompt step (rebuilds the draft), choose on the Generate step or in a generation batch; "Save as preset" from the Prompt step. Results record the preset used.
+- Schema `0009_quality` (additive). New `backend/quality.py`, `backend/quality_api.py`, `frontend/src/Compare.tsx`, `Quality.tsx`, `Presets.tsx`, `tests/test_quality.py` (6 tests; 127 total). The fake CLI answers checks. No dependencies added.
+
 ## 2026-10-11 — Phase 6A: API provider layer and analysis engines
 
 - Approved by the user ("Approve Phase 6"). Phase 6 is delivered in sub-steps 6A–6D; this is 6A. See D022.

@@ -25,13 +25,16 @@ export function useApiEngines() {
 const thousands = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 
 /** What a confirmed API run sends, to whom, and what it may cost. */
-export function ChargeSummary({ engine, model, runs, what = 'the Base Image (without location data) and the analysis instruction' }: { engine: ApiEngine; model: string | null; runs: number; what?: string }) {
-  const typical = engine.typical_usage
+export function ChargeSummary({ engine, model, runs, what }: { engine: ApiEngine; model: string | null; runs: number; what?: string }) {
+  // Earlier figures come from analyses; a quality check (`what` given) sends several images.
+  const typical = what ? null : engine.typical_usage
   return <div className="check-box warning charge-box">
     <strong>{runs === 1 ? 'This run may be charged' : `These ${runs} runs may be charged`} to your {engine.company} account</strong>
     <ul>
-      <li>Sends {what} to {engine.company}{model ? `, model ${model}` : ''}, once per run. Character names are never sent.</li>
-      <li>{typical ? `Earlier runs here used about ${thousands(typical.input_tokens)} input and ${thousands(typical.output_tokens)} output tokens each (${typical.runs} ${typical.runs === 1 ? 'run' : 'runs'}).` : 'A typical analysis is a few thousand tokens in and out; the studio records the real figures after each run.'}{' '}
+      <li>Sends {what ?? 'the Base Image (without location data) and the analysis instruction'} to {engine.company}{model ? `, model ${model}` : ''}, once per run. Character names are never sent.</li>
+      <li>{typical ? `Earlier runs here used about ${thousands(typical.input_tokens)} input and ${thousands(typical.output_tokens)} output tokens each (${typical.runs} ${typical.runs === 1 ? 'run' : 'runs'}).`
+        : what ? 'Several images use more input tokens than one analysis; the studio records the real figures after the run.'
+        : 'A typical analysis is a few thousand tokens in and out; the studio records the real figures after each run.'}{' '}
         <a href={engine.pricing_url} target="_blank" rel="noreferrer">{engine.company} prices</a></li>
       <li>{engine.charge_note}</li>
       <li>Nothing is retried on its own. A cancelled request may still be charged if {engine.company} already received it.</li>
@@ -40,16 +43,16 @@ export function ChargeSummary({ engine, model, runs, what = 'the Base Image (wit
 }
 
 /** Ask before an API run. Resolves only on the user's explicit choice. */
-export function ChargeDialog({ engine, model, runs, note, onConfirm, onClose }: { engine: ApiEngine; model: string | null; runs: number; note?: string; onConfirm: () => void; onClose: () => void }) {
+export function ChargeDialog({ engine, model, runs, note, title, action = 'Analyse', what, onConfirm, onClose }: { engine: ApiEngine; model: string | null; runs: number; note?: string; title?: string; action?: string; what?: string; onConfirm: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])
   return <dialog ref={ref} className="image-dialog text-dialog charge-dialog" aria-labelledby="charge-title" onClose={onClose}>
     <div className="text-dialog-form">
-      <h2 id="charge-title">Analyse with the {engine.name}?</h2>
+      <h2 id="charge-title">{title ?? `Analyse with the ${engine.name}?`}</h2>
       {note && <p className="hint">{note}</p>}
-      <ChargeSummary engine={engine} model={model} runs={runs} />
+      <ChargeSummary engine={engine} model={model} runs={runs} what={what} />
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button>
-        <button type="button" autoFocus onClick={() => { onConfirm(); onClose() }}>Analyse and accept charges</button></div>
+        <button type="button" autoFocus onClick={() => { onConfirm(); onClose() }}>{action} and accept charges</button></div>
     </div>
   </dialog>
 }

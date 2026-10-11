@@ -384,8 +384,10 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
         _ada, scene = approved_scene(client)
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
-        # Undo 0008 (API engines), 0007 (batches) and 0006 (generation) to recreate a
-        # Phase 4 database, including the Phase 3 engine settings CHECK constraint.
+        # Undo 0009 (quality), 0008 (API engines), 0007 (batches) and 0006 (generation) to
+        # recreate a Phase 4 database, including the Phase 3 engine settings CHECK constraint.
+        db.execute("DROP TABLE quality_checks")
+        db.execute("DROP TABLE generation_presets")
         db.execute(
             "CREATE TABLE old_settings (id INTEGER PRIMARY KEY CHECK (id = 1), "
             "analysis_engine VARCHAR(20) NOT NULL "
@@ -407,7 +409,7 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0008_api_engines"
+        assert client.get("/api/health").json()["schema_revision"] == "0009_quality"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []

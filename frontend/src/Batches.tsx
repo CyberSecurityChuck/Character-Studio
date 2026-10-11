@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { request, send } from './api'
 import { ChargeSummary, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
+import { PresetSelect, usePresets } from './Presets'
 import { Avatar, type Character, type Group } from './Library'
 import { duration } from './Results'
 import type { SceneSummary } from './Scenes'
@@ -172,6 +173,8 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
   const [includeAnalysed, setIncludeAnalysed] = useState(false)
   const [count, setCount] = useState(1)
   const [mode, setMode] = useState<'generate' | 'variation'>('generate')
+  const { presets } = usePresets()
+  const [presetId, setPresetId] = useState('')
   const eligible = kind === 'generation' ? scenes.filter(s => approvedStates.includes(s.workflow_state) && !s.active_job) : []
   // Scenes that already have results start unticked when the list comes from the toolbar.
   const [chosen, setChosen] = useState<string[]>(() => eligible.filter(s => preselectAll || s.workflow_state === 'approved').map(s => s.id))
@@ -212,7 +215,7 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
     try {
       const result = kind === 'analysis'
         ? await send<BatchStart>('/api/batches/analysis', 'POST', token, { scene_ids: queued.map(s => s.id), include_analysed: includeAnalysed, ...(charged ? { confirm_charges: true } : {}) })
-        : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode })
+        : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode, ...(presetId ? { preset_id: presetId } : {}) })
       onStarted(result)
     } catch (e) { setError(e instanceof Error ? e.message : 'The batch could not be started.'); setBusy(false) }
   }
@@ -226,6 +229,7 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
           <img src={s.thumbnail_url} alt="" /><span><b>{s.title}</b>{s.result_count ? <small> · {plural(s.result_count, 'result')} already</small> : null}</span></label></li>)}</ul>
           : <p className="notice-line">None of these scenes has a valid approval. Approve each scene on its Review step first.</p>}
         <div className="batch-options">
+          <PresetSelect id="batch-preset" presets={presets} value={presetId} disabled={busy} onChange={p => { setPresetId(p?.id ?? ''); if (p) setCount(Math.min(p.images, 5)) }} />
           <div><span className="field-label">Images per scene</span>
             <div className="segmented" role="radiogroup" aria-label="Images per scene">{[1, 2, 3, 4, 5].map(n => <label key={n} className={`segment ${count === n ? 'selected' : ''}`}><input type="radio" name="batch-count" checked={count === n} disabled={busy} onChange={() => setCount(n)} />{n}</label>)}</div></div>
           <div><span className="field-label">Kind</span>

@@ -352,89 +352,110 @@ def list_models(settings: Settings, engine: str) -> list[str]:
 # ---------------------------------------------------------------- analysis
 
 
-def analysis_image(job_dir: Path) -> bytes:
-    """A smaller copy of the job's metadata-free base.jpg, kept in the job folder."""
-    target = job_dir / "api-image.jpg"
-    with Image.open(job_dir / "base.jpg") as source:
-        image = source.convert("RGB")
-        image.thumbnail((ANALYSIS_EDGE, ANALYSIS_EDGE))
-        image.save(target, "JPEG", quality=90)
-    return target.read_bytes()
+@dataclass(frozen=True)
+class StructuredTask:
+    """One request that returns a JSON object: scene analysis or (Phase 6B) a quality check."""
+
+    instruction: str
+    schema: dict
+    tool_name: str
+    tool_description: str
+    # Files in the job folder, sent in this order as Image 1, Image 2, ...
+    images: tuple[str, ...]
 
 
-def analysis_request(settings: Settings, engine: str, model: str, image: bytes):
-    """Return (url, body) for one analysis request. The instruction includes the schema."""
-    data = base64.b64encode(image).decode("ascii")
+ANALYSIS_TASK = StructuredTask(
+    MANUAL_INSTRUCTION,
+    JSON_SCHEMA,
+    "save_scene_analysis",
+    "Save the scene analysis in the studio format.",
+    ("base.jpg",),
+)
+
+
+def api_images(job_dir: Path, names: tuple[str, ...]) -> list[bytes]:
+    """Smaller copies (`api-<name>`) of metadata-free job images, kept in the job folder."""
+    payloads = []
+    for name in names:
+        target = job_dir / f"api-{name}"
+        with Image.open(job_dir / name) as source:
+            image = source.convert("RGB")
+            image.thumbnail((ANALYSIS_EDGE, ANALYSIS_EDGE))
+            image.save(target, "JPEG", quality=90)
+        payloads.append(target.read_bytes())
+    return payloads
+
+
+def structured_request(
+    settings: Settings, engine: str, model: str, images: list[bytes], task: StructuredTask
+):
+    """Return (url, body). Each image follows an "Image N:" label, in the task's order."""
+    encoded = [base64.b64encode(image).decode("ascii") for image in images]
     base = _base(settings, engine)
     if engine == "gemini_api":
         url = f"{base}/v1beta/models/{urllib.parse.quote(model, safe='-._')}:generateContent"
+        parts = [{"text": task.instruction}]
+        for number, data in enumerate(encoded, 1):
+            parts += [
+                {"text": f"Image {number}:"},
+                {"inline_data": {"mime_type": "image/jpeg", "data": data}},
+            ]
         return url, {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": MANUAL_INSTRUCTION},
-                        {"inline_data": {"mime_type": "image/jpeg", "data": data}},
-                    ],
-                }
-            ],
+            "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {"responseMimeType": "application/json"},
         }
     if engine == "anthropic_api":
-        # A forced tool call returns the analysis as a JSON object, checked against the schema.
+        # A forced tool call returns a JSON object, checked against the studio schema.
+        content = []
+        for number, data in enumerate(encoded, 1):
+            content += [
+                {"type": "text", "text": f"Image {number}:"},
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
+                },
+            ]
+        content.append({"type": "text", "text": task.instruction})
         return f"{base}/v1/messages", {
             "model": model,
             "max_tokens": 8192,
             "tools": [
                 {
-                    "name": "save_scene_analysis",
-                    "description": "Save the scene analysis in the studio format.",
-                    "input_schema": JSON_SCHEMA,
+                    "name": task.tool_name,
+                    "description": task.tool_description,
+                    "input_schema": task.schema,
                 }
             ],
-            "tool_choice": {"type": "tool", "name": "save_scene_analysis"},
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
-                        },
-                        {"type": "text", "text": MANUAL_INSTRUCTION},
-                    ],
-                }
-            ],
+            "tool_choice": {"type": "tool", "name": task.tool_name},
+            "messages": [{"role": "user", "content": content}],
         }
+    content = [{"type": "text", "text": task.instruction}]
+    for number, data in enumerate(encoded, 1):
+        content += [
+            {"type": "text", "text": f"Image {number}:"},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{data}"}},
+        ]
     return f"{base}/v1/chat/completions", {
         "model": model,
         "response_format": {"type": "json_object"},
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": MANUAL_INSTRUCTION},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{data}"}},
-                ],
-            }
-        ],
+        "messages": [{"role": "user", "content": content}],
     }
 
 
 def _blocked(company: str, reason: str) -> EngineError:
     return EngineError(
-        "blocked", f"{company} declined to analyse this image ({reason}). Nothing was saved."
+        "blocked", f"{company} declined this request ({reason}). Nothing was saved."
     )
 
 
 def _cut_off(company: str) -> EngineError:
     return EngineError(
-        "invalid_output", f"{company}'s reply was cut off before the analysis was complete."
+        "invalid_output", f"{company}'s reply was cut off before it was complete."
     )
 
 
-def read_analysis_reply(engine: str, body: dict) -> tuple[object, dict]:
-    """Return (analysis JSON object or text, token usage) from a successful reply."""
+def read_structured_reply(engine: str, body: dict) -> tuple[object, dict]:
+    """Return (JSON object or text, token usage) from a successful reply."""
     company = API_ENGINES[engine].company
     if engine == "gemini_api":
         feedback = body.get("promptFeedback") or {}
@@ -442,7 +463,7 @@ def read_analysis_reply(engine: str, body: dict) -> tuple[object, dict]:
             raise _blocked(company, str(feedback["blockReason"]))
         candidates = body.get("candidates") or []
         if not candidates:
-            raise EngineError("invalid_output", f"{company} replied without an analysis.")
+            raise EngineError("invalid_output", f"{company} replied without an answer.")
         candidate = candidates[0]
         finish = str(candidate.get("finishReason") or "")
         if finish in ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "IMAGE_SAFETY"):
@@ -475,7 +496,7 @@ def read_analysis_reply(engine: str, body: dict) -> tuple[object, dict]:
         return text, usage
     choices = body.get("choices") or []
     if not choices:
-        raise EngineError("invalid_output", f"{company} replied without an analysis.")
+        raise EngineError("invalid_output", f"{company} replied without an answer.")
     message = choices[0].get("message") or {}
     if message.get("refusal"):
         raise _blocked(company, "refusal")
@@ -489,16 +510,48 @@ def read_analysis_reply(engine: str, body: dict) -> tuple[object, dict]:
     return str(message.get("content") or ""), usage
 
 
-def _summary(url: str, model: str, engine: str, image_bytes: int) -> dict:
+def _summary(url: str, model: str, engine: str, names: tuple[str, ...], images: list[bytes]):
     """What was sent, for the job folder: no key, no image data."""
     return {
         "engine": engine,
         "company": API_ENGINES[engine].company,
         "url": url,
         "model": model,
-        "image": f"api-image.jpg ({image_bytes} bytes, location data removed)",
+        "images": [
+            f"Image {n}: api-{name} ({len(data)} bytes, location data removed)"
+            for n, (name, data) in enumerate(zip(names, images, strict=True), 1)
+        ],
         "instruction": "instruction.txt",
     }
+
+
+def run_structured(
+    settings: Settings,
+    engine: str,
+    model: str,
+    job_dir: Path,
+    timeout: float,
+    should_stop: Callable[[], bool],
+    task: StructuredTask,
+) -> tuple[object, dict]:
+    """One request; returns the reply (JSON object or text) and the reported usage."""
+    key = require_key(settings, engine)
+    images = api_images(job_dir, task.images)
+    url, body = structured_request(settings, engine, model, images, task)
+    (job_dir / "request.json").write_text(
+        json.dumps(_summary(url, model, engine, task.images, images), indent=2), encoding="utf-8"
+    )
+    if should_stop():
+        raise ApiCancelled()
+    company = API_ENGINES[engine].company
+    reply = _call(url, _headers(engine, key), body, timeout, company, should_stop)
+    (job_dir / "response.json").write_text(
+        json.dumps(reply.body, indent=2).replace(key, "[key]"), encoding="utf-8"
+    )
+    if reply.status != 200:
+        raise classify(engine, reply, key)
+    value, usage = read_structured_reply(engine, reply.body)
+    return value, {"model": model, **usage, "seconds": round(reply.seconds, 1)}
 
 
 def run_analysis(
@@ -510,27 +563,14 @@ def run_analysis(
     should_stop: Callable[[], bool],
 ) -> tuple[SceneAnalysisData, dict]:
     """One analysis request; returns the validated analysis and the reported usage."""
-    company = API_ENGINES[engine].company
-    key = require_key(settings, engine)
-    image = analysis_image(job_dir)
-    url, body = analysis_request(settings, engine, model, image)
-    (job_dir / "request.json").write_text(
-        json.dumps(_summary(url, model, engine, len(image)), indent=2), encoding="utf-8"
+    value, usage = run_structured(
+        settings, engine, model, job_dir, timeout, should_stop, ANALYSIS_TASK
     )
-    if should_stop():
-        raise ApiCancelled()
-    reply = _call(url, _headers(engine, key), body, timeout, company, should_stop)
-    (job_dir / "response.json").write_text(
-        json.dumps(reply.body, indent=2).replace(key, "[key]"), encoding="utf-8"
-    )
-    if reply.status != 200:
-        raise classify(engine, reply, key)
-    value, usage = read_analysis_reply(engine, reply.body)
-    usage = {"model": model, **usage, "seconds": round(reply.seconds, 1)}
     try:
         data = validate_analysis(value) if isinstance(value, dict) else parse_analysis_text(value)
     except AnalysisFormatError as error:
         detail = str(error)
+        company = API_ENGINES[engine].company
         raise EngineError(
             "invalid_output", f"{company} replied, but {detail[:1].lower()}{detail[1:]}"
         ) from error

@@ -239,14 +239,25 @@ def run_process(
     return outcome
 
 
-def analysis_command(engine: str, command: list[str], job_dir: Path, schema_json: str):
-    """Return (argv, stdout file name). Flags exactly as confirmed in Phase 2.5."""
+def analysis_command(
+    engine: str,
+    command: list[str],
+    job_dir: Path,
+    schema_json: str,
+    instruction: str = ENGINE_INSTRUCTION,
+    images: tuple[str, ...] = ("base.jpg",),
+):
+    """Return (argv, stdout file name). Flags exactly as confirmed in Phase 2.5.
+
+    Used for scene analysis and (Phase 6B) quality checks: the images are files in the job
+    folder, `schema.json` there holds the reply schema for Codex.
+    """
     if engine == "claude_cli":
         # --restricted confines file tools to the job folder and removes command/web tools.
         return [
             *command,
             "-p",
-            ENGINE_INSTRUCTION,
+            instruction,
             "--tools",
             "Read",
             "--restricted",
@@ -272,15 +283,14 @@ def analysis_command(engine: str, command: list[str], job_dir: Path, schema_json
         "image_generation",
         "-C",
         str(job_dir),
-        "-i",
-        str(job_dir / "base.jpg"),
+        *(part for name in images for part in ("-i", str(job_dir / name))),
         "--output-schema",
         str(job_dir / "schema.json"),
         "-o",
         str(job_dir / "last-message.json"),
         "--json",
         "--",
-        ENGINE_INSTRUCTION,
+        instruction,
     ], "events.jsonl"
 
 
@@ -374,20 +384,17 @@ def interpret_polish(job_dir: Path, outcome: ProcessOutcome, max_length: int) ->
     return text
 
 
-def interpret_analysis(engine: str, job_dir: Path, outcome: ProcessOutcome) -> SceneAnalysisData:
-    """Turn a finished run into a validated analysis, or raise EngineError."""
-    name = ENGINE_NAMES[engine]
-    _check_timeout(engine, outcome, "do it manually")
+def structured_reply(engine: str, job_dir: Path, outcome: ProcessOutcome, fallback: str):
+    """The reply of a finished schema run: a JSON object, or text to parse. Raises EngineError."""
+    _check_timeout(engine, outcome, fallback)
     try:
         if engine == "claude_cli":
             envelope = _claude_envelope(job_dir)
             structured = envelope.get("structured_output")
-            if structured is not None:
-                return validate_analysis(structured)
-            return parse_analysis_text(str(envelope.get("result") or ""))
+            return structured if structured is not None else str(envelope.get("result") or "")
         last = job_dir / "last-message.json"
         if last.is_file() and last.read_text(encoding="utf-8", errors="replace").strip():
-            return parse_analysis_text(last.read_text(encoding="utf-8", errors="replace"))
+            return last.read_text(encoding="utf-8", errors="replace")
         errors = []
         events = job_dir / "events.jsonl"
         if events.is_file():
@@ -401,10 +408,19 @@ def interpret_analysis(engine: str, job_dir: Path, outcome: ProcessOutcome) -> S
                 elif event.get("type") == "turn.failed":
                     errors.append(str((event.get("error") or {}).get("message", "")))
         raise _classify(engine, (errors[-1] if errors else "") or _tail(job_dir / "stderr.txt"))
+    except OSError as error:
+        name = ENGINE_NAMES[engine]
+        raise EngineError("engine_error", f"{name}'s output could not be read.") from error
+
+
+def interpret_analysis(engine: str, job_dir: Path, outcome: ProcessOutcome) -> SceneAnalysisData:
+    """Turn a finished run into a validated analysis, or raise EngineError."""
+    name = ENGINE_NAMES[engine]
+    value = structured_reply(engine, job_dir, outcome, "do it manually")
+    try:
+        return validate_analysis(value) if isinstance(value, dict) else parse_analysis_text(value)
     except AnalysisFormatError as error:
         detail = str(error)
         raise EngineError(
             "invalid_output", f"{name} replied, but {detail[:1].lower()}{detail[1:]}"
         ) from error
-    except OSError as error:
-        raise EngineError("engine_error", f"{name}'s output could not be read.") from error

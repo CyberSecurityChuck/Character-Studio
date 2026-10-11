@@ -6,6 +6,7 @@ FAKE_CLI_MODE picks the behaviour; FAKE_CLI_LOG records arguments and environmen
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -38,6 +39,22 @@ if log:
         )
 
 analysis = json.loads(Path(os.environ["FAKE_CLI_ANALYSIS"]).read_text(encoding="utf-8"))
+
+
+def fake_check(instruction: str) -> dict:
+    """A quality check (Phase 6B) for the subjects the instruction lists."""
+    aspects = ("camera_and_framing", "subject_positions", "poses", "head_and_gaze", "outfits",
+               "environment", "lighting")
+    subjects = re.findall(r'- (Subject \d+): expected "(\w+)"', instruction)
+    return {
+        "schema_version": 1,
+        "composition": {a: {"score": 3 if a == "poses" else 4, "note": f"{a} looks close."}
+                        for a in aspects},
+        "identity": [{"subject": s, "expected": e, "score": 4, "note": "Similar face."}
+                     for s, e in subjects],
+        "summary": "Close overall; the pose differs a little.",
+        "issues": ["The left arm is raised higher than in the Base Image."],
+    }
 
 if args == ["--version"]:
     print("2.1.296 (Claude Code)" if program == "claude" else "codex-cli 0.162.1")
@@ -81,6 +98,13 @@ if program == "claude":
             json.dumps({"is_error": False, "result": "", "structured_output": {"prompt": polished}})
         )
         sys.exit(0)
+    instruction = args[args.index("-p") + 1]
+    checking = "quality-check step" in instruction
+    if checking:
+        # Every numbered image the instruction names must be in the job folder.
+        count = int(re.search(r"image-1\.jpg to image-(\d+)\.jpg", instruction).group(1))
+        assert all(Path(f"image-{n}.jpg").is_file() for n in range(1, count + 1))
+        analysis = fake_check(instruction) if mode != "invalid" else {"schema_version": 1}
     if mode == "limit":
         envelope = {"is_error": True, "subtype": "error", "result": "You've hit your usage limit"}
     elif mode == "logged_out_run":
@@ -131,5 +155,9 @@ if generating:
     output.write_text(message, encoding="utf-8")
     print(json.dumps({"type": "turn.completed"}))
     sys.exit(0)
+if "quality-check step" in args[-1]:
+    attached = [Path(args[i + 1]) for i, a in enumerate(args) if a == "-i"]
+    assert len(attached) >= 2 and all(p.is_file() for p in attached)
+    analysis = fake_check(args[-1])
 output.write_text(json.dumps(analysis) if mode != "invalid" else "{}", encoding="utf-8")
 print(json.dumps({"type": "turn.completed"}))

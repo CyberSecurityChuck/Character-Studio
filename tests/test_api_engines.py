@@ -270,16 +270,16 @@ def test_api_analysis_needs_confirmation_and_records_provenance(
     assert "Subject 1" in body  # the instruction with the studio's schema
     assert "Ada" not in body
     image = (
-        sent["body"]["contents"][0]["parts"][1]["inline_data"]["data"]
+        sent["body"]["contents"][0]["parts"][2]["inline_data"]["data"]
         if engine == "gemini_api"
-        else sent["body"]["messages"][0]["content"][0]["source"]["data"]
+        else sent["body"]["messages"][0]["content"][1]["source"]["data"]
         if engine == "anthropic_api"
-        else sent["body"]["messages"][0]["content"][1]["image_url"]["url"].split(",")[1]
+        else sent["body"]["messages"][0]["content"][2]["image_url"]["url"].split(",")[1]
     )
     assert base64.b64decode(image)[:2] == b"\xff\xd8"  # a JPEG copy
     folder = Path(job["job_folder"])
     assert folder.is_relative_to(api_settings.data_dir)
-    for name in ("request.json", "response.json", "api-image.jpg", "base.jpg"):
+    for name in ("request.json", "response.json", "api-base.jpg", "base.jpg"):
         assert (folder / name).is_file()
     for name in ("request.json", "response.json"):
         assert KEY not in (folder / name).read_text(encoding="utf-8")

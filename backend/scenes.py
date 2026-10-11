@@ -50,6 +50,7 @@ from backend.models import (
     GenerationResult,
     PendingFileDeletion,
     PromptVersion,
+    QualityCheck,
     Scene,
     SceneAnalysis,
     SubjectMapping,
@@ -57,6 +58,7 @@ from backend.models import (
 from backend.packages import missing_images
 from backend.persistence import writing_session
 from backend.prompting import build_prompt, check_prompt, polish_instruction
+from backend.quality import latest_check
 from backend.scene_store import active_job, latest, now
 from backend.workflow import (
     MAX_REFERENCES,
@@ -522,6 +524,7 @@ def generation_detail(request, session, scene: Scene, current):
                 session.get(Approval, r.approval_id),
                 current_id,
                 session.get(EngineJob, r.job_id) if r.job_id else None,
+                latest_check(session, r.id),
             )
             for r in results
         ],
@@ -751,8 +754,9 @@ def delete_scene(request: Request, scene_id: str, revision: int = Query(ge=1)):
             paths += [result.original_path, result.thumbnail_path]
         for path in paths:
             session.merge(PendingFileDeletion(path=path))
-        # Results first: they point at the approvals they were made from.
+        # Checks, then results: results point at the approvals they were made from.
         for model in (
+            QualityCheck,
             GenerationResult,
             Approval,
             SubjectMapping,

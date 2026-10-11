@@ -336,6 +336,7 @@ def result_data(
     approval: Approval | None,
     current_id: str | None,
     job: EngineJob | None = None,
+    check: dict | None = None,
 ):
     snapshot = snapshot_of(approval) if approval is not None else None
     inputs = snapshot["inputs"] if snapshot else None
@@ -360,6 +361,9 @@ def result_data(
         if job is not None and job.kind == "generation" and job.status == "completed"
         else None,
         "is_preferred": result.is_preferred,
+        # The preset chosen when the run was started (Phase 6B), if any.
+        "preset": json.loads(job.settings_json or "{}").get("preset") if job else None,
+        "check": check,
         "created_at": result.created_at,
         "image_url": f"/api/results/{result.id}/image/original",
         "thumbnail_url": f"/api/results/{result.id}/image/thumbnail",

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
+import { Comparison, type CompareBox, type CompareImage } from './Compare'
 import { CardMenu, Glyph, SelectionBar, type MenuItem } from './Controls'
+import { PresetSelect, usePresets } from './Presets'
+import { QualityPanel, checkBadge, type QualityCheck } from './Quality'
 import type { SceneDetail } from './Scenes'
 
 export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[] }
@@ -8,11 +11,12 @@ export type Result = {
   id: string; scene_id: string; version: number; approval_id: string; approval_current: boolean; job_id: string | null
   source: 'codex_cli' | 'manual_import'; mode: 'generate' | 'variation' | 'import'; note: string; media_type: string; width: number; height: number
   engine_version: string | null; recovered: boolean; seconds: number | null; is_preferred: boolean; created_at: string; image_url: string; thumbnail_url: string
+  preset: string | null; check: QualityCheck | null
   prompt_version: number | null; analysis_version: number | null; is_polished: boolean; mappings: ResultMapping[]
   scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number
 }
 export type ExportPackage = { id: string; number: number; created_at: string; approval_id: string; approval_current: boolean; result_count: number; photos_removed: number; job_folder: string | null; download_url: string }
-type Base = { url: string; width: number; height: number }
+export type Base = { url: string; width: number; height: number }
 
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
@@ -41,6 +45,7 @@ function useModal() {
 export function ResultCard({ result, onOpen, title, selecting, picked, menu, disabled }: { result: Result; onOpen: () => void; title?: string; selecting?: boolean; picked?: boolean; menu?: MenuItem[]; disabled?: boolean }) {
   const label = `result ${result.version}${title ? ` of ${title}` : ''}`
   const side = [result.seconds != null ? duration(result.seconds) : '', result.approval_current ? '' : 'Earlier approval'].filter(Boolean).join(' · ')
+  const badge = checkBadge(result.check)
   return <div className={`result-card ${picked ? 'picked' : ''}`}>
     <button type="button" className="card-main" disabled={disabled} aria-pressed={selecting ? !!picked : undefined} onClick={onOpen} aria-label={selecting ? `Select ${label}` : `Open ${label}`}>
       {selecting && <span className="pick-box" aria-hidden="true" />}
@@ -49,6 +54,7 @@ export function ResultCard({ result, onOpen, title, selecting, picked, menu, dis
         {title && <strong className="result-scene">{title}</strong>}
         <span className="result-line"><strong>Result {result.version}</strong><span className="hint">{formatDate(result.created_at)}</span></span>
         <span className="result-line"><span className="source-chip">{sourceLabel(result)}</span>{side && <span className="hint" title={result.seconds != null ? 'How long Codex took to make it' : undefined}>{side}</span>}</span>
+        {badge && <span className="result-line"><span className={`check-chip ${badge.tone}`} title="Latest quality check (the weaker of composition and identity)">Check: {badge.label}</span></span>}
       </span>
     </button>
     {!selecting && menu && <CardMenu label={`Result ${result.version}${title ? ` of ${title}` : ''}`} items={menu} disabled={disabled} />}
@@ -56,11 +62,12 @@ export function ResultCard({ result, onOpen, title, selecting, picked, menu, dis
 }
 
 /** Results with a ⋯ menu each and a Select mode for several at once (like Scenes and Characters). */
-export function ResultsGrid({ results, token, titleOf, showTitles, selecting, onSelecting, onOpen, onChanged, className = '' }: {
+export function ResultsGrid({ results, token, titleOf, showTitles, selecting, onSelecting, onOpen, onChanged, baseOf, boxes = [], className = '' }: {
   results: Result[]; token: string; titleOf: (r: Result) => string; showTitles?: boolean; selecting: boolean; onSelecting: (on: boolean) => void
-  onOpen: (id: string) => void; onChanged: (detail: SceneDetail | null, message: string) => void; className?: string
+  onOpen: (id: string) => void; onChanged: (detail: SceneDetail | null, message: string) => void; baseOf: (r: Result) => Base; boxes?: CompareBox[]; className?: string
 }) {
   const [picked, setPicked] = useState<string[]>([])
+  const [comparing, setComparing] = useState<Result[] | null>(null)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => { if (!selecting) setPicked([]) }, [selecting])
@@ -106,44 +113,41 @@ export function ResultsGrid({ results, token, titleOf, showTitles, selecting, on
       <button type="button" className="secondary" disabled={working || !chosen.length} onClick={() => download(chosen)}>Download</button>
       <button type="button" className="secondary" disabled={working || !chosen.length} onClick={() => void prefer(chosen, true)}>Mark as preferred</button>
       {chosen.some(r => r.is_preferred) && <button type="button" className="secondary" disabled={working} onClick={() => void prefer(chosen.filter(r => r.is_preferred), false)}>Remove preferred</button>}
+      <button type="button" className="secondary" disabled={working || chosen.length < 2 || chosen.length > 4 || new Set(chosen.map(r => r.scene_id)).size > 1}
+        title={new Set(chosen.map(r => r.scene_id)).size > 1 ? 'Choose results of one scene' : 'Choose 2 to 4 results'} onClick={() => setComparing(chosen)}><Glyph name="compare" />Compare</button>
       <button type="button" className="danger secondary" disabled={working || !chosen.length} onClick={() => remove(chosen)}>Delete</button>
     </SelectionBar>}
+    {comparing && <CompareDialog results={comparing} base={baseOf(comparing[0])} boxes={boxes} title={titleOf(comparing[0])} onClose={() => setComparing(null)} />}
     {error && <p className="frame-error" role="alert">{error}</p>}
     <div className={`result-grid ${className}`}>{results.map(r => <ResultCard key={r.id} result={r} title={showTitles ? titleOf(r) : undefined} selecting={selecting} picked={picked.includes(r.id)} disabled={working}
       menu={menuFor(r)} onOpen={() => selecting ? setPicked(old => old.includes(r.id) ? old.filter(x => x !== r.id) : [...old, r.id]) : onOpen(r.id)} />)}</div>
   </>
 }
 
-type View = 'result' | 'side' | 'slider'
+const baseImage = (base: Base): CompareImage => ({ id: 'base', label: 'Base Image', ...base })
+const resultImage = (r: Result): CompareImage => ({ id: r.id, label: `Result ${r.version}`, url: r.image_url, width: r.width, height: r.height })
 
-/** Compare a result with the Base Image: side by side or with a slider. */
-function Compare({ result, base, view }: { result: Result; base: Base; view: View }) {
-  const [position, setPosition] = useState(50)
-  if (view === 'result') return <div className="viewer-stage"><img src={result.image_url} alt={`Result ${result.version}`} /></div>
-  if (view === 'side') return <div className="compare-side">
-    <figure><img src={base.url} alt="Base Image" /><figcaption>Image 1 · Base Image</figcaption></figure>
-    <figure><img src={result.image_url} alt={`Result ${result.version}`} /><figcaption>Result {result.version}</figcaption></figure>
-  </div>
-  return <div className="compare-slider-wrap">
-    <div className="compare-slider" style={{ aspectRatio: `${base.width} / ${base.height}`, '--ratio': String(base.width / base.height) } as CSSProperties}>
-      <img src={base.url} alt="Base Image" />
-      <div className="compare-top" style={{ clipPath: `inset(0 0 0 ${position}%)` }}><img src={result.image_url} alt={`Result ${result.version}`} /></div>
-      <span className="compare-line" style={{ left: `${position}%` }} aria-hidden="true" />
-      <span className="compare-tag left">Base Image</span><span className="compare-tag right">Result {result.version}</span>
+/** Several results of one scene next to the Base Image, with shared zoom and pan. */
+function CompareDialog({ results, base, boxes, title, onClose }: { results: Result[]; base: Base; boxes: CompareBox[]; title: string; onClose: () => void }) {
+  const ref = useModal()
+  const sorted = [...results].sort((a, b) => a.version - b.version)
+  const images = [baseImage(base), ...sorted.map(resultImage)]
+  return <dialog ref={ref} className="image-dialog viewer-dialog" aria-labelledby="compare-title" onClose={onClose}>
+    <div className="viewer-body">
+      <div className="viewer-head"><div><h2 id="compare-title">Compare {sorted.length} results</h2><p className="hint">{title} · {sorted.map(r => `Result ${r.version}${r.check ? ` (${checkBadge(r.check)?.label})` : ''}`).join(', ')}</p></div></div>
+      <Comparison images={images} frame={base} boxes={boxes} modes={['side', 'slider', 'overlay', 'difference']} initialMode="side"
+        initialA={sorted[0].id} initialB="base" sideIds={images.map(i => i.id)} />
+      <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Close</button></div>
     </div>
-    <label className="visually-hidden" htmlFor="compare-position">Compare position</label>
-    <input id="compare-position" type="range" min={0} max={100} value={position} onChange={e => setPosition(Number(e.target.value))} />
-    <p className="hint">Drag to reveal more of the Base Image (left) or the result (right). If the result has a different shape, both are fitted to the Base Image frame.</p>
-  </div>
+  </dialog>
 }
 
 /** View a result, compare it with the Base Image, choose it as preferred, download or delete it. */
-export function ResultViewer({ result, base, sceneTitle, token, onClose, onChanged, onOpenScene }: {
-  result: Result; base: Base; sceneTitle: string; token: string; onClose: () => void
-  onChanged: (detail: SceneDetail, message: string) => void; onOpenScene?: () => void
+export function ResultViewer({ result, base, sceneTitle, token, others = [], boxes = [], runningCheck, onClose, onChanged, onCheckDone, onOpenScene }: {
+  result: Result; base: Base; sceneTitle: string; token: string; others?: Result[]; boxes?: CompareBox[]; runningCheck?: string | null; onClose: () => void
+  onChanged: (detail: SceneDetail, message: string) => void; onCheckDone?: () => void; onOpenScene?: () => void
 }) {
   const ref = useModal()
-  const [view, setView] = useState<View>('side')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function act(action: () => Promise<void>) {
@@ -166,19 +170,21 @@ export function ResultViewer({ result, base, sceneTitle, token, onClose, onChang
     <div className="viewer-body">
       <div className="viewer-head">
         <div><h2 id="viewer-title">Result {result.version}{result.is_preferred && <span className="preferred-badge inline">★ Preferred</span>}</h2>
-          <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''}{result.seconds != null ? ` · generated in ${duration(result.seconds)}` : ''} · {result.width} × {result.height}</p></div>
-        <div className="segmented" role="radiogroup" aria-label="How to show the result">
-          {([['result', 'Result'], ['side', 'Side by side'], ['slider', 'Slider']] as [View, string][]).map(([id, label]) => <label key={id} className={`segment ${view === id ? 'selected' : ''}`}>
-            <input type="radio" name="result-view" checked={view === id} onChange={() => setView(id)} />{label}</label>)}
-        </div>
+          <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''}{result.seconds != null ? ` · generated in ${duration(result.seconds)}` : ''}{result.preset ? ` · preset “${result.preset}”` : ''} · {result.width} × {result.height}</p></div>
       </div>
-      <Compare result={result} base={base} view={view} />
+      <Comparison images={[baseImage(base), resultImage(result), ...others.filter(o => o.id !== result.id).sort((a, b) => a.version - b.version).map(resultImage)]} frame={base} boxes={boxes}
+        modes={['single', 'side', 'slider', 'overlay', 'difference']} initialMode="side" initialA={result.id} initialB="base" />
+      <div className="viewer-columns">
       <section className="viewer-inputs" aria-label="Inputs">
         <p><strong>Made from</strong> {result.prompt_version ? `prompt version ${result.prompt_version}${result.is_polished ? ' (polished)' : ''}, analysis version ${result.analysis_version}` : 'an approval that is no longer available'} · {result.approval_current ? 'the current approval' : 'an earlier approval'}</p>
         <ul className="plain-list">{result.mappings.map(m => <li key={m.subject}><strong>{m.subject}</strong>: {m.action === 'replace' ? `${m.character_name ?? 'Deleted character'} (${imageList(m.images)})` : m.action === 'keep' ? 'Kept original' : 'Not assigned'}</li>)}</ul>
         {result.source === 'manual_import' && <p className="hint">Imported by you{result.note ? ` from ${result.note}` : ''}. The studio did not make this image, so its source is as you described it.</p>}
         {result.recovered && <p className="hint">Found in the run’s own Codex folder after the run did not finish normally.</p>}
       </section>
+      <QualityPanel resultId={result.id} resultVersion={result.version} token={token} runningJobId={runningCheck}
+        references={result.mappings.reduce((sum, m) => sum + (m.action === 'replace' ? m.images.length : 0), 0)}
+        onStarted={detail => onChanged(detail, `Checking result ${result.version}…`)} onDone={onCheckDone} />
+      </div>
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="dialog-actions viewer-actions">
         <button type="button" className="danger secondary" disabled={busy} onClick={remove}>Delete</button>
@@ -292,8 +298,10 @@ export function ImportDialog({ scene, token, data, preselect, onClose, onImporte
 /** Step 05: generate from the approval, then compare and keep results. */
 export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, exportOpen, onExportOpen, onGenerate, onChanged, onRefresh, onGo }: {
   scene: SceneDetail; data: Bootstrap; generationEngine: string; busy: boolean; runStatus: ReactNode; exportOpen: boolean; onExportOpen: (open: boolean) => void
-  onGenerate: (mode: 'generate' | 'variation', count: number) => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
+  onGenerate: (mode: 'generate' | 'variation', count: number, presetId: string | null) => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
 }) {
+  const { presets } = usePresets()
+  const [presetId, setPresetId] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   // Several images from this approval run as a small batch, one after another (Phase 5.5).
@@ -319,14 +327,16 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
   const references = scene.subjects.reduce((sum, s) => sum + (s.action === 'replace' ? s.images.length : 0), 0)
   const running = !!scene.active_job
   const shown = scene.results.find(r => r.id === viewing)
+  const base = { url: scene.original_url, width: scene.width, height: scene.height }
+  const boxes = scene.analyses[0]?.analysis.subjects.map(s => ({ label: s.label, bounding_box: s.bounding_box })) ?? []
   const estimate = timing.average_seconds != null && count > 1 ? ` (about ${duration(timing.average_seconds * count)} in all)` : ''
   const again = (mode: 'generate' | 'variation') => {
     const what = count > 1 ? (mode === 'variation' ? `Make ${count} variations` : `Generate ${count} more images`) : mode === 'variation' ? 'Make a variation' : 'Generate again'
     const runs = count > 1 ? `This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex` : 'This sends the approved images to OpenAI via Codex once more'
-    if (window.confirm(`${what}? ${runs} and using your ChatGPT plan’s image allowance. Earlier results are kept.`)) onGenerate(mode, count)
+    if (window.confirm(`${what}? ${runs} and using your ChatGPT plan’s image allowance. Earlier results are kept.`)) onGenerate(mode, count, presetId || null)
   }
   const first = () => {
-    if (count === 1 || window.confirm(`Generate ${count} images? This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex and using your ChatGPT plan’s image allowance.`)) onGenerate('generate', count)
+    if (count === 1 || window.confirm(`Generate ${count} images? This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex and using your ChatGPT plan’s image allowance.`)) onGenerate('generate', count, presetId || null)
   }
   return <>
     {runStatus}
@@ -342,6 +352,8 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
         {timing.average_seconds != null && <p className="hint">Codex has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
       </div>
       {codex ? <>
+        {presets.length > 0 && <div className="generate-preset"><PresetSelect id="generate-preset" presets={presets} value={presetId} disabled={busy || running} label="Preset"
+          onChange={p => { setPresetId(p?.id ?? ''); if (p) setCount(p.images) }} /></div>}
         <div className="generate-actions">
           <div className="image-count" role="group" aria-label="Images per click">
             <button type="button" className="secondary compact icon-only" aria-label="Fewer images" disabled={busy || running || count <= 1} onClick={() => setCount(c => c - 1)}>−</button>
@@ -367,6 +379,7 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
       </span></div>
     {!scene.results.length ? <p className="hint">No results yet. Every image you generate or import is kept here as its own version, linked to the inputs it was made from.</p>
       : <ResultsGrid results={scene.results} token={token} titleOf={() => scene.title} selecting={selecting} onSelecting={setSelecting} onOpen={setViewing}
+        baseOf={() => base} boxes={boxes}
         onChanged={(detail, message) => { if (detail) onChanged(detail, message); else onRefresh(message) }} />}
 
     {scene.exports.length > 0 && <details className="package-list"><summary>Manual packages ({scene.exports.length})</summary>
@@ -380,8 +393,9 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
       </li>)}</ul></details>}
     <p className="library-status" role="status">{note}</p>
 
-    {shown && <ResultViewer key={shown.id} result={shown} base={{ url: scene.original_url, width: scene.width, height: scene.height }} sceneTitle={scene.title} token={token}
-      onClose={() => setViewing(null)} onChanged={(detail, message) => { onChanged(detail, message) }} />}
+    {shown && <ResultViewer key={shown.id} result={shown} base={base} sceneTitle={scene.title} token={token} others={scene.results} boxes={boxes}
+      runningCheck={scene.active_job?.kind === 'check' && scene.active_job.input_id === shown.id ? scene.active_job.id : null}
+      onClose={() => setViewing(null)} onChanged={(detail, message) => { onChanged(detail, message) }} onCheckDone={() => onRefresh('')} />}
     {exportOpen && <ExportDialog scene={scene} token={token} onClose={() => onExportOpen(false)} onChanged={onChanged} onImport={id => { onExportOpen(false); setImporting(id) }} />}
     {importing !== false && <ImportDialog scene={scene} token={token} data={data} preselect={importing} onClose={() => setImporting(false)}
       onImported={detail => { setImporting(false); onChanged(detail, `Result ${detail.results[0]?.version} imported.`) }} />}
@@ -418,8 +432,10 @@ export default function ResultsGallery({ data, onOpenScene }: { data: Bootstrap;
       <h2>{results.length ? 'No matching results' : 'Your results will appear here'}</h2>
       <p>{results.length ? 'Try another title or show all results.' : 'Approve a scene, then generate it with Codex or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p></div>
       : <ResultsGrid className="gallery" results={filtered} token={data.session_token} titleOf={r => r.scene_title ?? 'Scene'} showTitles selecting={selecting} onSelecting={setSelecting} onOpen={setViewing}
+        baseOf={r => ({ url: r.scene_image_url!, width: r.scene_width!, height: r.scene_height! })}
         onChanged={(_detail, note) => { setMessage(note); void load() }} />}
     {shown && <ResultViewer key={shown.id} result={shown} base={{ url: shown.scene_image_url!, width: shown.scene_width!, height: shown.scene_height! }} sceneTitle={shown.scene_title ?? ''} token={data.session_token}
-      onClose={() => setViewing(null)} onChanged={(_detail, note) => { setMessage(note); void load() }} onOpenScene={() => onOpenScene(shown.scene_id)} />}
+      others={results.filter(r => r.scene_id === shown.scene_id)}
+      onClose={() => setViewing(null)} onChanged={(_detail, note) => { setMessage(note); void load() }} onCheckDone={() => void load()} onOpenScene={() => onOpenScene(shown.scene_id)} />}
   </div>
 }

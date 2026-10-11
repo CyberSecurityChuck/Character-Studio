@@ -22,6 +22,7 @@ from backend.library import router as library_router
 from backend.models import StudioPreferences
 from backend.persistence import SCHEMA_REVISION, open_database
 from backend.providers import PROVIDERS
+from backend.quality_api import router as quality_router
 from backend.results import router as results_router
 from backend.scenes import router as scenes_router
 from backend.schemas import PreferencesResponse, PreferencesUpdate
@@ -155,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(backups_router)
     app.include_router(batches_router)
     app.include_router(api_settings_router)
+    app.include_router(quality_router)
 
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):

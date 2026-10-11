@@ -5,6 +5,7 @@ import { BatchDialog, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart
 import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
+import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
 import { replaceRoute, routeParts } from './route'
 
@@ -45,11 +46,11 @@ type CameraField = 'height' | 'direction' | 'shot_type' | 'framing' | 'perspecti
 const subjectFields: [SubjectField, string][] = [['position', 'Position'], ['pose_summary', 'Pose'], ['body_direction', 'Body direction'], ['torso_orientation', 'Torso'], ['shoulder_alignment', 'Shoulders'], ['head_direction', 'Head direction'], ['facial_viewing_angle', 'Face angle'], ['eye_direction', 'Eyes and gaze'], ['expression', 'Expression'], ['arms_and_hands', 'Arms and hands'], ['legs_and_feet', 'Legs and feet'], ['outfit', 'Outfit'], ['hairstyle', 'Hairstyle'], ['accessories', 'Accessories']]
 const cameraFields: [CameraField, string][] = [['height', 'Height'], ['direction', 'Direction'], ['shot_type', 'Shot type'], ['framing', 'Framing'], ['perspective', 'Perspective']]
 const sceneFields: ['environment' | 'lighting' | 'color_palette' | 'atmosphere', string][] = [['environment', 'Environment'], ['lighting', 'Lighting and shadows'], ['color_palette', 'Colour palette'], ['atmosphere', 'Atmosphere']]
-export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate' }
+export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate', checking: 'Checking a result…' }
 const sourceLabels: Record<string, string> = { ...engineNames, manual_import: 'Manual import', user_edit: 'Your edit' }
 const engineLabels = engineNames
 const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
-const kindLabels: Record<string, string> = { analysis: 'Analysis', polish: 'Polish', generation: 'Generation', export: 'Manual export' }
+const kindLabels: Record<string, string> = { analysis: 'Analysis', polish: 'Polish', generation: 'Generation', export: 'Manual export', check: 'Quality check' }
 const steps: { id: Step; number: string; label: string }[] = [{ id: 'analysis', number: '01', label: 'Analysis' }, { id: 'characters', number: '02', label: 'Characters' }, { id: 'prompt', number: '03', label: 'Prompt' }, { id: 'review', number: '04', label: 'Review' }, { id: 'generate', number: '05', label: 'Generate' }]
 const stepFor: Record<string, Step> = { needs_analysis: 'analysis', analysing: 'analysis', review_analysis: 'analysis', needs_mapping: 'characters', analysis_ready: 'prompt', polishing: 'prompt', prompt_saved: 'review', approved: 'generate', generating: 'generate', generated: 'generate', waiting_analysis: 'analysis', waiting_generation: 'generate' }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -266,7 +267,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
 }
 
 function ProgressCard({ job, stopping, busy, onCancel }: { job: Job; stopping: boolean; busy: boolean; onCancel: () => void }) {
-  const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : 'Analysing'
+  const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : job.kind === 'check' ? 'Checking a result' : 'Analysing'
   const batch = job.batch
   const place = batch ? `Item ${batch.position} of ${batch.total} in a batch` : ''
   if (batch && job.status === 'not_started' && !stopping) {
@@ -323,6 +324,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   // API engines: the charge confirmation shown before a run is queued.
   const [chargeAsk, setChargeAsk] = useState<{ note?: string } | null>(null)
   const apiEngines = useApiEngines()
+  const { presets, reload: reloadPresets } = usePresets()
+  const [presetPick, setPresetPick] = useState('')
+  const [savingPreset, setSavingPreset] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
   const [dismissed, setDismissed] = useState<string[]>([])
@@ -484,9 +488,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     next.uncertainties = next.uncertainties.filter(u => !(u.field === item.field && u.note === item.note))
     saveRevision(next, [...current.confirmed_uncertainties, item], current, `Confirmed. Saved as analysis version ${current.version + 1}.`)
   }
-  const rebuild = (analysisId: string, sceneChanges: string) => run(async () => {
+  const rebuild = (analysisId: string, sceneChanges: string, addNegative = '') => run(async () => {
     const draft = await send<{ prompt_text: string; negative_prompt: string; mapping_hash: string }>(`/api/scenes/${scene.id}/prompts/draft`, 'POST', token, { analysis_id: analysisId, scene_changes: sceneChanges })
-    setPromptText(draft.prompt_text); setNegative(draft.negative_prompt)
+    setPromptText(draft.prompt_text); setNegative(appendLines(draft.negative_prompt, addNegative))
     setPromptBase(b => b && { ...b, analysisId, mappingHash: draft.mapping_hash })
     setOrigin({ text: draft.prompt_text, source: 'template' })
   }, 'Draft rebuilt from the analysis and assignments. Save it to keep it.')
@@ -523,15 +527,16 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
       setScene(detail); onChanged()
     })
   }
-  const generate = (mode: 'generate' | 'variation', count = 1) => run(async () => {
+  const generate = (mode: 'generate' | 'variation', count = 1, presetId: string | null = null) => run(async () => {
     if (lastGenerationJob) setDismissed(d => [...d, lastGenerationJob.id])
+    const preset = presetId ? { preset_id: presetId } : {}
     if (count > 1) {
       // Several images from this one approval: a batch for this scene (Phase 5.5).
-      await send<BatchStart>('/api/batches/generation', 'POST', token, { items: [{ scene_id: scene.id, approval_id: scene.approval.current?.id }], count, mode })
+      await send<BatchStart>('/api/batches/generation', 'POST', token, { items: [{ scene_id: scene.id, approval_id: scene.approval.current?.id }], count, mode, ...preset })
       setScene(await request<SceneDetail>(`/api/scenes/${scene.id}`)); onChanged()
       return
     }
-    const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/generate`, 'POST', token, { approval_id: scene.approval.current?.id, mode })
+    const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/generate`, 'POST', token, { approval_id: scene.approval.current?.id, mode, ...preset })
     setScene(detail); onChanged()
   }, count > 1 ? `${count} images queued. They run one after another.` : '')
   const recover = (job: Job) => run(async () => {
@@ -673,7 +678,17 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
             <div className="prompt-grid">
               <div><label htmlFor="negative-prompt">Negative prompt</label><textarea id="negative-prompt" rows={5} maxLength={8000} value={negative} onChange={e => setNegative(e.target.value)} /></div>
               <div><label htmlFor="scene-changes">Scene changes (optional)</label><textarea id="scene-changes" rows={3} maxLength={4000} value={changes} placeholder="For example: make it golden hour" onChange={e => setChanges(e.target.value)} />
-                <button type="button" className="link-button" disabled={busy} onClick={() => { if (!promptDirty || promptText === promptBase.text || window.confirm('Rebuilding replaces your edits to the prompt text. Continue?')) void rebuild(current.id, changes) }}>Rebuild draft with these changes</button></div>
+                <button type="button" className="link-button" disabled={busy} onClick={() => { if (!promptDirty || promptText === promptBase.text || window.confirm('Rebuilding replaces your edits to the prompt text. Continue?')) void rebuild(current.id, changes) }}>Rebuild draft with these changes</button>
+                <div className="preset-row">
+                  <PresetSelect id="prompt-preset" presets={presets} value={presetPick} disabled={busy} label="Apply a preset"
+                    onChange={p => {
+                      if (!p) { setPresetPick(''); return }
+                      if (promptDirty && promptText !== promptBase.text && !window.confirm(`Apply “${p.name}”? The draft is rebuilt with its scene changes, which replaces your edits to the prompt text.`)) return
+                      setPresetPick(p.id); setChanges(p.scene_changes)
+                      void rebuild(current.id, p.scene_changes, p.negative_additions)
+                    }} />
+                  <button type="button" className="link-button" disabled={busy} onClick={() => setSavingPreset(true)}>Save as preset</button>
+                </div></div>
             </div>
             {!promptDirty && promptBase.saved && scene.review.warnings.length > 0 && <div className="check-box warning"><strong>Check the saved prompt</strong><ul>{scene.review.warnings.map(w => <li key={w}>{w}</li>)}</ul></div>}
             <div className="prompt-tools">
@@ -704,12 +719,12 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         <section id="step-panel-generate" role="tabpanel" aria-labelledby="step-tab-generate" hidden={activeStep !== 'generate'} className="panel step-panel">
           <div className="step-head"><span className="step-number">05</span><div><h3>Generate and results</h3><p className="hint">Make the image from the approved inputs, with Codex or any app you like. Every result is kept and stays linked to what it was made from.</p></div></div>
           <GeneratePanel scene={scene} data={data} generationEngine={engines?.generation_engine ?? 'codex_cli'} busy={busy} exportOpen={exportOpen} onExportOpen={setExportOpen}
-            runStatus={scene.active_job?.kind === 'generation' ? <><ProgressCard job={scene.active_job} stopping={stopping === scene.active_job.id} busy={busy} onCancel={cancel} />{scene.active_job.batch && <BatchList token={token} sceneId={scene.id} />}</>
+            runStatus={scene.active_job?.kind === 'generation' || scene.active_job?.kind === 'check' ? <><ProgressCard job={scene.active_job} stopping={stopping === scene.active_job.id} busy={busy} onCancel={cancel} />{scene.active_job.batch && <BatchList token={token} sceneId={scene.id} />}</>
               : showGenerationNotice && lastGenerationJob ? <JobNotice job={lastGenerationJob} busy={busy || !approved || !!scene.active_job}
                 onRetry={() => { if (window.confirm('Generate again? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance.')) void generate('generate') }}
                 extra={lastGenerationJob.recoverable ? <button type="button" className="secondary" disabled={busy} onClick={() => void recover(lastGenerationJob)}>Look for a saved image</button> : undefined}
                 manualLabel="Export for manual use" onManual={() => setExportOpen(true)} onDismiss={() => setDismissed(d => [...d, lastGenerationJob.id])} /> : null}
-            onGenerate={(mode, count) => void generate(mode, count)} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }}
+            onGenerate={(mode, count, presetId) => void generate(mode, count, presetId)} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }}
             onRefresh={note => { void request<SceneDetail>(`/api/scenes/${scene.id}`).then(detail => accept(detail, false)).then(() => setMessage(note)) }} onGo={() => setStep('review')} />
         </section>
 
@@ -722,6 +737,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     <dialog ref={manualRef} className="image-dialog manual-dialog" aria-labelledby="manual-title" onClose={() => setManual(false)}>
       {manual && <ManualAnalysis scene={scene} token={token} onClose={() => setManual(false)} onImported={detail => { setManual(false); if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id]); void accept(detail, !promptDirty).then(() => setMessage(`Analysis version ${detail.analyses[0].version} imported.`)) }} />}
     </dialog>
+    {savingPreset && <PresetDialog token={token} initial={{ scene_changes: changes }} onClose={() => setSavingPreset(false)} onSaved={(_p, note) => { setMessage(note); void reloadPresets() }} />}
     {chargeAsk && apiEngines.byId[engine] && <ChargeDialog engine={apiEngines.byId[engine]} model={engines?.api_models[engine]?.analysis ?? null} runs={1} note={chargeAsk.note}
       onConfirm={() => void analyse(true)} onClose={() => setChargeAsk(null)} />}
     {historyOpen && <PromptHistory scene={scene} token={token} editorDirty={promptDirty} onClose={() => setHistoryOpen(false)}
