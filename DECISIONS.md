@@ -184,3 +184,10 @@
 - Decision: restore runs only while the studio is stopped, via `Restore-Studio.cmd` / `python -m backend.backup restore`. It verifies everything into a new folder first and swaps folders by renaming; the previous data folder is kept as `<name>.before-restore-<time>` and its `backups` folder moves across. No in-app restore button: replacing an open database from inside the running service is not safe.
 - Not included in backups: the `backups` folder, logs, the launcher's process record and folders the studio does not manage. Optional encrypted backups remain a Phase 6 item.
 - Approval: the user's answers on 2026-10-11, within Phase 5. No schema change, no dependencies added.
+
+## D018 — Phase 5 review fixes (2026-10-11)
+
+- Decision: run time is derived from each engine job's `started_at` and `finished_at`, so no schema change. Results show it only for a normally completed Codex run (imported and recovered results were not timed by the studio). The average shown on the Generate step covers completed generation runs on this PC; it is a planning aid for Phase 5.5, not a promise.
+- Decision (user's choice): "preferred" is a favourite mark; a scene may have any number of preferred results. This replaces D016's one-per-scene rule.
+- Decision: result selection follows D013: ⋯ menu per card, Select mode with a selection bar, bulk actions calling the single-result endpoints one by one and reporting failures by name. One selected image downloads as itself; several come as one zip built in `exports/` and deleted after it is sent.
+- Approval: the user's Phase 5 review report and the answers "Several per scene" and "Yes, go ahead" (2026-10-11).

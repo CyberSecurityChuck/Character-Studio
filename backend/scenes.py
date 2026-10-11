@@ -26,7 +26,7 @@ from backend.analysis_schema import (
 )
 from backend.configuration import asset_path
 from backend.engines import ENGINE_NAMES, engine_status
-from backend.generation import result_data
+from backend.generation import generation_timing, result_data, run_seconds
 from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
 from backend.library import clean_deleted_files, decode_image, file_hash
 from backend.models import (
@@ -216,6 +216,7 @@ def job_data(request, job: EngineJob | None):
         "result_id": job.result_id,
         "input_id": job.input_id,
         "decision": job.decision,
+        "seconds": run_seconds(job),
         "created_at": job.created_at,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
@@ -444,8 +445,15 @@ def generation_detail(request, session, scene: Scene, current):
         .order_by(EngineJob.created_at.desc())
     )
     return {
+        "generation_timing": generation_timing(session),
         "results": [
-            result_data(r, session.get(Approval, r.approval_id), current_id) for r in results
+            result_data(
+                r,
+                session.get(Approval, r.approval_id),
+                current_id,
+                session.get(EngineJob, r.job_id) if r.job_id else None,
+            )
+            for r in results
         ],
         "exports": [
             {

@@ -3,7 +3,7 @@ import { request, send, type Bootstrap } from './api'
 import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
-import { GeneratePanel, type ExportPackage, type Result } from './Results'
+import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
 import { replaceRoute, routeParts } from './route'
 
 export type Box = { x: number; y: number; width: number; height: number }
@@ -21,7 +21,7 @@ export type AnalysisData = {
 }
 type Analysis = { id: string; version: number; source: string; engine_version: string | null; has_raw_output: boolean; based_on_id: string | null; created_at: string; analysis: AnalysisData; confirmed_uncertainties: Uncertainty[] }
 export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
-export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; mode: string | null; recoverable: boolean; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
+export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; mode: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
 export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null }
 export type SubjectAssignment = { label: string; bounding_box: Box; position: string; summary: string; action: 'replace' | 'keep' | 'unresolved'; character_id: string | null; reference_ids: string[]; references_auto: boolean; confirmed: boolean; images: number[]; problems: string[] }
 export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_id: string; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
@@ -32,7 +32,7 @@ export type SceneDetail = SceneSummary & {
   review: { blockers: string[]; warnings: string[]; notes: string[]; prompt_id: string | null }
   approval: { state: 'approved' | 'none'; current: ApprovalRecord | null; ended_reason: string | null }
   approvals: ApprovalRecord[]; pending_polish: PendingPolish | null
-  results: Result[]; exports: ExportPackage[]
+  results: Result[]; exports: ExportPackage[]; generation_timing: { runs: number; average_seconds: number | null }
 }
 type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; revision: number }
 type Step = 'analysis' | 'characters' | 'prompt' | 'review' | 'generate'
@@ -640,11 +640,12 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
                 onRetry={() => { if (window.confirm('Generate again? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance.')) void generate('generate') }}
                 extra={lastGenerationJob.recoverable ? <button type="button" className="secondary" disabled={busy} onClick={() => void recover(lastGenerationJob)}>Look for a saved image</button> : undefined}
                 manualLabel="Export for manual use" onManual={() => setExportOpen(true)} onDismiss={() => setDismissed(d => [...d, lastGenerationJob.id])} /> : null}
-            onGenerate={mode => void generate(mode)} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }} onGo={() => setStep('review')} />
+            onGenerate={mode => void generate(mode)} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }}
+            onRefresh={note => { void request<SceneDetail>(`/api/scenes/${scene.id}`).then(detail => accept(detail, false)).then(() => setMessage(note)) }} onGo={() => setStep('review')} />
         </section>
 
         {scene.jobs.length > 0 && <details className="panel run-history"><summary>Engine runs ({scene.jobs.length})</summary>
-          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
+          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
             {j.job_folder && <button type="button" className="link-button" onClick={() => copyText(j.job_folder!, setMessage)}><Icon name="folder" /> Copy folder path</button>}</li>)}</ul>
         </details>}
       </div>

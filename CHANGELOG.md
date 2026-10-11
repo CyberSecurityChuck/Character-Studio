@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-11 — Phase 5 review fixes (local commit, awaiting follow-up check)
+
+- From the user's Phase 5 review (`Phase_Checks/Phase5_Review_Report.md`: 29/29 steps, 0 problems flagged, "Needs fixes first" because of two notes). The `phase5-additions` branch (package copies, backups) was fast-forwarded into `main` first.
+- Generation time: Codex result cards and the viewer show how long the run took; the Generate box shows the average per image over finished Codex runs on this PC; Engine runs show each run's duration. Taken from the job's own start and finish times; imported and recovered results show none.
+- Results selection, like Characters, Groups and Scenes: a ⋯ menu on every result card (Download, Mark/Remove preferred, Delete) and a Select mode with a selection bar (Download, Mark as preferred, Remove preferred, Delete) on the Generate step and the Results page. Several results download as one zip (`GET /api/results/download`). The viewer keeps its buttons.
+- A scene may now have several preferred results (user's choice), so "preferred" works as a favourite mark.
+- Fixed result cards whose text was a few pixels wider than the card. No schema change, no dependencies added. 97 tests pass (existing tests extended). See D018.
+
 ## 2026-10-11 — Phase 5 additions: package copies and backups (local branch `phase5-additions`)
 
 - From the user's answers to two open questions. Built in a separate worktree so the Phase 5 review folder stays unchanged.

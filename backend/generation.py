@@ -13,6 +13,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,6 +26,7 @@ from backend.engines import EngineError, ProcessOutcome, _check_timeout, _classi
 from backend.library import clean_deleted_files, decode_image, file_hash
 from backend.models import (
     Approval,
+    EngineJob,
     GenerationResult,
     PendingFileDeletion,
     ReferencePhoto,
@@ -306,7 +308,35 @@ def read_image_file(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def result_data(result: GenerationResult, approval: Approval | None, current_id: str | None):
+def run_seconds(job) -> int | None:
+    """How long a finished run took, from the job's own start and finish times."""
+    if job is None or not job.started_at or not job.finished_at:
+        return None
+    started = datetime.fromisoformat(job.started_at)
+    return max(0, round((datetime.fromisoformat(job.finished_at) - started).total_seconds()))
+
+
+def generation_timing(session) -> dict:
+    """Average time of completed Codex image runs on this PC (for planning batches)."""
+    times = [
+        seconds
+        for job in session.scalars(
+            select(EngineJob).where(
+                EngineJob.kind == "generation", EngineJob.status == "completed"
+            )
+        )
+        if (seconds := run_seconds(job)) is not None
+    ]
+    average = round(sum(times) / len(times)) if times else None
+    return {"runs": len(times), "average_seconds": average}
+
+
+def result_data(
+    result: GenerationResult,
+    approval: Approval | None,
+    current_id: str | None,
+    job: EngineJob | None = None,
+):
     snapshot = snapshot_of(approval) if approval is not None else None
     inputs = snapshot["inputs"] if snapshot else None
     names = snapshot["display"].get("character_names", {}) if snapshot else {}
@@ -325,6 +355,10 @@ def result_data(result: GenerationResult, approval: Approval | None, current_id:
         "height": result.height,
         "engine_version": result.engine_version,
         "recovered": result.recovered,
+        # Only a normally finished Codex run was timed by the studio.
+        "seconds": run_seconds(job)
+        if job is not None and job.kind == "generation" and job.status == "completed"
+        else None,
         "is_preferred": result.is_preferred,
         "created_at": result.created_at,
         "image_url": f"/api/results/{result.id}/image/original",

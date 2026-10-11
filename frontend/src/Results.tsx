@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
+import { CardMenu, SelectionBar, type MenuItem } from './Controls'
 import type { SceneDetail } from './Scenes'
 
 export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[] }
 export type Result = {
   id: string; scene_id: string; version: number; approval_id: string; approval_current: boolean; job_id: string | null
   source: 'codex_cli' | 'manual_import'; mode: 'generate' | 'variation' | 'import'; note: string; media_type: string; width: number; height: number
-  engine_version: string | null; recovered: boolean; is_preferred: boolean; created_at: string; image_url: string; thumbnail_url: string
+  engine_version: string | null; recovered: boolean; seconds: number | null; is_preferred: boolean; created_at: string; image_url: string; thumbnail_url: string
   prompt_version: number | null; analysis_version: number | null; is_polished: boolean; mappings: ResultMapping[]
   scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number
 }
@@ -16,6 +17,8 @@ type Base = { url: string; width: number; height: number }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 const imageList = (images: number[]) => images.map(n => `Image ${n}`).join(', ')
+/** "48 s" or "1 min 12 s": how long a Codex run took. */
+export const duration = (seconds: number) => seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min${seconds % 60 ? ` ${seconds % 60} s` : ''}`
 
 export function sourceLabel(result: Result) {
   if (result.source === 'manual_import') return result.note ? `Imported · ${result.note}` : 'Imported'
@@ -35,17 +38,80 @@ function useModal() {
 }
 
 /** One result in a grid: thumbnail, version and where it came from. */
-export function ResultCard({ result, onOpen, title }: { result: Result; onOpen: () => void; title?: string }) {
-  return <div className="result-card">
-    <button type="button" className="card-main" onClick={onOpen} aria-label={`Open result ${result.version}${title ? ` of ${title}` : ''}`}>
+export function ResultCard({ result, onOpen, title, selecting, picked, menu, disabled }: { result: Result; onOpen: () => void; title?: string; selecting?: boolean; picked?: boolean; menu?: MenuItem[]; disabled?: boolean }) {
+  const label = `result ${result.version}${title ? ` of ${title}` : ''}`
+  const side = [result.seconds != null ? duration(result.seconds) : '', result.approval_current ? '' : 'Earlier approval'].filter(Boolean).join(' · ')
+  return <div className={`result-card ${picked ? 'picked' : ''}`}>
+    <button type="button" className="card-main" disabled={disabled} aria-pressed={selecting ? !!picked : undefined} onClick={onOpen} aria-label={selecting ? `Select ${label}` : `Open ${label}`}>
+      {selecting && <span className="pick-box" aria-hidden="true" />}
       <span className="result-thumb"><img src={result.thumbnail_url} alt="" loading="lazy" />{result.is_preferred && <span className="preferred-badge" aria-label="Preferred">★ Preferred</span>}</span>
       <span className="result-copy">
         {title && <strong className="result-scene">{title}</strong>}
         <span className="result-line"><strong>Result {result.version}</strong><span className="hint">{formatDate(result.created_at)}</span></span>
-        <span className="result-line"><span className="source-chip">{sourceLabel(result)}</span>{!result.approval_current && <span className="hint">Earlier approval</span>}</span>
+        <span className="result-line"><span className="source-chip">{sourceLabel(result)}</span>{side && <span className="hint" title={result.seconds != null ? 'How long Codex took to make it' : undefined}>{side}</span>}</span>
       </span>
     </button>
+    {!selecting && menu && <CardMenu label={`Result ${result.version}${title ? ` of ${title}` : ''}`} items={menu} disabled={disabled} />}
   </div>
+}
+
+/** Results with a ⋯ menu each and a Select mode for several at once (like Scenes and Characters). */
+export function ResultsGrid({ results, token, titleOf, showTitles, selecting, onSelecting, onOpen, onChanged, className = '' }: {
+  results: Result[]; token: string; titleOf: (r: Result) => string; showTitles?: boolean; selecting: boolean; onSelecting: (on: boolean) => void
+  onOpen: (id: string) => void; onChanged: (detail: SceneDetail | null, message: string) => void; className?: string
+}) {
+  const [picked, setPicked] = useState<string[]>([])
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => { if (!selecting) setPicked([]) }, [selecting])
+  useEffect(() => { setPicked(old => old.filter(id => results.some(r => r.id === id))) }, [results])
+  const chosen = results.filter(r => picked.includes(r.id))
+  const name = (r: Result) => `${titleOf(r)} - result ${r.version}.${extensions[r.media_type] ?? 'png'}`
+  const what = (list: Result[]) => list.length === 1 ? `result ${list[0].version}` : `${list.length} results`
+
+  function download(list: Result[]) {
+    // One image downloads as itself; several come as one zip.
+    const link = document.createElement('a')
+    link.href = list.length === 1 ? list[0].image_url : `/api/results/download?${list.map(r => `id=${r.id}`).join('&')}`
+    link.download = list.length === 1 ? name(list[0]) : 'Character Studio results.zip'
+    document.body.append(link); link.click(); link.remove()
+  }
+  // Each item goes through the single-result endpoint; failures are reported by name.
+  async function each(list: Result[], call: (r: Result) => Promise<SceneDetail>, done: string) {
+    setWorking(true); setError('')
+    let last: SceneDetail | null = null
+    const failed: string[] = []
+    for (const r of list) {
+      try { last = await call(r) } catch { failed.push(`Result ${r.version}${showTitles ? ` (${titleOf(r)})` : ''}`) }
+    }
+    setWorking(false)
+    if (failed.length) setError(`Not done for ${failed.join(', ')}. The others were done. Reload and try again.`)
+    onChanged(last, failed.length ? '' : done)
+  }
+  const prefer = (list: Result[], value: boolean) => each(list,
+    r => send<SceneDetail>(`/api/results/${r.id}/preferred`, 'PUT', token, { preferred: value }),
+    value ? `${list.length === 1 ? `Result ${list[0].version} is` : `${list.length} results are`} now preferred.` : `${list.length === 1 ? `Result ${list[0].version} is` : `${list.length} results are`} no longer preferred.`)
+  function remove(list: Result[]) {
+    if (!window.confirm(`Permanently delete ${what(list)}? ${list.length === 1 ? 'Its image file is' : 'Their image files are'} removed from this computer. Other results keep their numbers.`)) return
+    void each(list, async r => (await send<{ scene: SceneDetail }>(`/api/results/${r.id}`, 'DELETE', token)).scene,
+      `${what(list).charAt(0).toUpperCase()}${what(list).slice(1)} deleted.`).then(() => onSelecting(false))
+  }
+  const menuFor = (r: Result): MenuItem[] => [
+    { label: 'Download', onSelect: () => download([r]) },
+    { label: r.is_preferred ? 'Remove preferred' : 'Mark as preferred', onSelect: () => void prefer([r], !r.is_preferred) },
+    { label: 'Delete', danger: true, onSelect: () => remove([r]) },
+  ]
+  return <>
+    {selecting && <SelectionBar count={chosen.length} total={results.length} onAll={() => setPicked(results.map(r => r.id))} onNone={() => setPicked([])} onDone={() => onSelecting(false)}>
+      <button type="button" className="secondary" disabled={working || !chosen.length} onClick={() => download(chosen)}>Download</button>
+      <button type="button" className="secondary" disabled={working || !chosen.length} onClick={() => void prefer(chosen, true)}>Mark as preferred</button>
+      {chosen.some(r => r.is_preferred) && <button type="button" className="secondary" disabled={working} onClick={() => void prefer(chosen.filter(r => r.is_preferred), false)}>Remove preferred</button>}
+      <button type="button" className="danger secondary" disabled={working || !chosen.length} onClick={() => remove(chosen)}>Delete</button>
+    </SelectionBar>}
+    {error && <p className="frame-error" role="alert">{error}</p>}
+    <div className={`result-grid ${className}`}>{results.map(r => <ResultCard key={r.id} result={r} title={showTitles ? titleOf(r) : undefined} selecting={selecting} picked={picked.includes(r.id)} disabled={working}
+      menu={menuFor(r)} onOpen={() => selecting ? setPicked(old => old.includes(r.id) ? old.filter(x => x !== r.id) : [...old, r.id]) : onOpen(r.id)} />)}</div>
+  </>
 }
 
 type View = 'result' | 'side' | 'slider'
@@ -86,7 +152,7 @@ export function ResultViewer({ result, base, sceneTitle, token, onClose, onChang
   }
   const prefer = () => act(async () => {
     const detail = await send<SceneDetail>(`/api/results/${result.id}/preferred`, 'PUT', token, { preferred: !result.is_preferred })
-    onChanged(detail, result.is_preferred ? `Result ${result.version} is no longer preferred.` : `Result ${result.version} is now the preferred result.`)
+    onChanged(detail, result.is_preferred ? `Result ${result.version} is no longer preferred.` : `Result ${result.version} is now marked as preferred.`)
   })
   const remove = () => {
     if (!window.confirm(`Permanently delete result ${result.version}? Its image file is removed from this computer. Other results are kept.`)) return
@@ -100,7 +166,7 @@ export function ResultViewer({ result, base, sceneTitle, token, onClose, onChang
     <div className="viewer-body">
       <div className="viewer-head">
         <div><h2 id="viewer-title">Result {result.version}{result.is_preferred && <span className="preferred-badge inline">★ Preferred</span>}</h2>
-          <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''} · {result.width} × {result.height}</p></div>
+          <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''}{result.seconds != null ? ` · generated in ${duration(result.seconds)}` : ''} · {result.width} × {result.height}</p></div>
         <div className="segmented" role="radiogroup" aria-label="How to show the result">
           {([['result', 'Result'], ['side', 'Side by side'], ['slider', 'Slider']] as [View, string][]).map(([id, label]) => <label key={id} className={`segment ${view === id ? 'selected' : ''}`}>
             <input type="radio" name="result-view" checked={view === id} onChange={() => setView(id)} />{label}</label>)}
@@ -224,10 +290,12 @@ export function ImportDialog({ scene, token, data, preselect, onClose, onImporte
 }
 
 /** Step 05: generate from the approval, then compare and keep results. */
-export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, exportOpen, onExportOpen, onGenerate, onChanged, onGo }: {
+export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, exportOpen, onExportOpen, onGenerate, onChanged, onRefresh, onGo }: {
   scene: SceneDetail; data: Bootstrap; generationEngine: string; busy: boolean; runStatus: ReactNode; exportOpen: boolean; onExportOpen: (open: boolean) => void
-  onGenerate: (mode: 'generate' | 'variation') => void; onChanged: (detail: SceneDetail, message: string) => void; onGo: () => void
+  onGenerate: (mode: 'generate' | 'variation') => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
 }) {
+  const [selecting, setSelecting] = useState(false)
+  const timing = scene.generation_timing
   const token = data.session_token
   const [viewing, setViewing] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null | false>(false)
@@ -253,6 +321,7 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
         <p>{codex ? <>Generate sends the Base Image and {plural(references, 'reference photo')} to OpenAI via Codex, using your own ChatGPT sign-in. Each attempt uses your plan’s image allowance. It runs once per click and is never retried on its own.</>
           : <>Manual generation is selected in Studio settings. Export the package, make the image in any app, then import it here. Nothing is sent from the studio.</>}</p>
         <p className="hint">Approved {formatDate(approval.approved_at)} · prompt version {approval.prompt_version}{approval.is_polished ? ' (polished)' : ''} · {scene.total_images} {scene.total_images === 1 ? 'image' : 'images'} attached</p>
+        {codex && timing.average_seconds != null && <p className="hint">Codex has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
       </div>
       {codex ? <>
         <div className="generate-actions">
@@ -269,9 +338,13 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
     </div>}
 
     <div className="results-head"><h4>Results {scene.results.length > 0 && <span className="hint">({scene.results.length})</span>}</h4>
-      {!approval && scene.results.length > 0 && <button type="button" className="link-button" disabled={busy} onClick={() => setImporting(null)}>Import result</button>}</div>
+      <span className="results-head-actions">
+        {!approval && scene.results.length > 0 && <button type="button" className="link-button" disabled={busy} onClick={() => setImporting(null)}>Import result</button>}
+        {scene.results.length > 0 && !selecting && <button type="button" className="secondary compact" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
+      </span></div>
     {!scene.results.length ? <p className="hint">No results yet. Every image you generate or import is kept here as its own version, linked to the inputs it was made from.</p>
-      : <div className="result-grid">{scene.results.map(r => <ResultCard key={r.id} result={r} onOpen={() => setViewing(r.id)} />)}</div>}
+      : <ResultsGrid results={scene.results} token={token} titleOf={() => scene.title} selecting={selecting} onSelecting={setSelecting} onOpen={setViewing}
+        onChanged={(detail, message) => { if (detail) onChanged(detail, message); else onRefresh(message) }} />}
 
     {scene.exports.length > 0 && <details className="package-list"><summary>Manual packages ({scene.exports.length})</summary>
       <ul>{scene.exports.map(e => <li key={e.id}>
@@ -304,6 +377,7 @@ export default function ResultsGallery({ data, onOpenScene }: { data: Bootstrap;
   const [query, setQuery] = useState('')
   const [preferred, setPreferred] = useState(false)
   const [viewing, setViewing] = useState<string | null>(null)
+  const [selecting, setSelecting] = useState(false)
   const load = useCallback(() => request<Result[]>('/api/results').then(list => { setResults(list); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
   useEffect(() => { void load() }, [load])
   const filtered = results.filter(r => (r.scene_title ?? '').toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!preferred || r.is_preferred))
@@ -312,13 +386,15 @@ export default function ResultsGallery({ data, onOpenScene }: { data: Bootstrap;
     <div className="library-toolbar filters">
       <div><label htmlFor="result-search">Search results</label><input id="result-search" type="search" value={query} placeholder="Search by scene title" onChange={e => setQuery(e.target.value)} /></div>
       <label className="checkbox-label"><input type="checkbox" checked={preferred} onChange={e => setPreferred(e.target.checked)} /> Preferred only</label>
+      {!selecting && filtered.length > 0 && <button type="button" className="secondary" onClick={() => setSelecting(true)}>Select</button>}
     </div>
     {error && <div className="error" role="alert"><strong>Your results could not be loaded.</strong><p>{error}</p><button className="secondary" onClick={() => void load()}>Try again</button></div>}
     <p className="library-status" role="status">{message}</p>
     {loading ? <p role="status">Loading your results…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">EVERY VERSION HAS A HOME.</span>
       <h2>{results.length ? 'No matching results' : 'Your results will appear here'}</h2>
       <p>{results.length ? 'Try another title or show all results.' : 'Approve a scene, then generate it with Codex or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p></div>
-      : <div className="result-grid gallery">{filtered.map(r => <ResultCard key={r.id} result={r} title={r.scene_title} onOpen={() => setViewing(r.id)} />)}</div>}
+      : <ResultsGrid className="gallery" results={filtered} token={data.session_token} titleOf={r => r.scene_title ?? 'Scene'} showTitles selecting={selecting} onSelecting={setSelecting} onOpen={setViewing}
+        onChanged={(_detail, note) => { setMessage(note); void load() }} />}
     {shown && <ResultViewer key={shown.id} result={shown} base={{ url: shown.scene_image_url!, width: shown.scene_width!, height: shown.scene_height! }} sceneTitle={shown.scene_title ?? ''} token={data.session_token}
       onClose={() => setViewing(null)} onChanged={(_detail, note) => { setMessage(note); void load() }} onOpenScene={() => onOpenScene(shown.scene_id)} />}
   </div>

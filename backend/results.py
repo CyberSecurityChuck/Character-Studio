@@ -8,7 +8,8 @@ the approval it was made from, so its exact inputs stay readable after later edi
 import hashlib
 import json
 import re
-from typing import Literal
+import zipfile
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -16,6 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from backend.configuration import asset_path
@@ -313,7 +315,10 @@ def results(request: Request):
                 approval = current_approval(session, result.scene_id)
                 current[result.scene_id] = approval.id if approval else None
             data = result_data(
-                result, session.get(Approval, result.approval_id), current[result.scene_id]
+                result,
+                session.get(Approval, result.approval_id),
+                current[result.scene_id],
+                session.get(EngineJob, result.job_id) if result.job_id else None,
             )
             data["scene_title"] = scene.title
             data["scene_image_url"] = f"/api/scenes/{scene.id}/image/original"
@@ -336,18 +341,48 @@ def result_image(request: Request, result_id: str, variant: Literal["original", 
 
 @router.put("/results/{result_id}/preferred")
 def set_preferred(request: Request, result_id: str, body: PreferredInput):
-    """One preferred result per scene; choosing one clears the others."""
+    """A favourite mark; a scene may have several preferred results (user's choice)."""
     with writing(request) as session:
         result = require_result(session, result_id)
-        if body.preferred:
-            for other in session.scalars(
-                select(GenerationResult).where(
-                    GenerationResult.scene_id == result.scene_id, GenerationResult.is_preferred
-                )
-            ):
-                other.is_preferred = False
         result.is_preferred = body.preferred
         return scene_detail(request, session, require_scene(session, result.scene_id))
+
+
+def download_name(scene_title: str, version: int, path: str) -> str:
+    title = re.sub(r"[^\w .-]+", "", scene_title).strip()[:60] or "Scene"
+    return f"{title} - result {version}.{path.rsplit('.', 1)[1]}"
+
+
+@router.get("/results/download")
+def download_results(request: Request, id: Annotated[list[str], Query(max_length=200)]):
+    """Several results in one zip (one image downloads directly from its own address)."""
+    settings = request.app.state.settings
+    folder = asset_path(settings, "exports")
+    folder.mkdir(exist_ok=True)
+    target = folder / f"results-{uuid4().hex}.zip"
+    try:
+        with Session(request.app.state.engine) as session, zipfile.ZipFile(target, "w") as archive:
+            used = set()
+            for result_id in dict.fromkeys(id):
+                result = require_result(session, result_id)
+                scene = session.get(Scene, result.scene_id)
+                title = scene.title if scene else "Scene"
+                name = download_name(title, result.version, result.original_path)
+                stem, number = name, 2
+                while name in used:
+                    name = stem.replace(" - result", f" ({number}) - result", 1)
+                    number += 1
+                used.add(name)
+                archive.write(asset_path(settings, result.original_path), name)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return FileResponse(
+        target,
+        media_type="application/zip",
+        filename="Character Studio results.zip",
+        background=BackgroundTask(target.unlink, missing_ok=True),
+    )
 
 
 @router.delete("/results/{result_id}")

@@ -677,3 +677,10 @@ button .inline-icon { margin-right: 6px; }
 .check-ok { color: var(--success); font-size: 12px; font-weight: 600; }
 .backup-folder { margin-top: 12px; overflow-wrap: anywhere; }
 .backup-folder .link-button { min-height: 30px; padding: 2px 6px; font-size: 12px; }
+.result-card.picked, .result-card:has(.card-main[aria-pressed=true]) { border-color: var(--accent); background: var(--accent-soft); }
+.result-card .menu-button { background: rgb(254 253 249 / 90%); border-color: var(--line); color: var(--text); }
+.result-card .pick-box + .result-thumb .preferred-badge { left: 40px; }
+.results-head-actions { display: flex; align-items: center; gap: 8px; }
+button.compact { min-height: 32px; padding: 4px 12px; font-size: 12px; }
+.result-card .card-main { grid-template-columns: minmax(0, 1fr); }
+.result-copy { min-width: 0; }

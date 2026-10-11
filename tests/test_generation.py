@@ -78,6 +78,9 @@ def test_generate_sends_only_the_approved_package_and_keeps_every_result(
     [result] = detail["results"]
     approval_id = scene["approval"]["current"]["id"]
     assert (result["version"], result["source"], result["mode"]) == (1, "codex_cli", "generate")
+    assert isinstance(result["seconds"], int) and result["seconds"] >= 0
+    assert detail["generation_timing"]["runs"] == 1
+    assert job["seconds"] == result["seconds"]
     assert result["approval_id"] == approval_id and result["approval_current"]
     assert result["job_id"] == job["id"] and result["prompt_version"] == 1
     assert result["mappings"][0]["character_name"] == "Ada"
@@ -320,7 +323,19 @@ def test_results_gallery_preferred_and_deletion(client, settings):
 
     prefer(oldest)
     detail = prefer(newest)
+    # Several results of one scene may be preferred (user's choice in the Phase 5 review).
+    assert [r["is_preferred"] for r in detail["results"]] == [True, True]
+    detail = prefer(oldest, False)
     assert [r["is_preferred"] for r in detail["results"]] == [True, False]
+
+    # Several results download as one zip, named after their scene and version.
+    zipped = client.get(f"/api/results/download?id={newest['id']}&id={oldest['id']}")
+    assert zipped.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(zipped.content)).namelist()
+    assert names == ["Two people - result 2.jpg", "Two people - result 1.jpg"]
+    assert not any((settings.data_dir / "exports").glob("results-*.zip"))  # Temporary file gone.
+    imported = client.get(f"/api/scenes/{scene['id']}").json()
+    assert all(r["seconds"] is None for r in imported["results"])  # The studio did not time them.
 
     files = [
         settings.data_dir / row
