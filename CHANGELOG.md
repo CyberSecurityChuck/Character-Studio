@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-11 — Phase 5 accepted
+
+- The user's second follow-up check passed (9/9, 0 problems, "Phase 5 looks good"). Phase 5 (Generation and Results, with the package-copies pop-up and backups/restore) is complete. Status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). Phase 5.5 needs "Approve Phase 5.5".
+
 ## 2026-10-11 — Phase 5 follow-up fixes (local commit, awaiting second follow-up check)
 
 - From the user's follow-up check (`Phase_Checks/Phase5_Followup_Report.md`: 19/19 steps, 2 flagged, "Needs fixes first"). Approved with "Yes, go ahead".

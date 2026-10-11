@@ -4,7 +4,7 @@ Checkpoint: 2026-10-11 IST (+05:30)
 
 ## Objective and authorization
 
-The user said **"Approve Phase 5"** on 2026-10-11 (Asia/Kolkata). Phase 5 (Generation and Results) is **implemented and committed locally, awaiting the user's review** with `Phase_Checks/Phase5_Review_Checklist.html`. Phase 4 was accepted earlier the same day. Do not start Phase 5.5 without "Approve Phase 5.5". Do not push without new approval.
+The user said **"Approve Phase 5"** on 2026-10-11 (Asia/Kolkata). Phase 5 (Generation and Results) is **complete and accepted** (second follow-up check 9/9, 0 problems, "Phase 5 looks good", 2026-10-11) after the review (D018 fixes), the additions from the user's answers (D017) and the follow-up (D019 fixes). The user approved recording the acceptance and pushing `main` ("Record and push"); every later push needs new approval. Do not start Phase 5.5 without "Approve Phase 5.5".
 
 Standing rules: no project file changes without the user's approval (describe, then wait for a yes; reading, testing and running the app are fine). No paid API calls or keys (D009). Every engine run is started by the user; never retried or resumed automatically. Never read or store CLI logins.
 
@@ -34,4 +34,5 @@ Standing rules: no project file changes without the user's approval (describe, t
 - Gotchas: the Codex instruction is one CLI argument (limit 24,000 characters); a normal run never scans Codex's folder, only the reported path counts; "Look for a saved image" lists only that run's thread folder; imports against a package keep that package's approval even after it ended.
 - Done since: the user's review report (29/29, 0 problems, two notes) led to the D018 fixes, approved with "Several per scene" and "Yes, go ahead". `phase5-additions` was fast-forwarded into `main`, the fixes committed on `main`, and the sibling worktree removed. 97 tests pass; Ruff and build pass; browser QA on synthetic data (durations, average line, card menus, Select mode on both pages, several preferred, 375 px, no console errors).
 - Follow-up report (`Phase_Checks/Phase5_Followup_Report.md`, 19/19, 2 flagged) led to the D019 fixes (average time whatever the engine, icon buttons for backup and package actions, Delete package keeping imported results), approved with "Yes, go ahead" and committed locally. 98 tests pass; Ruff and build pass; browser QA on synthetic data (Manual engine with the average line, package delete, backup check, 375 px, no console errors).
-- Next action: wait for the user's second follow-up report (`Phase_Checks/Phase5_Followup2_Report.md`), fix what it flags with approval, then ask before pushing. Phase 5.5 needs "Approve Phase 5.5".
+- Second follow-up report (`Phase_Checks/Phase5_Followup2_Report.md`): 9/9, 0 problems, "Phase 5 looks good". Phase 5 accepted; acceptance recorded and `main` pushed to the private `origin` with approval (CI not run).
+- Next action: wait for "Approve Phase 5.5" (Batch Processing, PLAN.md and D010). The paid API adapter stays unbuilt until separately approved.
