@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import { request, send, type Bootstrap } from './api'
 import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
-import { MappingPanel, PolishDialog, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
+import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { replaceRoute, routeParts } from './route'
 
 export type Box = { x: number; y: number; width: number; height: number }
@@ -19,11 +19,11 @@ export type AnalysisData = {
   uncertainties: Uncertainty[]
 }
 type Analysis = { id: string; version: number; source: string; engine_version: string | null; has_raw_output: boolean; based_on_id: string | null; created_at: string; analysis: AnalysisData; confirmed_uncertainties: Uncertainty[] }
-type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
+export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
 export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
 export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; active_job: Job | null }
 export type SubjectAssignment = { label: string; bounding_box: Box; position: string; summary: string; action: 'replace' | 'keep' | 'unresolved'; character_id: string | null; reference_ids: string[]; references_auto: boolean; confirmed: boolean; images: number[]; problems: string[] }
-export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
+export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_id: string; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
 export type PendingPolish = { job_id: string; prompt_id: string; prompt_version: number; polished_text: string; engine_version: string | null; missing: string[] }
 export type SceneDetail = SceneSummary & {
   analyses: Analysis[]; prompts: Prompt[]; jobs: Job[]
@@ -42,7 +42,6 @@ const cameraFields: [CameraField, string][] = [['height', 'Height'], ['direction
 const sceneFields: ['environment' | 'lighting' | 'color_palette' | 'atmosphere', string][] = [['environment', 'Environment'], ['lighting', 'Lighting and shadows'], ['color_palette', 'Colour palette'], ['atmosphere', 'Atmosphere']]
 export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved' }
 const sourceLabels: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex', manual_import: 'Manual import', user_edit: 'Your edit' }
-const promptSources: Record<string, string> = { template: 'Template', restored: 'Restored', user_edit: 'Edited', polished: 'Polished' }
 const engineLabels: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex', manual: 'Manual' }
 const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
 const sendsTo: Record<string, string> = { claude_cli: 'Anthropic via Claude Code', codex_cli: 'OpenAI via Codex' }
@@ -278,6 +277,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const [highlight, setHighlight] = useState<string | null>(null)
   const [boxes, setBoxes] = useState<BoxDraft[] | null>(null)
   const [polishOpen, setPolishOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const manualRef = useRef<HTMLDialogElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const lock = useRef(false)
@@ -424,11 +424,20 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     }, 'Prompt version saved.')
   }
   const restorePrompt = (prompt: Prompt) => {
-    if (!guard()) return
+    if (!guard()) return false
+    if (prompt.id === latestPrompt?.id) {
+      // The current version: show it exactly as saved rather than as an unsaved restore.
+      setPromptText(prompt.prompt_text); setNegative(prompt.negative_prompt); setChanges(prompt.scene_changes)
+      setPromptBase({ text: prompt.prompt_text, negative: prompt.negative_prompt, changes: prompt.scene_changes, analysisId: prompt.analysis_id, mappingHash: prompt.mapping_hash, source: 'user_edit', saved: true })
+      setOrigin(null)
+      setMessage(`Version ${prompt.version} is the current prompt and is shown in the editor.`)
+      return true
+    }
     setPromptText(prompt.prompt_text); setNegative(prompt.negative_prompt); setChanges(prompt.scene_changes)
     setPromptBase({ text: prompt.prompt_text, negative: prompt.negative_prompt, changes: prompt.scene_changes, analysisId: prompt.analysis_id, mappingHash: prompt.mapping_hash, source: 'restored', saved: false })
     setOrigin({ text: prompt.prompt_text, source: 'restored' })
     setMessage(`Version ${prompt.version} loaded into the editor. Save to make it the current prompt.`)
+    return true
   }
   const polish = () => {
     if (!latestPrompt) return
@@ -485,7 +494,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
           <div className="image-meta"><span>Image 1 · Base Image · {scene.width} × {scene.height}</span>
             {!boxes && !!canvasBoxes.length && <label className="checkbox-label"><input type="checkbox" checked={showBoxes} onChange={e => setShowBoxes(e.target.checked)} /> Show subjects</label>}</div>
           {boxes && <div className="adjust-bar">
-            <p className="hint">Drag a box to move it and its corner to resize. Labels never renumber, so assignments stay with the same person.</p>
+            <p className="hint">Click a box to select it, drag it to move, and drag any side or corner handle to make it larger or smaller. With the keyboard: arrow keys move, Shift + arrow keys resize. Labels never renumber, so assignments stay with the same person.</p>
             <div className="adjust-actions">
               <button type="button" className="secondary" disabled={busy || boxes.length >= 20} onClick={addSubject}>+ Add subject</button>
               <button type="button" className="danger secondary" disabled={busy || !highlight || !boxes.some(b => b.label === highlight)} onClick={() => { setBoxes(boxes.filter(b => b.label !== highlight)); setHighlight(null) }}>Remove {highlight && boxes.some(b => b.label === highlight) ? highlight : 'selected'}</button>
@@ -555,7 +564,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
           {boxes ? <p className="notice-line">Adjusting subjects. Save or cancel next to the image to continue assigning characters.</p>
             : <MappingPanel scene={scene} token={token} characters={characters} groups={groups} busy={busy} highlight={highlight} onHighlight={setHighlight} onDirty={setMappingDirty}
               onSaved={detail => accept(detail, !promptDirty)} onRun={runAction}
-              onAdjust={() => { if (current) { setBoxes(current.analysis.subjects.map(s => ({ label: s.label, bounding_box: s.bounding_box }))); setShowBoxes(true) } }} />}
+              onAdjust={() => { if (current) { setBoxes(current.analysis.subjects.map(s => ({ label: s.label, bounding_box: s.bounding_box }))); setShowBoxes(true); setHighlight(h => h ?? current.analysis.subjects[0]?.label ?? null) } }} />}
           {!boxes && status.characters === 'done' && !mappingDirty && next('prompt', 'Next: the prompt')}
         </section>
 
@@ -581,11 +590,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
               <button type="button" className="secondary" disabled={busy || !!scene.active_job || !latestPrompt || promptDirty || !promptBase.saved || !!scene.pending_polish}
                 title={promptDirty || !promptBase.saved ? 'Save the prompt first; Polish works on the saved version' : scene.pending_polish ? 'Compare the polished version first' : 'Sends the prompt text and analysis to Anthropic via Claude Code. Runs once.'}
                 onClick={polish}><Icon name="spark" /> Polish prompt</button>
-              {scene.prompts.length > 0 && <><label htmlFor="prompt-version" className="visually-hidden">Saved prompt versions</label>
-                <select id="prompt-version" className="inline-select" value="" onChange={e => { const p = scene.prompts.find(x => x.id === e.target.value); if (p) restorePrompt(p) }}>
-                  <option value="">Saved versions ({scene.prompts.length})</option>
-                  {scene.prompts.map(p => <option key={p.id} value={p.id}>Version {p.version} · {promptSources[p.source] ?? p.source}{p.is_polished && p.source !== 'polished' ? ' (polished)' : ''} · {formatDate(p.created_at)}</option>)}
-                </select></>}
+              {scene.prompts.length > 0 && <button type="button" className="secondary" disabled={busy} onClick={() => setHistoryOpen(true)}><Icon name="clock" /> Version history ({scene.prompts.length})</button>}
             </div>
             <div className="panel-actions">
               <span className="spacer">{promptDirty ? 'Unsaved edits' : promptBase.saved && latestPrompt ? `Version ${latestPrompt.version} saved${latestPrompt.is_polished ? ' · polished' : ''}` : ''}</span>
@@ -613,6 +618,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     <dialog ref={manualRef} className="image-dialog manual-dialog" aria-labelledby="manual-title" onClose={() => setManual(false)}>
       {manual && <ManualAnalysis scene={scene} token={token} onClose={() => setManual(false)} onImported={detail => { setManual(false); if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id]); void accept(detail, !promptDirty).then(() => setMessage(`Analysis version ${detail.analyses[0].version} imported.`)) }} />}
     </dialog>
+    {historyOpen && <PromptHistory scene={scene} token={token} editorDirty={promptDirty} onClose={() => setHistoryOpen(false)}
+      onLoad={prompt => { if (restorePrompt(prompt)) setHistoryOpen(false) }}
+      onDeleted={(detail, wasCurrent, version) => { void accept(detail, wasCurrent).then(() => setMessage(`Prompt version ${version} deleted.`)) }} />}
     {polishOpen && scene.pending_polish && <PolishDialog key={scene.pending_polish.job_id} scene={scene} pending={scene.pending_polish} token={token} onClose={() => setPolishOpen(false)}
       onSaved={(detail, note) => { setPolishOpen(false); void accept(detail).then(() => setMessage(note)) }} />}
   </div>

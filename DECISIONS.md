@@ -150,3 +150,12 @@
 - Decision: the workspace opens on the step its saved stage suggests and then stays on the step the user chose.
 - Alternatives: a separate subjects table with renumbering (assignments could follow the wrong person); dynamic automatic reference selection at approval time (adding a library photo would cancel approvals unexpectedly); trusting a stored "valid" flag (misses offline changes); names in the prompt (privacy, and risk of the model matching a public figure).
 - Approval: "Approve Phase 4" (2026-10-11). Schema `0005_mapping` is additive. No dependencies added.
+
+## D015 — Phase 4 review fixes (2026-10-11)
+
+- Decision: the required-element check treats "Subject N's identity comes only from Image …" as its own required element. A sentence linking the subject to all its image numbers must also contain "only"; the attached-images list alone no longer satisfies the check. Polish rules name this instruction explicitly.
+- Decision: prompt versions may be deleted. Refused for the version a valid approval uses ("withdraw the approval first") and for a version being polished. Deleting the current version makes the previous one current (or brings back a template draft). Approval snapshots keep their own copy of the prompt, so history stays complete. New version numbers skip any number an approval recorded, so approval history never points at two different prompts with the same number.
+- Decision: the version list moves from a dropdown into a Version history dialog with a list, preview and footer actions (Delete left; Close and Load into editor right), matching the studio's dialog pattern.
+- Decision: subject boxes get eight resize handles on the selected box only, to keep the image readable; each handle moves only its own sides, with a 2% minimum size.
+- Alternatives: soft-deleting prompt versions (needs a schema change; snapshots already preserve approved text); renumbering versions after deletion (breaks references in approvals and polish runs).
+- Approval: user's Phase 4 review report and "Yes, please go ahead with all four fixes" (2026-10-11). No schema change, no dependencies added.

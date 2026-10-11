@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-11 — Phase 4 review fixes (local commit, awaiting follow-up check)
+
+- From the user's Phase 4 review (34/34 steps, "Needs fixes first"). Approved with "Yes, please go ahead with all four fixes".
+- Subject box labels no longer lose their first letters in Adjust subjects: a leftover Phase 3 style rule positioned every element inside a box, including the avatar and the resize handle.
+- Subject boxes can now be resized from any side or corner: eight handles on the selected box with larger grab areas, a box is selected when Adjust subjects opens, and the help text explains moving and resizing (Shift + arrow keys on the keyboard).
+- The required-element check now also needs the instruction that each subject's identity comes only from its own images; listing the attached images is no longer enough. Polish is told to keep it.
+- Prompt versions can be deleted from a new Version history window (list, preview, Load into editor, Delete version). The approved version and a version being polished cannot be deleted; version numbers recorded by approvals are never reused.
+- No schema change. 82 tests pass (1 new, 1 extended).
+
 ## 2026-10-11 — Phase 4: Character Mapping and Approval (local commit, awaiting review)
 
 - Approved by the user ("Approve Phase 4"). The scene workspace is now four steps: Analysis, Characters, Prompt, Review, kept in the address so a refresh keeps the step.

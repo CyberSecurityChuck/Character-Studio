@@ -42,7 +42,7 @@ from backend.models import (
 )
 from backend.persistence import writing_session
 from backend.prompting import build_prompt, check_prompt, polish_instruction
-from backend.scene_store import active_job, latest, next_version, now
+from backend.scene_store import active_job, latest, now
 from backend.workflow import (
     MAX_REFERENCES,
     add_analysis,
@@ -53,6 +53,7 @@ from backend.workflow import (
     check_approval,
     create_approval,
     current_approval,
+    next_prompt_version,
     refresh_workflow,
     review,
     save_mappings,
@@ -254,6 +255,7 @@ def approval_data(approval: Approval):
         "invalidated_reason": approval.invalidated_reason,
         "snapshot_hash": approval.snapshot_hash,
         "analysis_version": inputs["analysis"]["version"],
+        "prompt_id": inputs["prompt"]["id"],
         "prompt_version": inputs["prompt"]["version"],
         "is_polished": inputs["prompt"]["is_polished"],
         "mappings": [
@@ -932,7 +934,7 @@ def save_prompt(request: Request, scene_id: str, body: PromptInput):
                 scene_id=scene_id,
                 analysis_id=body.analysis_id,
                 mapping_hash=body.mapping_hash,
-                version=next_version(session, PromptVersion, scene_id),
+                version=next_prompt_version(session, scene_id),
                 prompt_text=body.prompt_text,
                 negative_prompt=body.negative_prompt,
                 scene_changes=body.scene_changes,
@@ -1027,7 +1029,7 @@ def use_polished(request: Request, scene_id: str, body: PolishedInput):
                 scene_id=scene_id,
                 analysis_id=original.analysis_id,
                 mapping_hash=original.mapping_hash,
-                version=next_version(session, PromptVersion, scene_id),
+                version=next_prompt_version(session, scene_id),
                 prompt_text=body.prompt_text,
                 negative_prompt=original.negative_prompt,
                 scene_changes=original.scene_changes,
@@ -1049,6 +1051,32 @@ def keep_original(request: Request, scene_id: str, job_id: str):
     with writing(request) as session:
         scene = require_scene(session, scene_id)
         _polish_job(session, scene_id, job_id).decision = "kept"
+        return scene_detail(request, session, scene)
+
+
+@router.delete("/scenes/{scene_id}/prompts/{prompt_id}")
+def delete_prompt(request: Request, scene_id: str, prompt_id: str):
+    """Delete one prompt version. Approval snapshots keep their own copy of the text."""
+    with writing(request) as session:
+        scene = require_scene(session, scene_id)
+        prompt = session.get(PromptVersion, prompt_id)
+        if prompt is None or prompt.scene_id != scene_id:
+            raise HTTPException(404, "This prompt version no longer exists. Reload the scene.")
+        job = active_job(session, scene_id)
+        if job is not None and job.input_id == prompt_id:
+            raise HTTPException(
+                409, "This version is being polished. Wait or cancel the run first."
+            )
+        approval, reason = check_approval(session, scene)
+        if approval is not None and not reason:
+            if json.loads(approval.snapshot_json)["inputs"]["prompt"]["id"] == prompt_id:
+                raise HTTPException(
+                    409, "This version is approved. Withdraw the approval before deleting it."
+                )
+        session.delete(prompt)
+        session.flush()
+        scene.updated_at = now()
+        refresh_workflow(session, scene)
         return scene_detail(request, session, scene)
 
 

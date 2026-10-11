@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { send } from './api'
 import { sentence } from './Controls'
 import { Avatar, type Character, type Group } from './Library'
-import type { ApprovalRecord, Box, PendingPolish, SceneDetail, SubjectAssignment } from './Scenes'
+import type { ApprovalRecord, Box, PendingPolish, Prompt, SceneDetail, SubjectAssignment } from './Scenes'
 
 export type Action = 'replace' | 'keep' | 'unresolved'
 export type BoxDraft = { label: string; bounding_box: Box }
 type Draft = { action: Action; character_id: string | null; reference_ids: string[] | null }
+type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+type DragMode = 'move' | Handle
+const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+const MIN_SIZE = 0.02
 
 const MAX_REFERENCES = 4
 const actionLabels: Record<Action, string> = { replace: 'Use a character', keep: 'Keep original', unresolved: 'Decide later' }
@@ -27,14 +31,22 @@ export function SubjectCanvas({ scene, boxes, names, show, editing, selected, on
   selected: string | null; onSelect?: (label: string) => void; onChange?: (label: string, box: Box) => void
 }) {
   const frame = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ label: string; mode: 'move' | 'resize'; x: number; y: number; box: Box } | null>(null)
-  function update(label: string, from: Box, dx: number, dy: number, mode: 'move' | 'resize') {
-    const next = mode === 'move'
-      ? { ...from, x: clamp(from.x + dx, 0, 1 - from.width), y: clamp(from.y + dy, 0, 1 - from.height) }
-      : { ...from, width: clamp(from.width + dx, 0.02, 1 - from.x), height: clamp(from.height + dy, 0.02, 1 - from.y) }
-    onChange?.(label, { x: round(next.x), y: round(next.y), width: round(next.width), height: round(next.height) })
+  const drag = useRef<{ label: string; mode: DragMode; x: number; y: number; box: Box } | null>(null)
+  function update(label: string, from: Box, dx: number, dy: number, mode: DragMode) {
+    let left = from.x, top = from.y, right = from.x + from.width, bottom = from.y + from.height
+    if (mode === 'move') {
+      left = clamp(from.x + dx, 0, 1 - from.width); top = clamp(from.y + dy, 0, 1 - from.height)
+      right = left + from.width; bottom = top + from.height
+    } else {
+      // Each handle moves only its own sides; a box never shrinks below 2% of the image.
+      if (mode.includes('w')) left = clamp(left + dx, 0, right - MIN_SIZE)
+      if (mode.includes('e')) right = clamp(right + dx, left + MIN_SIZE, 1)
+      if (mode.includes('n')) top = clamp(top + dy, 0, bottom - MIN_SIZE)
+      if (mode.includes('s')) bottom = clamp(bottom + dy, top + MIN_SIZE, 1)
+    }
+    onChange?.(label, { x: round(left), y: round(top), width: round(right - left), height: round(bottom - top) })
   }
-  function start(e: PointerEvent<HTMLElement>, item: BoxDraft, mode: 'move' | 'resize') {
+  function start(e: PointerEvent<HTMLElement>, item: BoxDraft, mode: DragMode) {
     onSelect?.(item.label)
     if (!editing) return
     e.preventDefault(); e.stopPropagation()
@@ -51,7 +63,8 @@ export function SubjectCanvas({ scene, boxes, names, show, editing, selected, on
     const steps: Record<string, [number, number]> = { ArrowLeft: [-0.01, 0], ArrowRight: [0.01, 0], ArrowUp: [0, -0.01], ArrowDown: [0, 0.01] }
     if (!editing || !steps[e.key]) return
     e.preventDefault()
-    update(item.label, item.bounding_box, ...steps[e.key], e.shiftKey ? 'resize' : 'move')
+    // Shift + arrows grow or shrink the box from its bottom-right corner.
+    update(item.label, item.bounding_box, ...steps[e.key], e.shiftKey ? 'se' : 'move')
   }
   const interactive = editing || !!onSelect
   return <div ref={frame} className={`base-image ${editing ? 'editing' : ''}`} style={{ aspectRatio: `${scene.width} / ${scene.height}` }}
@@ -67,7 +80,7 @@ export function SubjectCanvas({ scene, boxes, names, show, editing, selected, on
         style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.width * 100}%`, height: `${b.height * 100}%` }}
         onPointerDown={e => start(e, item, 'move')} onKeyDown={e => { if (!editing && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect?.(item.label) } else key(e, item) }}>
         <span className="subject-tag">{who && <Avatar character={who} size="mini" />}{item.label}{who ? ` · ${who.name}` : ''}</span>
-        {editing && <span className="resize-handle" aria-hidden="true" onPointerDown={e => start(e, item, 'resize')} />}
+        {editing && selected === item.label && HANDLES.map(h => <span key={h} className={`resize-handle h-${h}`} aria-hidden="true" onPointerDown={e => start(e, item, h)} />)}
       </span>
     })}
   </div>
@@ -275,6 +288,76 @@ export function PolishDialog({ scene, pending, token, onClose, onSaved }: { scen
         <span className="spacer" />
         <button type="button" className="secondary" disabled={busy} onClick={() => void decide(false)}>Keep original</button>
         <button type="button" disabled={busy || !text.trim() || (missing.length > 0 && !accepted)} onClick={() => void decide(true)}>{text === pending.polished_text ? 'Use polished' : 'Use my edited version'}</button>
+      </div>
+    </div>
+  </dialog>
+}
+
+const promptSource = (p: Prompt) => p.source === 'polished' ? 'Polished' : p.is_polished ? 'Polished, edited by you'
+  : ({ template: 'Template', restored: 'Restored', user_edit: 'Edited by you' } as Record<string, string>)[p.source] ?? p.source
+
+/** Every saved prompt version: preview, load into the editor, or delete. */
+export function PromptHistory({ scene, token, editorDirty, onLoad, onDeleted, onClose }: {
+  scene: SceneDetail; token: string; editorDirty: boolean; onLoad: (prompt: Prompt) => void
+  onDeleted: (detail: SceneDetail, wasCurrent: boolean, version: number) => void; onClose: () => void
+}) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(scene.prompts[0]?.id ?? null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => { ref.current?.showModal() }, [])
+  useEffect(() => { if (!scene.prompts.some(p => p.id === selectedId)) setSelectedId(scene.prompts[0]?.id ?? null) }, [scene.prompts, selectedId])
+  const chosen = scene.prompts.find(p => p.id === selectedId)
+  const currentId = scene.prompts[0]?.id
+  const approvedId = scene.approval.state === 'approved' ? scene.approval.current?.prompt_id : null
+  const polishing = !!chosen && scene.active_job?.kind === 'polish' && scene.active_job.input_id === chosen.id
+  const lockReason = !chosen ? '' : chosen.id === approvedId ? 'This version is approved. Withdraw the approval on the Review tab to delete it.' : polishing ? 'This version is being polished. Wait for the run to finish or cancel it.' : ''
+
+  async function remove() {
+    if (!chosen) return
+    const isCurrent = chosen.id === currentId
+    const next = scene.prompts[1]
+    const message = [`Delete prompt version ${chosen.version}? This cannot be undone.`]
+    if (isCurrent) message.push(next ? `Version ${next.version} becomes the current prompt.` : 'The editor will show a fresh draft from the template.')
+    if (isCurrent && editorDirty) message.push('Your unsaved edits in the editor will be replaced.')
+    message.push('Approval records keep their own copy of any prompt they approved.')
+    if (!window.confirm(message.join(' '))) return
+    setBusy(true); setError('')
+    try { onDeleted(await send<SceneDetail>(`/api/scenes/${scene.id}/prompts/${chosen.id}`, 'DELETE', token), isCurrent, chosen.version) }
+    catch (e) { setError(e instanceof Error ? e.message : 'The version could not be deleted.') }
+    finally { setBusy(false) }
+  }
+
+  return <dialog ref={ref} className="image-dialog history-dialog" aria-labelledby="history-title" onClose={onClose}>
+    <div className="history-body">
+      <h2 id="history-title">Prompt version history</h2>
+      <p className="hint">Every saved version is kept until you delete it. The newest is the current prompt. Approval records keep their own copy of what they approved.</p>
+      {!scene.prompts.length ? <p className="notice-line">No saved versions yet.</p> : <div className="history-grid">
+        <ul className="history-list" aria-label="Prompt versions">
+          {scene.prompts.map(p => <li key={p.id}>
+            <button type="button" className={`history-item ${p.id === selectedId ? 'selected' : ''}`} aria-pressed={p.id === selectedId} onClick={() => setSelectedId(p.id)}>
+              <span className="history-row"><strong>Version {p.version}</strong>
+                {p.id === currentId && <span className="history-badge current">Current</span>}
+                {p.id === approvedId && <span className="history-badge approved">Approved</span>}</span>
+              <span className="history-meta">{promptSource(p)} · {formatDate(p.created_at)}</span>
+            </button>
+          </li>)}
+        </ul>
+        {chosen && <section className="history-preview" aria-label={`Version ${chosen.version}`}>
+          <div className="history-preview-head"><h3>Version {chosen.version}</h3><span className="hint">{promptSource(chosen)} · {formatDate(chosen.created_at)}{chosen.is_polished && chosen.engine_version ? ` · ${chosen.engine_version}` : ''}</span></div>
+          <pre className="review-prompt">{chosen.prompt_text}</pre>
+          <h4 className="sub-head">Negative prompt</h4>
+          <pre className="review-prompt short">{chosen.negative_prompt || '—'}</pre>
+          {chosen.scene_changes && <><h4 className="sub-head">Scene changes</h4><p className="history-changes">{chosen.scene_changes}</p></>}
+          {lockReason && <p className="notice-line">{lockReason}</p>}
+        </section>}
+      </div>}
+      {error && <p className="frame-error" role="alert">{error}</p>}
+      <div className="dialog-actions history-actions">
+        <button type="button" className="danger secondary" disabled={!chosen || busy || !!lockReason} title={lockReason || undefined} onClick={() => void remove()}>{busy ? 'Deleting…' : 'Delete version'}</button>
+        <span className="spacer" />
+        <button type="button" className="secondary" onClick={onClose}>Close</button>
+        <button type="button" disabled={!chosen || busy} onClick={() => chosen && onLoad(chosen)}>Load into editor</button>
       </div>
     </div>
   </dialog>

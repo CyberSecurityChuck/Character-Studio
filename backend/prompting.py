@@ -184,7 +184,9 @@ def check_prompt(text: str, assignments: list[Assignment], total_images: int) ->
     """Required elements missing from a prompt (PLAN.md Phase 4). Empty means all present.
 
     Each replaced subject needs one sentence that names it together with each of its
-    image numbers; each kept subject needs one that names it with "keep" or "unchanged".
+    image numbers and says the identity comes "only" from them (listing the attached
+    images is not enough); each kept subject needs one that names it with "keep" or
+    "unchanged".
     """
     missing = []
     if not _has("Image 1", text):
@@ -192,12 +194,19 @@ def check_prompt(text: str, assignments: list[Assignment], total_images: int) ->
     sentences = [s for s in re.split(r"(?<=[.;!?])\s+|\n", text) if s.strip()]
     for role in assignments:
         if role.action == "replace" and role.images:
-            if not any(
-                _has(role.label, s) and all(_has(f"Image {n}", s) for n in role.images)
+            linked = [
+                s
                 for s in sentences
-            ):
+                if _has(role.label, s) and all(_has(f"Image {n}", s) for n in role.images)
+            ]
+            if not linked:
                 missing.append(
                     f"{role.label} is not linked to {image_list(role.images)} in one sentence."
+                )
+            elif not any(re.search(r"\bonly\b", s, re.IGNORECASE) for s in linked):
+                missing.append(
+                    f"The instruction that {role.label}'s identity comes only from "
+                    f"{image_list(role.images)} is missing."
                 )
         elif role.action == "keep":
             if not any(
@@ -230,7 +239,8 @@ assumptions.
 - Keep every "Subject N" label exactly as written.
 - Keep every image number exactly as written ("Image 1", "Image 2", ...) and keep each \
 subject linked to the same image numbers in one sentence.
-- Keep every identity instruction, the identity lock and the composition lock.
+- Keep every identity instruction, including that each subject's identity comes only from \
+their own image numbers, the identity lock and the composition lock.
 - Keep every instruction to keep a subject original or unchanged.
 - Keep any requested changes.
 - The SCENE ANALYSIS is for checking facts only. Do not add details from it that the prompt \

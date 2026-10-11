@@ -286,6 +286,17 @@ def snapshot_display(session, scene: Scene, inputs: dict) -> dict:
     return {"scene_title": scene.title, "character_names": names}
 
 
+def next_prompt_version(session, scene_id) -> int:
+    """Prompt versions can be deleted; never reuse a number an approval recorded."""
+    approved = [
+        json.loads(snapshot)["inputs"]["prompt"]["version"]
+        for snapshot in session.scalars(
+            select(Approval.snapshot_json).where(Approval.scene_id == scene_id)
+        )
+    ]
+    return max(next_version(session, PromptVersion, scene_id), max(approved, default=0) + 1)
+
+
 def current_approval(session, scene_id) -> Approval | None:
     return session.scalar(
         select(Approval)

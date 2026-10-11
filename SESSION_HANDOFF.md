@@ -23,9 +23,15 @@ Standing rules: no project file changes without the user's approval (describe, t
 - Browser QA used the session scratchpad (port 8766), drawn fictional characters and a drawn scene only; QA server stopped afterwards.
 - A real CLI polish has **not** been run by the assistant (plan allowance; user-initiated runs only).
 
+## Phase 4 review fixes (D015)
+
+- The user's review (`Phase_Checks/Phase4_Review_Report.md`, 34/34, "Needs fixes first") reported a clipped box label, no visible resizing, no warning after deleting the identity instruction in a polish edit, and asked for deleting prompt versions. Approved: "Yes, please go ahead with all four fixes".
+- Done and committed locally: removed the leftover `.subject-box span` CSS rule; eight handles on the selected box (`SubjectCanvas`, `HANDLES`); `check_prompt` "identity comes only from" requirement; `DELETE /api/scenes/{id}/prompts/{prompt_id}`, `workflow.next_prompt_version`, `approval_data.prompt_id`, `PromptHistory` dialog replacing the versions dropdown. 82 tests pass.
+- Follow-up checklist: `Phase_Checks/Phase4_Followup_Checklist.html` (export `Phase4_Followup_Report.md`).
+
 ## Runtime and next action
 
 - The user's studio must be restarted to pick up Phase 4 (schema `0005_mapping` runs automatically; photo hashes are backfilled once).
 - Git: local commit for Phase 4 on `main`; not pushed. `origin` is the private `CyberSecurityChuck/Character-Studio`. Push only `main`, never `backup/pre-public-rewrite` or `refs/codex/*`. CI on request only.
 - Gotchas: a fresh analysis deliberately marks assignments for re-checking; the polish instruction is one CLI argument (limit ~24,000 characters); provider reference-image limits are unverified (note above 4 photos).
-- Next action: the user works through `Phase_Checks/Phase4_Review_Checklist.html` and exports `Phase4_Review_Report.md`. Fix anything reported (with approval), then push only after the user approves. Phase 5 (Generation and Results) needs "Approve Phase 5" and must gate every run with `workflow.require_valid_approval`.
+- Next action: the user works through `Phase_Checks/Phase4_Followup_Checklist.html` and exports `Phase4_Followup_Report.md`. Fix anything reported (with approval), then push only after the user approves. Phase 5 (Generation and Results) needs "Approve Phase 5" and must gate every run with `workflow.require_valid_approval`.

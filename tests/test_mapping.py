@@ -121,6 +121,14 @@ def test_check_prompt_and_reference_selection_rules():
     assert any("Subject 1 is not linked" in m for m in missing)
     assert any("keep Subject 2" in m for m in missing)
     assert any("Image 9" in m for m in missing)
+    # Listing the attached images is not the identity instruction itself (review fix).
+    listed_only = (
+        "Image 1 is the Base Image.\n- Image 2 and Image 3: identity references for Subject 1.\n"
+        "Subject 2: keep this person unchanged."
+    )
+    assert check_prompt(listed_only, roles, 3) == [
+        "The instruction that Subject 1's identity comes only from Image 2 and Image 3 is missing."
+    ]
 
     class Photo:
         def __init__(self, identifier, label):
@@ -450,6 +458,41 @@ def test_approval_survives_restart_and_detects_offline_changes(settings):
         restored = client.get(f"/api/scenes/{scene['id']}").json()
         assert restored["workflow_state"] != "approved"
         assert "the prompt changed" in restored["approvals"][0]["invalidated_reason"]
+
+
+def test_prompt_versions_can_be_deleted_except_the_approved_one(client):
+    _, scene = ready_scene(client)
+    first = scene["prompts"][0]
+    scene = save_template_prompt(client, scene)
+    second = scene["prompts"][0]
+    assert second["version"] == 2
+
+    def delete(prompt, expect):
+        result = client.delete(
+            f"/api/scenes/{scene['id']}/prompts/{prompt['id']}", headers=authorization(client)
+        )
+        assert result.status_code == expect, result.text
+        return result.json()
+
+    approved = approve(client, scene)
+    assert approved["approval"]["current"]["prompt_id"] == second["id"]
+    assert "Withdraw the approval" in delete(second, 409)["detail"]
+    # Older versions can go without touching the approval.
+    after = delete(first, 200)
+    assert [p["version"] for p in after["prompts"]] == [2]
+    assert after["workflow_state"] == "approved"
+    assert delete(first, 404)
+
+    withdrawn = client.post(
+        f"/api/scenes/{scene['id']}/approval/withdraw",
+        headers=authorization(client),
+        json={"approval_id": approved["approval"]["current"]["id"]},
+    ).json()
+    emptied = delete(second, 200)
+    assert emptied["prompts"] == [] and emptied["workflow_state"] == "analysis_ready"
+    assert emptied["approvals"][0]["prompt_version"] == 2  # the snapshot keeps its copy
+    # Version 2 was approved once, so its number is never reused.
+    assert save_template_prompt(client, withdrawn)["prompts"][0]["version"] == 3
 
 
 def test_duplicate_copies_assignments_but_not_approval(client):
