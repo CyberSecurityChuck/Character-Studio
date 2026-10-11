@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-11 — Phase 5: Generation and Results (local commit, awaiting review)
+
+- Approved by the user ("Approve Phase 5"). The scene workspace has a fifth step, Generate; approved scenes open on it. Stages "Generating…" and "Results ready" join the scene stages.
+- Generate (Codex CLI): one run per click from a valid approval (`require_valid_approval` in the same transaction that queues the job, checked again when the run starts). The package comes from the approval snapshot and is hash-checked: numbered metadata-free JPEGs, prompt, negative prompt, a name-free mapping and the exact instruction. Codex is run with the Phase 2.5 flags (read-only sandbox, `--ephemeral`, `--ignore-user-config`, `-i` per image, `-o`, `--json`). Success only when the final message names an existing image inside this run's `generated_images/<thread_id>/` folder. Progress, Cancel, time limit, clear errors (not installed, signed out, usage limit, time limit, no image), no retry.
+- Generate again and Variation ask for confirmation and add new results; a variation adds one fixed line asking for small natural differences. Results are never overwritten.
+- Recovery: a failed, cancelled or interrupted generation offers "Look for a saved image", which checks only that run's Codex folder and keeps what it finds as a "recovered" result (no duplicates). Codex's thread id is recorded with the job.
+- Manual bridge: Export for manual use builds the same package with a README and downloadable zip (names in `mapping.txt` because the user handles it); Import result links an image made elsewhere to its package or the current approval, with an optional "Made with" note.
+- Results: per-scene grid and a Results page (search, Preferred only), Overview "Latest results", a viewer with Result / Side by side / Slider comparison, the inputs it was made from, Mark as preferred (one per scene), Download and Delete. Deleting a scene deletes its results.
+- Schema `0006_generation` (additive: `generation_results`; `engine_jobs.settings_json`, `engine_jobs.provider_request_id`). Providers: Codex and the manual bridge now list generation; the paid OpenAI API adapter stays disabled (needs separate approval, D009).
+- 9 new tests (91 total); one foundation test updated for the generation providers. No dependencies added. See D016.
+
 ## 2026-10-11 — Phase 4 accepted
 
 - The user's follow-up check passed after the comparison fix ("Phase 4 accepted"). Phase 4 is complete. Status, handoff and user guide updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). Phase 5 needs "Approve Phase 5".

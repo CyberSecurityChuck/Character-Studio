@@ -94,10 +94,36 @@ if program == "claude":
     sys.exit(1 if envelope["is_error"] else 0)
 
 assert args[0] == "exec"
-print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+generating = "--output-schema" not in args
+thread = f"fake-thread-{time.time_ns()}" if generating else "fake-thread"
+print(json.dumps({"type": "thread.started", "thread_id": thread}), flush=True)
 if mode == "limit":
     print(json.dumps({"type": "turn.failed", "error": {"message": "usage limit reached"}}))
     sys.exit(1)
 output = Path(args[args.index("-o") + 1])
+if generating:
+    # Built-in image generation saves under <CODEX_HOME>/generated_images/<thread_id>/.
+    from PIL import Image
+
+    attached = [Path(args[i + 1]) for i, a in enumerate(args) if a == "-i"]
+    assert attached and all(p.is_file() for p in attached), "attached images must exist"
+    folder = Path(os.environ["CODEX_HOME"]) / "generated_images" / thread
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"exec-{time.time_ns()}.png"
+    if mode == "outside":
+        target = Path(os.environ["CODEX_HOME"]) / "elsewhere.png"
+    if mode != "no_image":
+        Image.new("RGB", (400, 300), "#c08060").save(target, "PNG")
+    if mode == "save_then_hang":
+        time.sleep(120)
+    if mode == "no_image":
+        message = "Built-in image generation isn't available in this session."
+    elif mode == "silent":
+        message = "Done."
+    else:
+        message = f"Saved the image to `{target}`"
+    output.write_text(message, encoding="utf-8")
+    print(json.dumps({"type": "turn.completed"}))
+    sys.exit(0)
 output.write_text(json.dumps(analysis) if mode != "invalid" else "{}", encoding="utf-8")
 print(json.dumps({"type": "turn.completed"}))

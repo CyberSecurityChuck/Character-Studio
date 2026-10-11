@@ -163,9 +163,13 @@ class EngineJob(Base):
     error_details: Mapped[str | None] = mapped_column(Text)
     result_id: Mapped[str | None] = mapped_column(String(32))
     # Polish runs: the prompt version polished, the candidate text and the user's choice.
+    # Generation runs and manual exports use input_id for the approval they were made from.
     input_id: Mapped[str | None] = mapped_column(String(32))
     output_text: Mapped[str | None] = mapped_column(Text)
     decision: Mapped[str | None] = mapped_column(String(20))
+    # Generation: {"mode": "generate" | "variation"}; Codex's thread id once known.
+    settings_json: Mapped[str | None] = mapped_column(Text)
+    provider_request_id: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[str] = mapped_column(String(40))
     started_at: Mapped[str | None] = mapped_column(String(40))
     finished_at: Mapped[str | None] = mapped_column(String(40))
@@ -200,3 +204,31 @@ class Approval(Base):
     approved_at: Mapped[str] = mapped_column(String(40))
     invalidated_at: Mapped[str | None] = mapped_column(String(40))
     invalidated_reason: Mapped[str | None] = mapped_column(Text)
+
+
+class GenerationResult(Base):
+    """One generated or imported image. Never overwritten; tied to the approval it came from."""
+
+    __tablename__ = "generation_results"
+    __table_args__ = (UniqueConstraint("scene_id", "version"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("scenes.id"), index=True)
+    approval_id: Mapped[str] = mapped_column(ForeignKey("approvals.id"), index=True)
+    # The generation run or the manual export package it belongs to, if any.
+    job_id: Mapped[str | None] = mapped_column(String(32))
+    version: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(20))
+    mode: Mapped[str] = mapped_column(String(20))
+    # Imports: what the user says made it (for example "ChatGPT Images").
+    note: Mapped[str] = mapped_column(Text, default="")
+    original_path: Mapped[str] = mapped_column(String(100))
+    thumbnail_path: Mapped[str] = mapped_column(String(100))
+    media_type: Mapped[str] = mapped_column(String(20))
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    engine_version: Mapped[str | None] = mapped_column(String(80))
+    # Found in the run's own output folder after an interrupted, cancelled or failed run.
+    recovered: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_preferred: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[str] = mapped_column(String(40))

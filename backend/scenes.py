@@ -1,4 +1,4 @@
-"""Scenes, analyses, prompts, character mapping, approvals and engine jobs (Phases 3-4)."""
+"""Scenes, analyses, prompts, character mapping, approvals and engine jobs (Phases 3-5)."""
 
 import hashlib
 import json
@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -26,6 +26,7 @@ from backend.analysis_schema import (
 )
 from backend.configuration import asset_path
 from backend.engines import ENGINE_NAMES, engine_status
+from backend.generation import result_data
 from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
 from backend.library import clean_deleted_files, decode_image, file_hash
 from backend.models import (
@@ -34,6 +35,7 @@ from backend.models import (
     CharacterGroup,
     EngineJob,
     EngineSettings,
+    GenerationResult,
     PendingFileDeletion,
     PromptVersion,
     Scene,
@@ -187,6 +189,9 @@ def require_idle(session, scene_id, action: str) -> None:
         raise HTTPException(409, f"Wait for the running engine job to finish before {action}.")
 
 
+RECOVERABLE = ("failed", "cancelled", "interrupted")
+
+
 def job_data(request, job: EngineJob | None):
     if job is None:
         return None
@@ -195,7 +200,12 @@ def job_data(request, job: EngineJob | None):
         "kind": job.kind,
         "scene_id": job.scene_id,
         "engine": job.engine,
-        "engine_name": ENGINE_NAMES.get(job.engine, job.engine),
+        "engine_name": ENGINE_NAMES.get(job.engine, "Manual"),
+        "mode": json.loads(job.settings_json or "{}").get("mode"),
+        # A generation that did not finish may still have saved an image in Codex's folder.
+        "recoverable": (
+            job.kind == "generation" and job.status in RECOVERABLE and job.job_folder is not None
+        ),
         "engine_version": job.engine_version,
         "status": job.status,
         "error_kind": job.error_kind,
@@ -288,6 +298,9 @@ def scene_summary(request, session, scene: Scene):
         "original_url": f"/api/scenes/{scene.id}/image/original",
         "analysis_version": analysis.version if analysis else None,
         "prompt_version": prompt.version if prompt else None,
+        "result_count": session.scalar(
+            select(func.count()).where(GenerationResult.scene_id == scene.id)
+        ),
         "active_job": job_data(request, active_job(session, scene.id)),
     }
 
@@ -410,7 +423,43 @@ def scene_detail(request, session, scene: Scene):
     ]
     data.update(mapping_detail(session, scene))
     data["pending_polish"] = pending_polish(session, scene, prompts[0] if prompts else None)
+    data.update(generation_detail(request, session, scene, data["approval"]["current"]))
     return data
+
+
+def generation_detail(request, session, scene: Scene, current):
+    """Results (newest first) and manual export packages, each tied to its approval."""
+    current_id = current["id"] if current else None
+    results = list(
+        session.scalars(
+            select(GenerationResult)
+            .where(GenerationResult.scene_id == scene.id)
+            .order_by(GenerationResult.version.desc())
+        )
+    )
+    exports = session.scalars(
+        select(EngineJob)
+        .where(EngineJob.scene_id == scene.id, EngineJob.kind == "export")
+        .order_by(EngineJob.created_at.desc())
+    )
+    return {
+        "results": [
+            result_data(r, session.get(Approval, r.approval_id), current_id) for r in results
+        ],
+        "exports": [
+            {
+                "id": job.id,
+                "number": int(job.job_folder.rsplit("-", 1)[1]),
+                "created_at": job.created_at,
+                "approval_id": job.input_id,
+                "approval_current": job.input_id == current_id,
+                "result_count": sum(1 for r in results if r.job_id == job.id),
+                "job_folder": job_folder_path(request.app.state.settings, job),
+                "download_url": f"/api/exports/{job.id}/package",
+            }
+            for job in exports
+        ],
+    }
 
 
 @router.get("/scenes")
@@ -611,9 +660,21 @@ def delete_scene(request: Request, scene_id: str, revision: int = Query(ge=1)):
         if active_job(session, scene_id):
             raise HTTPException(409, "Cancel the running engine job before deleting this scene.")
         paths = [scene.original_path, scene.thumbnail_path, f"jobs/{scene_id}"]
+        for result in session.scalars(
+            select(GenerationResult).where(GenerationResult.scene_id == scene_id)
+        ):
+            paths += [result.original_path, result.thumbnail_path]
         for path in paths:
             session.merge(PendingFileDeletion(path=path))
-        for model in (Approval, SubjectMapping, PromptVersion, SceneAnalysis, EngineJob):
+        # Results first: they point at the approvals they were made from.
+        for model in (
+            GenerationResult,
+            Approval,
+            SubjectMapping,
+            PromptVersion,
+            SceneAnalysis,
+            EngineJob,
+        ):
             session.execute(delete(model).where(model.scene_id == scene_id))
         session.delete(scene)
     pending = clean_deleted_files(request.app.state.engine, request.app.state.settings, paths)

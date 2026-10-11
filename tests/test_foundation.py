@@ -25,7 +25,8 @@ def test_health_and_provider_registry_are_honest(client):
         "manual_bridge": "available",
         "openai_api": "disabled",
     }
-    assert all(not p["generation"] for p in data["providers"])
+    # Phase 5: Codex and the manual bridge generate; the paid API stays off.
+    assert {p["id"] for p in data["providers"] if p["generation"]} == {"codex_cli", "manual_bridge"}
     assert client.get("/api/generate").status_code == 404
     assert client.post("/api/generate", headers=authorization(client)).status_code == 405
 

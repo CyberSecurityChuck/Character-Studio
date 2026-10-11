@@ -3,6 +3,7 @@ import { request, send, type Bootstrap } from './api'
 import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
+import { GeneratePanel, type ExportPackage, type Result } from './Results'
 import { replaceRoute, routeParts } from './route'
 
 export type Box = { x: number; y: number; width: number; height: number }
@@ -20,8 +21,8 @@ export type AnalysisData = {
 }
 type Analysis = { id: string; version: number; source: string; engine_version: string | null; has_raw_output: boolean; based_on_id: string | null; created_at: string; analysis: AnalysisData; confirmed_uncertainties: Uncertainty[] }
 export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
-export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
-export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; active_job: Job | null }
+export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; mode: string | null; recoverable: boolean; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
+export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null }
 export type SubjectAssignment = { label: string; bounding_box: Box; position: string; summary: string; action: 'replace' | 'keep' | 'unresolved'; character_id: string | null; reference_ids: string[]; references_auto: boolean; confirmed: boolean; images: number[]; problems: string[] }
 export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_id: string; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
 export type PendingPolish = { job_id: string; prompt_id: string; prompt_version: number; polished_text: string; engine_version: string | null; missing: string[] }
@@ -31,22 +32,24 @@ export type SceneDetail = SceneSummary & {
   review: { blockers: string[]; warnings: string[]; notes: string[]; prompt_id: string | null }
   approval: { state: 'approved' | 'none'; current: ApprovalRecord | null; ended_reason: string | null }
   approvals: ApprovalRecord[]; pending_polish: PendingPolish | null
+  results: Result[]; exports: ExportPackage[]
 }
 type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; revision: number }
-type Step = 'analysis' | 'characters' | 'prompt' | 'review'
+type Step = 'analysis' | 'characters' | 'prompt' | 'review' | 'generate'
 
 type SubjectField = 'position' | 'pose_summary' | 'body_direction' | 'torso_orientation' | 'shoulder_alignment' | 'head_direction' | 'facial_viewing_angle' | 'eye_direction' | 'expression' | 'arms_and_hands' | 'legs_and_feet' | 'outfit' | 'hairstyle' | 'accessories'
 type CameraField = 'height' | 'direction' | 'shot_type' | 'framing' | 'perspective'
 const subjectFields: [SubjectField, string][] = [['position', 'Position'], ['pose_summary', 'Pose'], ['body_direction', 'Body direction'], ['torso_orientation', 'Torso'], ['shoulder_alignment', 'Shoulders'], ['head_direction', 'Head direction'], ['facial_viewing_angle', 'Face angle'], ['eye_direction', 'Eyes and gaze'], ['expression', 'Expression'], ['arms_and_hands', 'Arms and hands'], ['legs_and_feet', 'Legs and feet'], ['outfit', 'Outfit'], ['hairstyle', 'Hairstyle'], ['accessories', 'Accessories']]
 const cameraFields: [CameraField, string][] = [['height', 'Height'], ['direction', 'Direction'], ['shot_type', 'Shot type'], ['framing', 'Framing'], ['perspective', 'Perspective']]
 const sceneFields: ['environment' | 'lighting' | 'color_palette' | 'atmosphere', string][] = [['environment', 'Environment'], ['lighting', 'Lighting and shadows'], ['color_palette', 'Colour palette'], ['atmosphere', 'Atmosphere']]
-export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved' }
+export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready' }
 const sourceLabels: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex', manual_import: 'Manual import', user_edit: 'Your edit' }
 const engineLabels: Record<string, string> = { claude_cli: 'Claude', codex_cli: 'Codex', manual: 'Manual' }
 const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
+const kindLabels: Record<string, string> = { analysis: 'Analysis', polish: 'Polish', generation: 'Generation', export: 'Manual export' }
 const sendsTo: Record<string, string> = { claude_cli: 'Anthropic via Claude Code', codex_cli: 'OpenAI via Codex' }
-const steps: { id: Step; number: string; label: string }[] = [{ id: 'analysis', number: '01', label: 'Analysis' }, { id: 'characters', number: '02', label: 'Characters' }, { id: 'prompt', number: '03', label: 'Prompt' }, { id: 'review', number: '04', label: 'Review' }]
-const stepFor: Record<string, Step> = { needs_analysis: 'analysis', analysing: 'analysis', review_analysis: 'analysis', needs_mapping: 'characters', analysis_ready: 'prompt', polishing: 'prompt', prompt_saved: 'review', approved: 'review' }
+const steps: { id: Step; number: string; label: string }[] = [{ id: 'analysis', number: '01', label: 'Analysis' }, { id: 'characters', number: '02', label: 'Characters' }, { id: 'prompt', number: '03', label: 'Prompt' }, { id: 'review', number: '04', label: 'Review' }, { id: 'generate', number: '05', label: 'Generate' }]
+const stepFor: Record<string, Step> = { needs_analysis: 'analysis', analysing: 'analysis', review_analysis: 'analysis', needs_mapping: 'characters', analysis_ready: 'prompt', polishing: 'prompt', prompt_saved: 'review', approved: 'generate', generating: 'generate', generated: 'generate' }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 const fieldName = (field: string) => field.replace(/_/g, ' ').split(/\s*\.\s*/).map(part => sentence(part.trim())).join(' · ')
@@ -200,19 +203,22 @@ function ManualAnalysis({ scene, token, onImported, onClose }: { scene: SceneSum
   </div>
 }
 
-function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy }: { job: Job; onRetry: () => void; onManual: () => void; manualLabel: string; onDismiss: () => void; busy: boolean }) {
+function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra }: { job: Job; onRetry: () => void; onManual: () => void; manualLabel: string; onDismiss: () => void; busy: boolean; extra?: ReactNode }) {
   const [note, setNote] = useState('')
   const polish = job.kind === 'polish'
+  const generation = job.kind === 'generation'
   const titles: Record<string, string> = polish
     ? { failed: `${job.engine_name} could not polish the prompt`, cancelled: 'Polishing cancelled', interrupted: 'Polishing was interrupted' }
-    : { failed: `${job.engine_name} could not finish the analysis`, cancelled: 'Analysis cancelled', interrupted: 'The analysis was interrupted' }
+    : generation ? { failed: `${job.engine_name} could not generate the image`, cancelled: 'Generation cancelled', interrupted: 'The generation was interrupted' }
+      : { failed: `${job.engine_name} could not finish the analysis`, cancelled: 'Analysis cancelled', interrupted: 'The analysis was interrupted' }
   return <div className={`job-notice ${job.status}`} role="alert">
     <strong>{titles[job.status] ?? 'The run did not finish'}</strong>
-    <p>{job.error_details}{polish ? ' Your prompt is unchanged.' : ''}</p>
-    {job.status === 'interrupted' && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
+    <p>{job.error_details}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
+    {(job.status === 'interrupted' || (generation && job.recoverable)) && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
     <span className="library-status" role="status">{note}</span>
     <div className="notice-actions">
       <button type="button" disabled={busy} onClick={onRetry}>{job.status === 'interrupted' ? 'I checked — try again' : 'Try again'}</button>
+      {extra}
       <button type="button" className="secondary" onClick={onManual}>{manualLabel}</button>
       <button type="button" className="link-button" onClick={onDismiss}>Dismiss</button>
     </div>
@@ -220,7 +226,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy }: { j
 }
 
 function ProgressCard({ job, stopping, busy, onCancel }: { job: Job; stopping: boolean; busy: boolean; onCancel: () => void }) {
-  const verb = job.kind === 'polish' ? 'Polishing' : 'Analysing'
+  const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : 'Analysing'
   return <div className="progress-card" role="status">
     <span className="spinner" aria-hidden="true" />
     {stopping ? <div><strong>Stopping…</strong><p>Stopping {job.engine_name}. This takes a moment.</p></div>
@@ -278,6 +284,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const [boxes, setBoxes] = useState<BoxDraft[] | null>(null)
   const [polishOpen, setPolishOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const manualRef = useRef<HTMLDialogElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const lock = useRef(false)
@@ -344,6 +351,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         const detail = await request<SceneDetail>(`/api/scenes/${sceneId}`)
         await accept(detail, !promptDirtyRef.current)
         if (job.status === 'completed' && job.kind === 'polish') { setMessage('The polished prompt is ready to compare.'); if (detail.pending_polish) setPolishOpen(true) }
+        else if (job.status === 'completed' && job.kind === 'generation') setMessage(`Result ${detail.results[0]?.version} saved. Open it to compare with the Base Image.`)
         else if (job.status === 'completed') setMessage(`Analysis version ${detail.analyses[0]?.version} saved.`)
       } catch { /* keep polling; the run continues on the server */ }
     }, 1500)
@@ -366,6 +374,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const engine = engines?.analysis_engine ?? 'claude_cli'
   const lastAnalysisJob = scene.jobs.find(j => j.kind === 'analysis')
   const lastPolishJob = scene.jobs.find(j => j.kind === 'polish')
+  const lastGenerationJob = scene.jobs.find(j => j.kind === 'generation')
+  // Hidden once an image from that run was recovered: the result answers the notice.
+  const showGenerationNotice = !scene.active_job && !!lastGenerationJob && lastGenerationJob.status !== 'completed' && !dismissed.includes(lastGenerationJob.id) && !scene.results.some(r => r.job_id === lastGenerationJob.id)
   const showJobNotice = !scene.active_job && !!lastAnalysisJob && lastAnalysisJob.status !== 'completed' && !dismissed.includes(lastAnalysisJob.id) && (!current || lastAnalysisJob.created_at > current.created_at)
   const showPolishNotice = !scene.active_job && !!lastPolishJob && lastPolishJob.status !== 'completed' && !dismissed.includes(lastPolishJob.id) && lastPolishJob.input_id === latestPrompt?.id
   const flagged = new Set((shown?.analysis.uncertainties ?? []).map(u => u.field))
@@ -378,8 +389,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const status: Record<Step, 'done' | 'todo' | 'idle'> = {
     analysis: !current ? 'todo' : current.analysis.uncertainties.length ? 'todo' : 'done',
     characters: !current ? 'idle' : scene.subjects.every(s => !s.problems.length) && scene.subjects.every(s => s.action === 'unresolved' || s.confirmed) ? 'done' : 'todo',
-    prompt: !current ? 'idle' : ['prompt_saved', 'approved'].includes(scene.workflow_state) ? 'done' : 'todo',
+    prompt: !current ? 'idle' : ['prompt_saved', 'approved', 'generating', 'generated'].includes(scene.workflow_state) ? 'done' : 'todo',
     review: approved ? 'done' : scene.workflow_state === 'prompt_saved' ? 'todo' : 'idle',
+    generate: scene.results.some(r => r.approval_current) ? 'done' : approved ? 'todo' : 'idle',
   }
   const confirmApprovedEdit = (what: string) => !approved || window.confirm(`${what} cancels the current approval. Continue?`)
 
@@ -448,6 +460,16 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
       setScene(detail); onChanged()
     })
   }
+  const generate = (mode: 'generate' | 'variation') => run(async () => {
+    if (lastGenerationJob) setDismissed(d => [...d, lastGenerationJob.id])
+    const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/generate`, 'POST', token, { approval_id: scene.approval.current?.id, mode })
+    setScene(detail); onChanged()
+  })
+  const recover = (job: Job) => run(async () => {
+    const found = await send<{ found: number; scene: SceneDetail }>(`/api/jobs/${job.id}/recover`, 'POST', token)
+    await accept(found.scene, false)
+    if (!found.found) throw new Error('No saved image was found for this run. Codex probably stopped before the image was finished.')
+  }, 'Found the saved image and kept it as a result.')
   const saveBoxes = () => {
     if (!boxes || !current) return
     if (!confirmApprovedEdit('Changing the subjects')) return
@@ -475,7 +497,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     {!renaming && <div className="workspace-actions">
       <button className="secondary" disabled={busy} onClick={() => setRenaming(true)}>Rename</button>
       <button className="secondary" disabled={busy} onClick={() => { if (guard()) void run(async () => { const copy = await send<SceneDetail>(`/api/scenes/${scene.id}/duplicate`, 'POST', token); setEditing(null); onDirty(false); onChanged(); onOpen(copy.id) }) }}>Duplicate</button>
-      <button className="danger secondary" disabled={busy || !!scene.active_job} title={scene.active_job ? 'Cancel the running job first' : undefined} onClick={() => { if (window.confirm(`Permanently delete “${scene.title}”, its Base Image, analyses, prompts, assignments, approvals and run folders? This cannot be undone.`)) void run(async () => { await send(`/api/scenes/${scene.id}?revision=${scene.revision}`, 'DELETE', token); onDirty(false); onBack() }) }}>Delete</button>
+      <button className="danger secondary" disabled={busy || !!scene.active_job} title={scene.active_job ? 'Cancel the running job first' : undefined} onClick={() => { if (window.confirm(`Permanently delete “${scene.title}”, its Base Image, analyses, prompts, assignments, approvals, results and run folders? This cannot be undone.`)) void run(async () => { await send(`/api/scenes/${scene.id}?revision=${scene.revision}`, 'DELETE', token); onDirty(false); onBack() }) }}>Delete</button>
     </div>}
   </div>
 
@@ -607,10 +629,22 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
             onGo={target => setStep(target)}
             onApprove={acceptWarnings => void run(async () => { await accept(await send<SceneDetail>(`/api/scenes/${scene.id}/approve`, 'POST', token, { prompt_id: scene.review.prompt_id, accept_warnings: acceptWarnings }), false) }, 'Approved. These exact inputs are now locked for generation.')}
             onWithdraw={id => void run(async () => { await accept(await send<SceneDetail>(`/api/scenes/${scene.id}/approval/withdraw`, 'POST', token, { approval_id: id }), false) }, 'Approval withdrawn.')} />
+          {approved && next('generate', 'Next: generate')}
+        </section>
+
+        <section id="step-panel-generate" role="tabpanel" aria-labelledby="step-tab-generate" hidden={activeStep !== 'generate'} className="panel step-panel">
+          <div className="step-head"><span className="step-number">05</span><div><h3>Generate and results</h3><p className="hint">Make the image from the approved inputs, with Codex or any app you like. Every result is kept and stays linked to what it was made from.</p></div></div>
+          <GeneratePanel scene={scene} data={data} generationEngine={engines?.generation_engine ?? 'codex_cli'} busy={busy} exportOpen={exportOpen} onExportOpen={setExportOpen}
+            runStatus={scene.active_job?.kind === 'generation' ? <ProgressCard job={scene.active_job} stopping={stopping === scene.active_job.id} busy={busy} onCancel={cancel} />
+              : showGenerationNotice && lastGenerationJob ? <JobNotice job={lastGenerationJob} busy={busy || !approved || !!scene.active_job}
+                onRetry={() => { if (window.confirm('Generate again? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance.')) void generate('generate') }}
+                extra={lastGenerationJob.recoverable ? <button type="button" className="secondary" disabled={busy} onClick={() => void recover(lastGenerationJob)}>Look for a saved image</button> : undefined}
+                manualLabel="Export for manual use" onManual={() => setExportOpen(true)} onDismiss={() => setDismissed(d => [...d, lastGenerationJob.id])} /> : null}
+            onGenerate={mode => void generate(mode)} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }} onGo={() => setStep('review')} />
         </section>
 
         {scene.jobs.length > 0 && <details className="panel run-history"><summary>Engine runs ({scene.jobs.length})</summary>
-          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.kind === 'polish' ? 'Polish' : 'Analysis'} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
+          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
             {j.job_folder && <button type="button" className="link-button" onClick={() => copyText(j.job_folder!, setMessage)}><Icon name="folder" /> Copy folder path</button>}</li>)}</ul>
         </details>}
       </div>
@@ -668,7 +702,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const stopSelecting = () => { setSelecting(false); setPicked([]) }
   const remove = (s: SceneSummary) => send<{ cleanup_pending: boolean }>(`/api/scenes/${s.id}?revision=${s.revision}`, 'DELETE', token)
   function deleteOne(s: SceneSummary) {
-    if (!window.confirm(`Permanently delete “${s.title}”, its Base Image, analyses, prompts, assignments, approvals and run folders? This cannot be undone.`)) return
+    if (!window.confirm(`Permanently delete “${s.title}”, its Base Image, analyses, prompts, assignments, approvals, results and run folders? This cannot be undone.`)) return
     void act(async () => {
       const result = await remove(s)
       if (result.cleanup_pending) throw new Error('Scene removed. Some locked files are pending deletion; restart the studio to retry cleanup.')
@@ -680,7 +714,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     const deletable = chosen.filter(s => !s.active_job)
     if (!deletable.length) { setActionError('The selected scenes have engine jobs running. Cancel them first.'); return }
     const count = `${deletable.length} ${deletable.length === 1 ? 'scene' : 'scenes'}`
-    if (!window.confirm(`Permanently delete ${count} with their Base Images, analyses, prompts, assignments, approvals and run folders? This cannot be undone.${running.length ? ` ${running.length} with a running job will be skipped.` : ''}`)) return
+    if (!window.confirm(`Permanently delete ${count} with their Base Images, analyses, prompts, assignments, approvals, results and run folders? This cannot be undone.${running.length ? ` ${running.length} with a running job will be skipped.` : ''}`)) return
     void act(async () => {
       const failed: string[] = running.map(s => `${s.title} (job running)`)
       for (const s of deletable) { try { await remove(s) } catch { failed.push(s.title) } }
@@ -709,7 +743,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
           <button className="card-main" aria-pressed={selecting ? isPicked : undefined} disabled={busy} onClick={() => selecting ? togglePick(s.id) : setOpen(s.id)}>
             {selecting && <span className="pick-box" aria-hidden="true" />}
             <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
-            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{new Date(s.updated_at).toLocaleDateString()}</span></span></span>
+            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{s.result_count ? `${s.result_count} ${s.result_count === 1 ? 'result' : 'results'} · ` : ''}{new Date(s.updated_at).toLocaleDateString()}</span></span></span>
           </button>
           {!selecting && <CardMenu label={s.title} disabled={busy} items={[
             { label: 'Rename', onSelect: () => setRenaming(s) },

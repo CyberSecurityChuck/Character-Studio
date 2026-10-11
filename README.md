@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4) work today. Image generation comes next, phase by phase. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4) and **generation & results** (Phase 5) work today. Batch processing comes next. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -38,9 +38,9 @@ Recreating a photo with different people usually means re-uploading the same ref
 
 - 📚 **Save each person once.** Reuse their reference photos in every scene.
 - 🧭 **Composition and identity stay separate.** The scene decides *how and where*; your character photos decide *who*.
-- ✅ **Nothing will generate without your approval** of the exact prompt, photos and person-to-subject mapping.
-- 🔒 **Everything stays on your computer.** Data will leave only when you click an AI action.
-- 💸 **No API keys, no per-image billing.** It will drive the official `claude` and `codex` command-line tools under your own subscriptions.
+- ✅ **Nothing generates without your approval** of the exact prompt, photos and person-to-subject mapping.
+- 🔒 **Everything stays on your computer.** Data leaves only when you click an AI action.
+- 💸 **No API keys, no per-image billing.** It drives the official `claude` and `codex` command-line tools under your own subscriptions.
 
 ## 🧩 Features
 
@@ -54,7 +54,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | ✅ Available |
 | 🧑‍🤝‍🧑 | Map people in the scene to saved characters, pick reference photos; optional "Polish prompt" | ✅ Available |
 | ✅ | Review screen and approval snapshots that cancel themselves when any input changes | ✅ Available |
-| 🎨 | One-click generation via Codex CLI, results gallery, version history | 🗓️ Phase 5 |
+| 🎨 | One-click generation via Codex CLI from an approval, manual export/import, results gallery with Base Image comparison | ✅ Available |
 | 📦 | Batch analysis and generation, multiple variations | 🗓️ Phase 5.5 |
 
 ## 🔄 How it works
@@ -73,8 +73,8 @@ flowchart TB
         direction LR
         E["🧑‍🤝‍🧑 Map subjects<br/>to characters"]:::done --> F["✍️ Prompt from template<br/>+ optional Polish"]:::done
         F --> G{"✅ You<br/>approve"}:::approve
-        G --> H{"🎨 Generate"}:::next
-        H -->|Codex CLI| I["🖼️ Results gallery<br/>never overwritten"]:::planned
+        G --> H{"🎨 Generate"}:::done
+        H -->|Codex CLI| I["🖼️ Results gallery<br/>never overwritten"]:::done
         H -->|Manual export / import| I
     end
     PREP ==> CREATE
@@ -87,13 +87,13 @@ flowchart TB
     classDef approve fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:3px
 ```
 
-<sub>🟩 Available · 🟧 Next (Phase 5) · 🟦 Planned · 🟥 Your Approval Gate</sub>
+<sub>🟩 Available · 🟥 Your Approval Gate</sub>
 
 **The golden rule:** the *Base Image* is the authority on pose, camera angle, outfit, lighting and background. The *character photos* are the authority on identity only. The prompt template enforces this split, so a character's reference photos never change the scene's composition.
 
 ## 🤖 How the AI part works
 
-*Analysis and prompt polishing work today; generation comes in Phase 5.* Character Studio does **not** call paid AI APIs. When you click an AI action, it runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
+*Analysis, prompt polishing and generation all work today.* Character Studio does **not** call paid AI APIs. When you click an AI action, it runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
 
 | Step | Default engine | Alternatives | Uses |
 |---|---|---|---|
@@ -142,17 +142,17 @@ flowchart TB
 
 ## 🔒 Privacy by design
 
-| Stays on your computer | Will leave your computer only when you click (Phases 3–5) |
+| Stays on your computer | Leaves your computer only when you click |
 |---|---|
 | ✅ Character profiles, reference photos, thumbnails | 🔍 **Analyse** sends the scene image to Anthropic (or OpenAI if you pick Codex) |
 | ✅ Scenes, prompts, approvals, results, history | ✍️ **Polish prompt** sends prompt text (no images) to Anthropic |
 | ✅ The database and all logs | 🎨 **Generate** sends the scene and the chosen reference photos to OpenAI |
 
-Today, only **Analyse** (the Base Image, with location data removed) and **Polish prompt** (prompt and analysis text) send anything, and only when you click them. Character names never go into the prompt.
+Only **Analyse** (the Base Image, with location data removed), **Polish prompt** (prompt and analysis text) and **Generate** (the Base Image and the approved reference photos, with location data removed) send anything, and only when you click them. Character names never go into the prompt or into the files Codex receives.
 
 - 🏠 The server only listens on `127.0.0.1`, with host/origin checks and a per-session request token.
 - 📂 Your data lives in a separate folder (default `%USERPROFILE%\Character-Studio-Data`), never inside the source code.
-- 🧹 Thumbnails are stored without photo metadata. Location (GPS) data will be stripped from any image before it is sent to an AI tool.
+- 🧹 Thumbnails are stored without photo metadata. Location (GPS) data is stripped from every image before it is sent to an AI tool.
 - 🙅 No analytics, no remote fonts, no telemetry.
 - ⚠️ Local files are not encrypted, so anyone with access to your Windows account can read them.
 - 🛡️ Git ignores photos, databases and logs, and CI runs a [privacy guard](.github/workflows/ci.yml) on every push.
@@ -163,7 +163,7 @@ Today, only **Analyse** (the Base Image, with location data removed) and **Polis
 > Character Studio currently targets **Windows 10/11**.
 
 **You need:** [Node.js 24 LTS](https://nodejs.org/) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.12 for you.
-For AI scene analysis (and later, generation) you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude Pro plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. The Character Library and manual analysis work without them.
+For AI scene analysis and generation you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude Pro plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. The Character Library, manual analysis and manual export/import work without them.
 
 ```powershell
 git clone https://github.com/CyberSecurityChuck/Character-Studio.git
@@ -190,11 +190,11 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
 flowchart TB
     subgraph NOW["✅ Done"]
         direction LR
-        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done --> P4["4 · Mapping<br/>& approval"]:::done
+        P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done --> P4["4 · Mapping<br/>& approval"]:::done --> P5["5 · Generation<br/>& results"]:::done
     end
     subgraph LATER["🔜 Next → 🗓️ Planned"]
         direction LR
-        P5["5 · Generation<br/>& results"]:::next --> P55["5.5 · Batch<br/>processing"]:::planned --> P6["6 · Quality<br/>& extras"]:::later
+        P55["5.5 · Batch<br/>processing"]:::next --> P6["6 · Quality<br/>& extras"]:::later
     end
     NOW ==> LATER
     style NOW fill:transparent,stroke:#2E7D32,stroke-width:2px

@@ -16,6 +16,7 @@ from backend.library import router as library_router
 from backend.models import StudioPreferences
 from backend.persistence import SCHEMA_REVISION, open_database
 from backend.providers import PROVIDERS
+from backend.results import router as results_router
 from backend.scenes import router as scenes_router
 from backend.schemas import PreferencesResponse, PreferencesUpdate
 
@@ -117,7 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "preferences": preferences,
             "session_token": app.state.session_token,
-            "phase": 4,
+            "phase": 5,
             "max_upload_bytes": settings.max_upload_bytes,
             "schema_revision": SCHEMA_REVISION,
             "data_directory": str(settings.data_dir),
@@ -139,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(library_router)
     app.include_router(scenes_router)
+    app.include_router(results_router)
 
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):

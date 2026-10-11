@@ -92,3 +92,12 @@ _Completed 2026-10-10. Approved by the user ("Approve Phase 2.5") on 2026-10-10 
 - The instruction (fixed rules, the saved prompt, the analysis as compact JSON) is one command-line argument, so the studio refuses polishing above about 24,000 characters (Windows allows about 32,000).
 - The result is read from `structured_output.prompt`, falling back to `result`. Errors use the same signed-out / usage-limit / time-limit handling as analysis. The candidate is stored with the job and only becomes a prompt version when the user accepts it.
 - Nothing is sent to OpenAI in Phase 4. Reference photos are selected and approved but not sent anywhere until Phase 5.
+
+## Phase 5 implementation notes (2026-10-11)
+
+- Generate runs, from the job folder with stdin closed and the cleaned environment: `codex exec --skip-git-repo-check --ephemeral --ignore-user-config -s read-only -C <job> -i <job>/image-1.jpg -i <job>/image-2.jpg … -o <job>/last-message.txt --json -- "<instruction>"`. Image generation is left enabled; this is the Phase 2.5 (c) command with the files renamed to match the prompt's image numbers.
+- The instruction wraps the approved prompt and negative prompt with fixed text (D016) and asks Codex to reply with only the saved file's full path. It is one argument, so the studio refuses runs above 24,000 characters.
+- Success: the final message must name an image under `<CODEX_HOME or %USERPROFILE%\.codex>\generated_images\<thread_id>\` (thread id from the `thread.started` event) that exists and decodes. Exit codes are ignored. The studio copies it into its own results folder and leaves Codex's copy in place.
+- Failures: `error` / `turn.failed` events and the final message are classified as signed out, usage limit or a generic error with Codex's own text; a run that ends without a reported image is "no image". Usage-limit wording for image generation is still unobserved and matched heuristically.
+- Recovery reads only one run's `generated_images\<thread_id>\` folder and only when the user clicks "Look for a saved image". The studio never reads Codex's login files.
+- Not yet run through the studio against the real Codex CLI by the assistant (each run uses the user's image allowance); the first real Generate is the user's, during the Phase 5 review. Multi-person likeness is untested.

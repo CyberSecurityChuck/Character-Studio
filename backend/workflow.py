@@ -3,7 +3,7 @@
 Approvals (PLAN.md §11, §19) are immutable snapshots of the exact inputs. An approval
 is valid only while a fresh snapshot of the current inputs hashes to the same value;
 any change invalidates it, with a reason, the next time the scene is refreshed.
-Phase 5 must call `require_valid_approval` before any generation starts.
+Every generation run and manual export passes `require_valid_approval` first.
 """
 
 import hashlib
@@ -17,6 +17,7 @@ from backend.analysis_schema import SCHEMA_VERSION, SceneAnalysisData, validate_
 from backend.models import (
     Approval,
     Character,
+    GenerationResult,
     PromptVersion,
     ReferencePhoto,
     Scene,
@@ -271,7 +272,8 @@ def snapshot_inputs(session, scene: Scene) -> dict | None:
             }
             for s in plan.subjects
         ],
-        # Generation settings arrive with Phase 5; approval covers content, not the engine.
+        # Codex has no confirmed size or quality options, so there are no generation
+        # settings to lock (D016). Approval covers content, not the engine.
         "settings": {},
     }
 
@@ -452,11 +454,14 @@ def refresh_workflow(session, scene: Scene) -> None:
     job = active_job(session, scene.id)
     analysis = latest(session, SceneAnalysis, scene.id)
     if job:
-        state = "polishing" if job.kind == "polish" else "analysing"
+        state = {"polish": "polishing", "generation": "generating"}.get(job.kind, "analysing")
     elif analysis is None:
         state = "needs_analysis"
-    elif current_approval(session, scene.id) is not None:
-        state = "approved"
+    elif (approval := current_approval(session, scene.id)) is not None:
+        made = session.scalar(
+            select(GenerationResult.id).where(GenerationResult.approval_id == approval.id).limit(1)
+        )
+        state = "generated" if made else "approved"
     else:
         plan = build_plan(session, scene, analysis)
         if plan.analysis.uncertainties:

@@ -89,6 +89,8 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_CLI_ANALYSIS", str(analysis))
     monkeypatch.setenv("FAKE_CLI_LOG", str(log))
     monkeypatch.setenv("FAKE_CLI_MODE", "ok")
+    # Where the fake Codex saves generations; never the user's real ~/.codex.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     # Variables that must never reach a CLI run.
     monkeypatch.setenv("CLAUDE_CODE_TEST_SESSION", "host-session")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-leak")

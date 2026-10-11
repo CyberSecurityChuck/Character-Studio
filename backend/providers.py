@@ -1,4 +1,4 @@
-"""Provider registry. Analysis runs through the official CLIs (D009); generation is Phase 5."""
+"""Provider registry: the official CLIs (D009) and the manual bridge. No paid API is used."""
 
 from enum import StrEnum
 from typing import Literal, Protocol
@@ -91,18 +91,26 @@ PROVIDERS = (
         id="codex_cli",
         name="Codex CLI",
         status="available",
-        description="Scene analysis with your own ChatGPT sign-in; sends the Base Image to "
-        "OpenAI. Image generation arrives in Phase 5.",
+        description="Image generation and optional scene analysis with your own ChatGPT "
+        "sign-in. Generate sends the Base Image and the approved reference photos to OpenAI; "
+        "it runs only from a valid approval, once per click.",
         analysis=True,
+        generation=True,
+        multiple_references=True,
         sends_images_externally=True,
-        pricing="Uses your ChatGPT plan's Codex allowance, which image generation shares.",
+        formats=("png",),
+        pricing="Uses your ChatGPT plan's Codex allowance; image generation uses it faster than "
+        "text. No API key or per-use billing.",
     ),
     ProviderCapabilities(
         id="manual_bridge",
         name="Manual bridge",
         status="available",
-        description="Copy the analysis instruction into another app, then paste its reply back.",
+        description="Copy the analysis instruction into another app and paste its reply back, "
+        "or export an approved scene's package and import the image you make elsewhere.",
         analysis=True,
+        generation=True,
+        multiple_references=True,
         pricing="No calls from Character Studio. The other app's usage limits apply.",
     ),
     ProviderCapabilities(

@@ -2,7 +2,7 @@
 
 A local-first home for reusable characters, reference scenes and approved image workflows. For the project overview, see the [README](../README.md). Commands below run from the project root folder.
 
-**Current scope: Phase 4 Character Mapping and Approval** (complete), on top of Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt and approve the exact inputs. Generation and export/import are not implemented yet; PLAN.md defines those later phases. Do not upload personal photographs into the source folder.
+**Current scope: Phase 5 Generation and Results**, on top of Phase 4 Character Mapping and Approval, Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt, approve the exact inputs, then generate with Codex or export the package for any app and import the result. Batch processing (Phase 5.5) is not implemented yet. Do not upload personal photographs into the source folder.
 
 **How it works (D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
 
@@ -67,9 +67,9 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 ## AI capabilities and costs
 
-Scene analysis and prompt polishing run through the official CLIs (Phases 3–4). There is no generation endpoint yet, no credential storage and no automatic retry. Paid API access is **disabled**. Paid API-based engines for analysis and generation are planned after the MVP as an opt-in that needs separate approval and asks for cost confirmation on every run.
+Scene analysis, prompt polishing and image generation run through the official CLIs (Phases 3–5). There is no credential storage and no automatic retry. Paid API access is **disabled**. Paid API-based engines for analysis and generation are planned after the MVP as an opt-in that needs separate approval and asks for cost confirmation on every run.
 
-Planned direction (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. The Phase 2.5 spike verified both CLIs' flags, output locations and failure modes; the studio uses only those flags.
+How it works (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. The Phase 2.5 spike verified both CLIs' flags, output locations and failure modes; the studio uses only those flags.
 
 Each run uses your plan's allowance and sends data to that provider: **Analyse** sends the Base Image to Anthropic (or to OpenAI if Codex is the analysis engine); **Polish prompt** sends prompt and analysis text to Anthropic; **Generate** sends the Base Image and chosen reference photos to OpenAI. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
 
@@ -78,7 +78,7 @@ Each run uses your plan's allowance and sends data to that provider: **Analyse**
 - Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
 - Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phases 1, 2, 2.5, 3 and 4. Phase 5 and later require explicit approval.
+- Approval covers Phases 1, 2, 2.5, 3, 4 and 5. Phase 5.5 and later require explicit approval.
 
 For data recovery and current backup limitations see `docs/RECOVERY.md`. Git backs up source history, not private application data.
 
@@ -115,11 +115,11 @@ Analyses are saved as versions with their source and CLI version. Details the an
 
 The **Generation prompt** is written by the studio from the analysis (numbered images, "Subject N" labels, identity and composition locks, negative prompt). Edit it freely, add **Scene changes** and rebuild, copy it, and **Save prompt version**. Saved versions can be loaded back into the editor. If the analysis changes, the studio offers to rebuild the prompt.
 
-**Studio settings → Analysis and generation engines** shows whether Claude Code and Codex are installed and signed in (**Check again** after signing in), the analysis engine (Claude by default, Codex, or Manual), the generation engine for Phase 5, and each engine's time limit. Each run's files are kept in `jobs\<scene>\analysis-<n>\` (or `polish-<n>\`) inside the private data folder.
+**Studio settings → Analysis and generation engines** shows whether Claude Code and Codex are installed and signed in (**Check again** after signing in), the analysis engine (Claude by default, Codex, or Manual), the generation engine (Codex by default, or Manual), and each engine's time limit. Each run's files are kept in `jobs\<scene>\analysis-<n>\` (or `polish-<n>\`, `generation-<n>\`, `export-<n>\`) inside the private data folder.
 
 ## Characters, prompt and approval (Phase 4)
 
-A scene has four steps, shown as tabs above the panels: **Analysis**, **Characters**, **Prompt** and **Review**. A tick marks a finished step. The scene opens on the step its saved stage suggests and stays there until you switch; refreshing keeps the step (`#/scenes/<id>/characters`).
+A scene has five steps, shown as tabs above the panels: **Analysis**, **Characters**, **Prompt**, **Review** and **Generate**. A tick marks a finished step. The scene opens on the step its saved stage suggests and stays there until you switch; refreshing keeps the step (`#/scenes/<id>/characters`).
 
 **Characters.** Each person found in the Base Image is a subject (Subject 1, Subject 2, …). For each one choose **Use a character**, **Keep original** or **Decide later**, then **Save assignments**. Click a box on the image to jump to its subject. **Choose from** narrows the list to one of your groups; a group never decides who stands where. Each character can appear only once per scene, and characters without reference photos cannot be chosen. Archived characters are hidden unless already assigned.
 
@@ -133,4 +133,21 @@ A scene has four steps, shown as tabs above the panels: **Analysis**, **Characte
 
 **Review and approve.** The Review step shows the Base Image and analysis version, every subject with its character and reference photos (with image numbers), the full prompt and negative prompt, the generation engine and cost notes. **Before you can approve** lists what is missing (for example an undecided subject or unconfirmed analysis details). **Please check** lists warnings (for example a prompt built before the current assignments); tick the box to approve anyway. **Approve scene** saves an unchangeable snapshot of the exact inputs, including content hashes of the Base Image and reference photos.
 
-An approval stays valid across restarts while nothing changes. Changing the analysis, subjects, assignments, reference photos or prompt (including using a polished version), or deleting a photo or character used in the scene, cancels it and shows why. Renaming a character does not. **Withdraw** cancels it yourself. The approval covers the content, not the engine, so changing the generation engine in Settings keeps it. Approval history keeps every snapshot. Generation itself arrives in Phase 5 and will require a valid approval.
+An approval stays valid across restarts while nothing changes. Changing the analysis, subjects, assignments, reference photos or prompt (including using a polished version), or deleting a photo or character used in the scene, cancels it and shows why. Renaming a character does not. **Withdraw** cancels it yourself. The approval covers the content, not the engine, so changing the generation engine in Settings keeps it. Approval history keeps every snapshot. Generating needs a valid approval.
+
+## Generate and results (Phase 5)
+
+A scene now has a fifth step, **Generate**. It needs a valid approval: without one it explains why (for example "You withdrew this approval") and offers **Go to review**. An approved scene opens on this step.
+
+**Generate image** builds the approved package in a job folder (`jobs\<scene>\generation-<n>\`): the Base Image and the approved reference photos as numbered JPEGs without location or other metadata (`image-1.jpg` is the Base Image), `prompt.txt`, `negative_prompt.txt`, `mapping.txt` (who is who, without names) and `instruction.txt` (exactly what Codex is asked). Everything comes from the approval snapshot, and each file is checked against the hash recorded at approval, so only what you approved is sent. It then runs `codex exec` once, with your own ChatGPT sign-in, and copies the image Codex saves into the studio's results. A run takes about a minute. You can leave the page or press **Cancel**. Each attempt uses your ChatGPT plan's image allowance; nothing is retried automatically.
+
+**Generate again** and **Variation** each ask for confirmation and add a new result; earlier results are never replaced. A variation sends the same approved prompt with one fixed extra line asking for small natural differences in fine details, without changing composition, poses, outfits or identities.
+
+If a run fails (not installed, signed out, usage limit, time limit, or "finished without producing an image"), the notice shows Codex's own words and offers **Try again**, **Export for manual use** and, when the run got far enough to have a Codex folder, **Look for a saved image**. That button looks only in this run's own Codex output folder (`generated_images\<thread id>\`) and keeps any image it finds as a result marked "recovered"; it never sends anything. A run interrupted by a studio restart is shown as **Interrupted** and is never resubmitted; check its folder or use **Look for a saved image** before **I checked — try again**. Cancelling stops the studio's run, but the request may already have reached OpenAI and used allowance.
+
+**Export for manual use** (always available, and the main action when Manual is the generation engine in Studio settings) creates the same package as a downloadable zip with a README, for ChatGPT or any other image app. Its `mapping.txt` includes character names, because you handle it yourself. **Import result** adds an image you made elsewhere (JPEG, PNG or WebP). Choose the package you used, so the result keeps the exact inputs even if you have changed the scene since; you can also link it to the current approval. "Made with" records where it came from, as you describe it. **Manual packages** lists every package with "Waiting for import" or the number of imported results.
+
+**Results** lists every result of the scene, newest first, with its source (Codex, Codex variation, recovered, or Imported) and "Earlier approval" when the inputs have changed since. Open one to see it alone, **Side by side** with the Base Image, or with a **Slider** that reveals one over the other. The viewer lists the prompt and analysis versions and the character assignments it was made from. **Mark as preferred** (one per scene), **Download** or **Delete** it. The **Results** page in the sidebar shows every result from every scene, with search and "Preferred only", and the Overview shows the latest results.
+
+Deleting a scene deletes its results and run folders. Deleting a character or photo keeps existing results and approval records; copies of that photo inside earlier generation or export packages stay in the scene's run folders until you delete those packages' scene.
+

@@ -1,7 +1,7 @@
 """One job runner for every engine run (PLAN.md §12.1, DECISIONS.md D010).
 
 Jobs are persisted before anything starts and run one at a time, oldest first.
-Each click queues a single analysis or polish run, but several jobs may wait as
+Each click queues a single analysis, polish or generation run, but several jobs may wait as
 not_started. Nothing is ever retried or resumed automatically: after a restart,
 runs that were in progress become Interrupted and waiting ones become Cancelled.
 """
@@ -27,11 +27,20 @@ from backend.engines import (
     resolve_command,
     run_process,
 )
+from backend.generation import (
+    PackageError,
+    generation_command,
+    interpret_generation,
+    prepare_generation_folder,
+    read_run,
+    snapshot_of,
+    store_codex_images,
+)
 from backend.models import EngineJob, PromptVersion, Scene, SceneAnalysis
 from backend.persistence import writing_session
 from backend.prompting import POLISH_SCHEMA, polish_instruction
 from backend.scene_store import latest, now
-from backend.workflow import add_analysis, analysis_of, refresh_workflow
+from backend.workflow import add_analysis, analysis_of, check_approval, refresh_workflow
 
 MAX_PROMPT_LENGTH = 40_000
 
@@ -193,6 +202,9 @@ class JobRunner:
             self._update(job_id, engine_version=version)
             if self._cancel_requested(job_id):
                 raise _Stopped()
+            if kind == "generation":
+                self._run_generation(job_id, timeout)
+                return
             if kind == "polish":
                 folder = prepare_polish_folder(self.settings, scene.id, instruction)
             else:
@@ -266,6 +278,54 @@ class JobRunner:
         finally:
             with self._lock:
                 self._cancelled.discard(job_id)
+
+    def _run_generation(self, job_id: str, timeout: int) -> None:
+        """One Codex image run from the approval recorded with the job (PLAN.md Phase 5)."""
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            scene = session.get(Scene, job.scene_id)
+            approval, reason = check_approval(session, scene)
+            # Inputs may have changed while the run was waiting; never send unapproved inputs.
+            if approval is None or reason or approval.id != job.input_id:
+                raise EngineError(
+                    "approval_ended",
+                    "The approval ended before this run started, so nothing was sent. Review "
+                    "and approve the scene again, then generate.",
+                )
+            mode = json.loads(job.settings_json or "{}").get("mode", "generate")
+            try:
+                folder, images, instruction = prepare_generation_folder(
+                    self.settings, session, scene.id, snapshot_of(approval)["inputs"], mode
+                )
+            except PackageError as error:
+                raise EngineError("missing_file", f"{error} Nothing was sent.") from error
+        self._update(job_id, job_folder=folder)
+        job_dir = asset_path(self.settings, folder)
+        command = resolve_command("codex_cli", self.settings.engine_commands)
+        if command is None:
+            raise EngineError("not_installed", "Codex could not be started.")
+        outcome = run_process(
+            generation_command(command, job_dir, images, instruction),
+            job_dir,
+            job_dir / "events.jsonl",
+            timeout,
+            should_stop=lambda: self._cancel_requested(job_id),
+        )
+        # Keep Codex's thread id whatever happened, so a saved image can be found later.
+        thread_id = read_run(job_dir).thread_id
+        if thread_id:
+            self._update(job_id, provider_request_id=thread_id)
+        if outcome.cancelled:
+            raise _Stopped()
+        _output, found = interpret_generation(job_dir, outcome)
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            session.expunge(job)
+        stored = store_codex_images(self.engine, self.settings, job, found)
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            job.result_id = stored[0]
+            self._finish(session, job, "completed")
 
 
 class _Stopped(Exception):

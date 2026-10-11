@@ -30,6 +30,14 @@ Subject assignments, the chosen group, selected reference photos, polish runs an
 
 A polish run is an engine job like an analysis (`jobs/<scene>/polish-<n>/`), with the same Interrupted and Cancelled handling. Its result is only a candidate stored with the job; the prompt changes only when the user chooses **Use polished**, so an interrupted or failed polish never alters a prompt. Deleting a character sets its subjects back to undecided; deleting a photo removes it from assignments. Both cancel affected approvals. Deleting a scene removes its assignments and approvals with it.
 
+## Phase 5 generation and results recovery
+
+Generation runs, manual export packages and results survive restart. A generation run is recorded as `not_started` with the approval it uses before anything launches; its folder (`jobs/<scene>/generation-<n>/`) and, as soon as Codex reports it, its thread id are recorded with the job. At startup a running generation becomes **Interrupted** and a waiting one **Cancelled** ("Nothing was sent"), like every engine run; nothing is resubmitted. A run that waited while its approval ended fails without sending anything.
+
+An Interrupted, Cancelled or Failed generation may still have produced an image in Codex's own folder, so the studio offers **Look for a saved image**. It reads only that run's `generated_images/<thread_id>/` folder, keeps each image as a new result marked "recovered" and skips images already kept for that run. It never contacts OpenAI. Cancelling stops the local process; the request may already have used allowance.
+
+Results are new files (`generations/<id>.<ext>` plus a metadata-free thumbnail) written with the same path journal as uploads, so an interrupted write is cleaned at startup. They are numbered per scene and never replaced. Each keeps the approval it was made from, so its exact inputs stay readable after later edits. Export packages (`jobs/<scene>/export-<n>/` with `package.zip`) keep their approval id; importing against a package links the result to that approval even if it has ended since. Deleting a result queues its files for deletion; deleting a scene deletes its results, packages and run folders. Copies of reference photos inside earlier packages remain until their scene is deleted.
+
 ## Backups at the current stage
 
 No application backup/restore UI is implemented yet. For an offline manual backup, stop Character Studio, ensure its process has exited, then copy the **entire** private data directory to a separate backup location. Never copy only a running `studio.db`; active SQLite WAL files may contain committed changes. The baseline suite verifies SQLite's supported online backup primitive for the database.
@@ -38,7 +46,7 @@ To manually restore, stop the application, retain the current data directory as 
 
 ## Mandatory later-phase implementation
 
-- Phase 5 generation must call `backend.workflow.require_valid_approval` in the same transaction that queues the job, and record the approval id with the job.
+- Done in Phase 5: generation and export call `backend.workflow.require_valid_approval` in the same transaction that records the job, and record the approval id with it.
 - Persist generation jobs and attempts before dispatch. Keep pending/running/completed/failed/cancelled/interrupted/outcome_unknown distinct.
 - An interrupted request that may have reached a provider becomes outcome_unknown; reconcile only through supported provider mechanisms.
 - Never resubmit automatically after restart, timeout or an uncertain response. Provider idempotency and status lookup are capability-dependent, not assumed.

@@ -434,7 +434,7 @@ export function ReviewPanel({ scene, characters, generationEngine, busy, unsaved
       <span className="approved-mark" aria-hidden="true">✓</span>
       <div><strong>Approved {formatDate(current.approved_at)}</strong>
         <p>These exact inputs are locked for generation: analysis version {current.analysis_version}, prompt version {current.prompt_version}{current.is_polished ? ' (polished)' : ''}, the assignments and reference photos below. Changing any of them cancels the approval.</p>
-        <p className="hint">Snapshot {current.snapshot_hash.slice(0, 12)} · Generation arrives in Phase 5.</p></div>
+        <p className="hint">Snapshot {current.snapshot_hash.slice(0, 12)} · Generate or export it on the Generate step.</p></div>
       <button type="button" className="secondary" disabled={busy} onClick={() => { if (window.confirm('Withdraw this approval? The scene stays as it is; you can approve it again later.')) onWithdraw(current.id) }}>Withdraw</button>
     </div> : scene.approval.ended_reason && <p className="notice-line warning-line">Previous approval ended: {scene.approval.ended_reason}</p>}
 
@@ -448,8 +448,8 @@ export function ReviewPanel({ scene, characters, generationEngine, busy, unsaved
       <section className="review-card">
         <div className="review-card-head"><h4>Generation</h4></div>
         <p><strong>{generationEngine === 'manual' ? 'Manual' : 'Codex'}</strong> is the generation engine in Studio settings.</p>
-        <p className="hint">Approval covers the content, not the engine, so you can switch engines later without approving again. Output: one image framed like the Base Image; more settings arrive with generation in Phase 5.</p>
-        <p className="hint"><strong>Cost:</strong> no per-use charge and no API key. Generating with Codex will use your ChatGPT plan’s allowance, which image generation uses faster than text. Nothing is generated or sent in this phase.</p>
+        <p className="hint">Approval covers the content, not the engine, so you can switch engines later without approving again. Output: one image framed like the Base Image. Codex offers no size or quality options, so there are no generation settings to lock.</p>
+        <p className="hint"><strong>Cost:</strong> no per-use charge and no API key. Each Codex attempt uses your ChatGPT plan’s allowance, which image generation uses faster than text. Generate sends the Base Image and the reference photos below to OpenAI; nothing is sent until you click it.</p>
       </section>
     </div>
 
