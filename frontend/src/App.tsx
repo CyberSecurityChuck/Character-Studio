@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, getBootstrap, request, savePreferences, type Bootstrap } from './api'
 
+import Backups from './Backups'
 import Engines from './Engines'
 import Library from './Library'
 import { replaceRoute, routeParts } from './route'
@@ -192,8 +193,9 @@ export default function App() {
                     <span id="save-status" role="status">{saving ? 'Saving to this computer…' : saved ? 'Saved to this computer' : dirty ? 'Unsaved changes' : 'All changes saved'}</span></div>
                 </form>
               </section>
-              <section className="panel storage-panel" aria-labelledby="storage-title"><span className="tiny-label">LOCAL BY DEFAULT</span><h2 id="storage-title">Your files stay with you</h2><p>Application data lives separately from the source code.</p><label>Data folder</label><code>{data.data_directory}</code><p className="hint">Changing this location is a setup task. Moving files and backup controls will be added in a later phase.</p></section>
+              <section className="panel storage-panel" aria-labelledby="storage-title"><span className="tiny-label">LOCAL BY DEFAULT</span><h2 id="storage-title">Your files stay with you</h2><p>Application data lives separately from the source code.</p><label>Data folder</label><code>{data.data_directory}</code><p className="hint">Changing this location is a setup task: see the User Guide. Backups below cover everything in this folder that the studio manages.</p></section>
               <Engines token={data.session_token} />
+              <Backups token={data.session_token} />
             </div>}
           </>}
         </main>

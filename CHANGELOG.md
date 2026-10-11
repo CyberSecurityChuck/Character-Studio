@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-11 — Phase 5 additions: package copies and backups (local branch `phase5-additions`)
+
+- From the user's answers to two open questions. Built in a separate worktree so the Phase 5 review folder stays unchanged.
+- Deleting a character or photo whose copies sit in earlier generation or export packages now shows a pop-up with the number of copies, packages and scenes, and asks: Delete and remove copies / Delete, keep copies / Cancel (also for bulk deletion). Nothing is removed without that choice. Removal deletes the numbered copies through the deletion queue, rebuilds export zips, notes it in the README and replaces a deleted character's name in `mapping.txt`; results and approvals are kept. Packages show "N photos removed".
+- Backups: Studio settings → Backups (create in the background, check every file, download, delete). Consistent snapshot: database via SQLite's backup API and hard-linked files taken together under the write lock; zip with a SHA-256 manifest. `Restore-Studio.cmd` (studio stopped) verifies the whole backup into a new folder, then swaps it in and keeps the previous data folder renamed; newer-version, damaged or unsafe backups are refused.
+- New modules `backend/packages.py`, `backend/backup.py`, `backend/backups_api.py`; `frontend/src/Backups.tsx`; `CopiesDialog` in `Controls.tsx`. No schema change, no dependencies added. 6 new tests (97 total). See D017.
+
 ## 2026-10-11 — Phase 5: Generation and Results (local commit, awaiting review)
 
 - Approved by the user ("Approve Phase 5"). The scene workspace has a fifth step, Generate; approved scenes open on it. Stages "Generating…" and "Results ready" join the scene stages.

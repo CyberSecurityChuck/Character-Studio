@@ -42,6 +42,7 @@ from backend.models import (
     SceneAnalysis,
     SubjectMapping,
 )
+from backend.packages import missing_images
 from backend.persistence import writing_session
 from backend.prompting import build_prompt, check_prompt, polish_instruction
 from backend.scene_store import active_job, latest, now
@@ -454,6 +455,12 @@ def generation_detail(request, session, scene: Scene, current):
                 "approval_id": job.input_id,
                 "approval_current": job.input_id == current_id,
                 "result_count": sum(1 for r in results if r.job_id == job.id),
+                # Reference photos removed later, when the user deleted them with their copies.
+                "photos_removed": missing_images(
+                    request.app.state.settings,
+                    job,
+                    json.loads(session.get(Approval, job.input_id).snapshot_json)["inputs"],
+                ),
                 "job_folder": job_folder_path(request.app.state.settings, job),
                 "download_url": f"/api/exports/{job.id}/package",
             }

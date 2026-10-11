@@ -24,8 +24,8 @@ Standing rules: no project file changes without the user's approval (describe, t
 ## Scope notes and open questions for the user
 
 - PLAN.md Phase 5 lists "Add optional API adapter". Not built: AGENTS.md and D009 require separate explicit approval for paid API engines. The design leaves room for it.
-- Reference-photo copies inside earlier generation/export packages stay in run folders after the character/photo is deleted (until the scene is deleted). Ask: keep, or purge on deletion?
-- `docs/RECOVERY.md` says a consistent backup/restore feature is required before the Phase 5 MVP is complete. It is not in PLAN.md's Phase 5 task list and was not built. Ask: add it within Phase 5 or later?
+- Answered by the user on 2026-10-11 and built (D017) on the local branch `phase5-additions`, in the sibling worktree `../Character-Studio-phase5-additions` (created from `58bafe3` so the review folder is untouched): the package-copies pop-up on character/photo deletion (user's design: ask, never delete copies automatically) and backup/restore (user left the choice to the assistant; built now). New: `backend/packages.py`, `backend/backup.py`, `backend/backups_api.py`, `frontend/src/Backups.tsx`, `CopiesDialog`, `Restore-Studio.cmd`, `scripts/Restore-Studio.ps1`, `tests/test_backup.py`. 97 tests pass on the branch.
+- Merge plan: after the user's Phase 5 review, apply any review fixes, merge `phase5-additions` into `main` (fast-forward if `main` has not moved), rerun the checks, give the user a short follow-up checklist for the two additions, then remove the worktree with `git worktree remove`. Ask before pushing.
 
 ## Runtime and next action
 

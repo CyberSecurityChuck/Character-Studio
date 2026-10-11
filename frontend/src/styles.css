@@ -660,3 +660,20 @@ button .inline-icon { margin-right: 6px; }
 @media (max-width: 700px) { .compare-side { grid-template-columns: 1fr; } .result-grid, .result-grid.gallery, .recent-results { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .result-line { justify-content: start; } .viewer-actions .spacer { display: none; } .generate-actions button { flex: 1 1 auto; } }
 .manual-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 13px; color: var(--muted); margin-top: -6px; }
 .manual-links .link-button { min-height: 32px; padding: 4px 6px; font-size: 13px; }
+.copies-dialog { width: min(620px, 94vw); }
+.copies-dialog p { margin-top: 10px; }
+.copies-dialog .check-box p { margin-top: 8px; }
+.copies-actions { flex-wrap: wrap; align-items: center; }
+.copies-actions .spacer { flex: 1; }
+.backups-panel { grid-column: 1 / -1; }
+.backups-panel .panel-head { align-items: start; }
+.backups-panel .panel-head button { min-height: 38px; }
+.backup-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; }
+.backup-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.backup-copy { flex: 1; min-width: 220px; display: grid; gap: 2px; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.backup-actions .link-button { min-height: 32px; padding: 4px 8px; font-size: 12px; }
+.danger-link { color: #a3372a; }
+.check-ok { color: var(--success); font-size: 12px; font-weight: 600; }
+.backup-folder { margin-top: 12px; overflow-wrap: anywhere; }
+.backup-folder .link-button { min-height: 30px; padding: 2px 6px; font-size: 12px; }

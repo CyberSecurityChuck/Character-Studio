@@ -51,6 +51,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🎯 | Adjustable round thumbnails (drag and zoom; originals never altered) | ✅ Available |
 | 👨‍👩‍👧 | Reusable groups: couples, families, friends | ✅ Available |
 | ♻️ | Crash-safe storage: stale-edit protection, upload/delete recovery | ✅ Available |
+| 💾 | Consistent backups with per-file checks; restore that never overwrites your data | ✅ Available |
 | 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | ✅ Available |
 | 🧑‍🤝‍🧑 | Map people in the scene to saved characters, pick reference photos; optional "Polish prompt" | ✅ Available |
 | ✅ | Review screen and approval snapshots that cancel themselves when any input changes | ✅ Available |
@@ -171,7 +172,7 @@ cd Character-Studio
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
 ```
 
-Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:8765>. Use **`Stop-Studio.cmd`** to stop it.
+Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:8765>. Use **`Stop-Studio.cmd`** to stop it, and **`Restore-Studio.cmd`** (while stopped) to restore a backup made in Studio settings.
 
 📖 Full setup, configuration, troubleshooting and day-to-day use: **[User Guide](docs/USER_GUIDE.md)**.
 

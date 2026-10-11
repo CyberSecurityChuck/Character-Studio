@@ -95,3 +95,36 @@ export function SelectionBar({ count, total, onAll, onNone, onDone, children }: 
 
 /** Display-only sentence case: capitalise the first letter, leave the rest as written. */
 export const sentence = (text: string) => text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : text
+
+export type CopySummary = { count: number; packages: number; scenes: string[] }
+export type CopyChoice = 'remove' | 'keep' | null
+
+/** Deleting a character or photo that also has copies inside saved packages: the user decides. */
+export function CopiesDialog({ title, message, copies, onChoose }: { title: string; message: string; copies: CopySummary; onChoose: (choice: CopyChoice) => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const chosen = useRef<CopyChoice>(null)
+  useEffect(() => { ref.current?.showModal() }, [])
+  const choose = (choice: CopyChoice) => { chosen.current = choice; ref.current?.close() }
+  const where = copies.scenes.length === 1 ? `the scene “${copies.scenes[0]}”` : `${copies.scenes.length} scenes (${copies.scenes.join(', ')})`
+  return <dialog ref={ref} className="image-dialog text-dialog copies-dialog" aria-labelledby="copies-title" onClose={() => onChoose(chosen.current)}>
+    <div className="text-dialog-form">
+      <h2 id="copies-title">{title}</h2>
+      <p>{message}</p>
+      <div className="check-box warning">
+        <strong>Copies in saved packages</strong>
+        <p>{copies.count} {copies.count === 1 ? 'copy' : 'copies'} of these photos {copies.count === 1 ? 'is' : 'are'} saved in {copies.packages} {copies.packages === 1 ? 'package' : 'packages'} in {where}: the files sent to Codex or exported for manual use.</p>
+        <ul>
+          <li><b>Remove copies too</b> deletes those files. The packages keep their other files, and export zips are rebuilt without them.</li>
+          <li><b>Keep copies</b> leaves them in the scene’s run folders until you delete that scene.</li>
+        </ul>
+        <p>Results and approval records are kept either way. Packages you already downloaded are not changed.</p>
+      </div>
+      <div className="dialog-actions copies-actions">
+        <button type="button" className="secondary" onClick={() => choose(null)}>Cancel</button>
+        <span className="spacer" />
+        <button type="button" className="secondary" onClick={() => choose('keep')}>Delete, keep copies</button>
+        <button type="button" className="danger secondary" onClick={() => choose('remove')}>Delete and remove copies</button>
+      </div>
+    </div>
+  </dialog>
+}

@@ -9,6 +9,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from backend.backup import BackupRunner, clean_partial
+from backend.backups_api import router as backups_router
 from backend.configuration import Settings, load_settings
 from backend.jobs import JobRunner, reconcile_on_startup
 from backend.library import backfill_photo_hashes, clean_deleted_files
@@ -33,6 +35,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Runs left over from a previous process are never resumed (DECISIONS.md D010).
         # Reconciling also re-checks every approval against the current inputs.
         reconcile_on_startup(app.state.engine)
+        clean_partial(settings)
+        app.state.backups = BackupRunner(app.state.engine, settings)
         app.state.runner = JobRunner(app.state.engine, settings)
         app.state.runner.start()
         app.state.session_token = secrets.token_urlsafe(32)
@@ -141,6 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(library_router)
     app.include_router(scenes_router)
     app.include_router(results_router)
+    app.include_router(backups_router)
 
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):

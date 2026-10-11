@@ -377,3 +377,54 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []
+
+
+def test_deleting_can_remove_package_copies_only_when_asked(engine_client, fake):
+    client = engine_client
+    ada, scene = approved_scene(client)
+    job, _detail = run_generation(client, scene)
+    export(client, scene)
+    photo_ids = scene["subjects"][0]["reference_ids"]
+
+    def copies(**query):
+        params = "&".join(f"{k}={v}" for k, v in query.items())
+        return client.get(f"/api/package-copies?{params}").json()
+
+    # Three references, each in the generation folder and the export package.
+    assert copies(character=ada["id"]) == {"count": 6, "packages": 2, "scenes": ["Two people"]}
+    assert copies(photo=photo_ids[0])["count"] == 2
+
+    def revision():
+        return client.get(f"/api/characters/{ada['id']}").json()["revision"]
+
+    # Keeping copies (the default) leaves the package untouched.
+    kept = client.delete(
+        f"/api/photos/{photo_ids[0]}?revision={revision()}", headers=authorization(client)
+    ).json()
+    assert kept["copies_removed"] == 0 and copies(photo=photo_ids[0])["count"] == 2
+    # Removing copies of one photo deletes just its files and notes it in the package.
+    removed = client.delete(
+        f"/api/photos/{photo_ids[1]}?revision={revision()}&remove_copies=true",
+        headers=authorization(client),
+    ).json()
+    assert removed["copies_removed"] == 2 and copies(photo=photo_ids[1])["count"] == 0
+    detail = client.get(f"/api/scenes/{scene['id']}").json()
+    [package] = detail["exports"]
+    assert package["photos_removed"] == 1
+    zipped = zipfile.ZipFile(io.BytesIO(client.get(package["download_url"]).content))
+    assert "image-3.jpg" not in zipped.namelist() and "image-2.jpg" in zipped.namelist()
+    assert "were removed from this package" in zipped.read("README.txt").decode()
+
+    # Deleting the character with its copies: every copy goes, results and Image 1 stay.
+    gone = client.delete(
+        f"/api/characters/{ada['id']}?revision={revision()}&remove_copies=true",
+        headers=authorization(client),
+    ).json()
+    assert gone["copies_removed"] == 4 and copies(character=ada["id"])["count"] == 0
+    detail = client.get(f"/api/scenes/{scene['id']}").json()
+    assert len(detail["results"]) == 1 and detail["exports"][0]["photos_removed"] == 3
+    zipped = zipfile.ZipFile(io.BytesIO(client.get(package["download_url"]).content))
+    assert [n for n in zipped.namelist() if n.startswith("image-")] == ["image-1.jpg"]
+    mapping = zipped.read("mapping.txt").decode()
+    assert "Ada" not in mapping and "Subject 1 (Deleted character)" in mapping
+    assert sorted(p.name for p in Path(job["job_folder"]).glob("image-*.jpg")) == ["image-1.jpg"]

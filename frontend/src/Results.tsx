@@ -10,7 +10,7 @@ export type Result = {
   prompt_version: number | null; analysis_version: number | null; is_polished: boolean; mappings: ResultMapping[]
   scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number
 }
-export type ExportPackage = { id: string; number: number; created_at: string; approval_id: string; approval_current: boolean; result_count: number; job_folder: string | null; download_url: string }
+export type ExportPackage = { id: string; number: number; created_at: string; approval_id: string; approval_current: boolean; result_count: number; photos_removed: number; job_folder: string | null; download_url: string }
 type Base = { url: string; width: number; height: number }
 
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -275,7 +275,7 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
 
     {scene.exports.length > 0 && <details className="package-list"><summary>Manual packages ({scene.exports.length})</summary>
       <ul>{scene.exports.map(e => <li key={e.id}>
-        <div><strong>Package {e.number}</strong> <span className="hint">{formatDate(e.created_at)} · {e.approval_current ? 'current approval' : 'earlier approval'}</span></div>
+        <div><strong>Package {e.number}</strong> <span className="hint">{formatDate(e.created_at)} · {e.approval_current ? 'current approval' : 'earlier approval'}{e.photos_removed ? ` · ${plural(e.photos_removed, 'photo')} removed` : ''}</span></div>
         <span className={`run-status ${e.result_count ? 'completed' : ''}`}>{e.result_count ? `${plural(e.result_count, 'result')} imported` : 'Waiting for import'}</span>
         <span className="package-actions"><a className="link-button" href={e.download_url} download>Download</a>
           <button type="button" className="link-button" onClick={() => setImporting(e.id)}>Import result</button>

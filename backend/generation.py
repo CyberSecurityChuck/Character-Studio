@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import re
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -31,8 +30,8 @@ from backend.models import (
     ReferencePhoto,
     Scene,
 )
+from backend.packages import mapping_text, write_text, write_zip
 from backend.persistence import writing_session
-from backend.prompting import image_list
 from backend.scene_store import next_version, now
 from backend.workflow import refresh_workflow
 
@@ -90,22 +89,6 @@ def generation_instruction(inputs: dict, mode: str) -> str:
     return "\n".join(lines)
 
 
-def mapping_text(inputs: dict, names: dict[str, str] | None) -> str:
-    """Who is who. Names appear only in packages the user handles themselves."""
-    lines = ["Character Studio · subject mapping", "", "- Image 1: the Base Image."]
-    for mapping in inputs["mappings"]:
-        subject = mapping["subject"]
-        images = tuple(r["image"] for r in mapping["references"])
-        if mapping["action"] == "replace":
-            who = f" ({names.get(mapping['character_id'], 'Deleted character')})" if names else ""
-            lines.append(f"- {subject}{who}: identity only from {image_list(images)}.")
-        elif mapping["action"] == "keep":
-            lines.append(f"- {subject}: kept as they appear in Image 1.")
-        else:
-            lines.append(f"- {subject}: not assigned; kept as they appear in Image 1.")
-    return "\n".join(lines) + "\n"
-
-
 def _clean_copy(source: Path, target: Path) -> None:
     """Upright JPEG without EXIF/GPS or other metadata (PLAN.md §22)."""
     with Image.open(source) as image:
@@ -145,11 +128,6 @@ def write_package(
     write_text(folder / "negative_prompt.txt", prompt["negative_prompt"].strip() + "\n")
     write_text(folder / "mapping.txt", mapping_text(inputs, names))
     return files
-
-
-def write_text(path: Path, text: str) -> None:
-    # "\n" exactly as approved; no Windows newline translation.
-    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def new_job_folder(settings: Settings, scene_id: str, kind: str) -> tuple[str, Path, int]:
@@ -199,7 +177,7 @@ def prepare_export_folder(settings: Settings, session, scene: Scene, approval: A
     snapshot = snapshot_of(approval)
     inputs, names = snapshot["inputs"], snapshot["display"].get("character_names", {})
     key, folder, number = new_job_folder(settings, scene.id, "export")
-    files = write_package(settings, session, folder, inputs, names)
+    write_package(settings, session, folder, inputs, names)
     readme = README.format(
         title=scene.title,
         approved_at=approval.approved_at[:16].replace("T", " ") + " UTC",
@@ -207,15 +185,7 @@ def prepare_export_folder(settings: Settings, session, scene: Scene, approval: A
         approval=approval.id[:12],
     )
     write_text(folder / "README.txt", readme)
-    names_in_zip = [p.name for p in files] + [
-        "prompt.txt",
-        "negative_prompt.txt",
-        "mapping.txt",
-        "README.txt",
-    ]
-    with zipfile.ZipFile(folder / "package.zip", "w", zipfile.ZIP_DEFLATED) as archive:
-        for name in names_in_zip:
-            archive.write(folder / name, name)
+    write_zip(folder)
     return key, number
 
 

@@ -80,7 +80,7 @@ Each run uses your plan's allowance and sends data to that provider: **Analyse**
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
 - Approval covers Phases 1, 2, 2.5, 3, 4 and 5. Phase 5.5 and later require explicit approval.
 
-For data recovery and current backup limitations see `docs/RECOVERY.md`. Git backs up source history, not private application data.
+For data recovery see **Backups and restore** below and `docs/RECOVERY.md`. Git backs up source history, not private application data.
 
 ## Troubleshooting
 
@@ -100,6 +100,8 @@ Use each photo's label selector and **Make primary** button. Open a thumbnail fo
 Refreshing the browser keeps the current page, library tab and open profile or group (the address shows, for example, `#/characters/<id>` or `#/groups`).
 
 **Archive character** preserves all data and hides the profile from the active list; enable **Show archived** to restore it. **Delete permanently** removes the profile, references and memberships after explicit confirmation. Deleting a group preserves its characters/photos. A deleted primary photo falls back to the oldest remaining reference.
+
+If copies of those photos were sent to Codex or exported for manual use, they are also saved inside those packages in the scenes' run folders. Before deleting, the studio then asks: **Delete and remove copies** deletes those copies as well (each package keeps its other files, export zips are rebuilt without them, and a deleted character's name is replaced in `mapping.txt`), **Delete, keep copies** leaves them until you delete the scene, or **Cancel**. Nothing is removed without that choice. Results and approval records are kept either way, and packages you already downloaded are not changed. A package with removed photos says so in its README and in the scene's **Manual packages** list.
 
 Save profile edits before changing photos. If a batch upload stops, earlier successful uploads remain saved; reload to verify saved state before selecting remaining files. A stale revision or expired session is rejected. Reload after a service restart. Locked file deletions remain queued and are retried at startup; the UI reports pending cleanup.
 
@@ -149,5 +151,12 @@ If a run fails (not installed, signed out, usage limit, time limit, or "finished
 
 **Results** lists every result of the scene, newest first, with its source (Codex, Codex variation, recovered, or Imported) and "Earlier approval" when the inputs have changed since. Open one to see it alone, **Side by side** with the Base Image, or with a **Slider** that reveals one over the other. The viewer lists the prompt and analysis versions and the character assignments it was made from. **Mark as preferred** (one per scene), **Download** or **Delete** it. The **Results** page in the sidebar shows every result from every scene, with search and "Preferred only", and the Overview shows the latest results.
 
-Deleting a scene deletes its results and run folders. Deleting a character or photo keeps existing results and approval records; copies of that photo inside earlier generation or export packages stay in the scene's run folders until you delete those packages' scene.
+Deleting a scene deletes its results and run folders. Deleting a character or photo keeps existing results and approval records.
 
+## Backups and restore
+
+**Studio settings → Backups → Create backup** saves one file, `backups\character-studio-backup-<date>-<time>.zip`, inside your data folder. It holds the database (copied with SQLite's own backup method), your characters and photos, scenes, results, thumbnails and run folders, plus a manifest with a fingerprint (SHA-256) of every file. While it starts, saving pauses for a moment; the zip itself is written in the background and the studio keeps working. Each backup shows its date, size and what it contains. **Check** re-reads every file against its fingerprint and checks the database; **Download** saves it through your browser; **Delete** removes it from the data folder.
+
+Backups live in the data folder, so a disk failure would take them too: download them or copy them to another drive. Server logs, the launcher's process record and folders the studio does not manage (for example the Phase 2.5 `spike-2.5` test folder) are not included.
+
+**To restore:** double-click **Stop-Studio.cmd**, then **Restore-Studio.cmd**. It refuses while the studio is running. It lists the backups in your data folder (newest first) and restores the one you pick after you type `RESTORE`; to restore a downloaded backup, drop the zip onto Restore-Studio.cmd. It first checks and unpacks the whole backup into a new folder; only if everything matches does it rename your current data folder to `Character-Studio-Data.before-restore-<time>` and put the restored one in its place. Nothing is deleted or overwritten, your backups move with you, and a backup made by a newer studio version is refused. Then start the studio. When you are sure the restored data is right, you can delete the `before-restore` folder yourself.

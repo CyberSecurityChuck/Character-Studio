@@ -234,7 +234,7 @@ def test_groups_many_to_many_and_deletion_scope(client, settings):
     result = client.delete(
         f"/api/characters/{a['id']}?revision={a['revision']}", headers=authorization(client)
     )
-    assert result.json() == {"deleted": True, "cleanup_pending": False}
+    assert result.json() == {"deleted": True, "cleanup_pending": False, "copies_removed": 0}
     assert client.get("/api/groups").json()[0]["member_ids"] == [b["id"]]
     assert client.get("/api/groups").json()[0]["revision"] == 2
     assert not list((settings.data_dir / "characters").iterdir())

@@ -7,7 +7,7 @@ import os
 import shutil
 import warnings
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -28,6 +28,7 @@ from backend.models import (
     Scene,
     SubjectMapping,
 )
+from backend.packages import copy_summary, deletion_paths, find_copies, rebuild_exports
 from backend.persistence import writing_session
 from backend.workflow import auto_references, refresh_scenes, scenes_using
 
@@ -253,12 +254,47 @@ def clean_deleted_files(engine, settings, paths=None):
         return session.scalar(query.limit(1)) is not None
 
 
+@router.get("/package-copies")
+def package_copies(
+    request: Request,
+    character: Annotated[list[str] | None, Query(max_length=200)] = None,
+    photo: Annotated[list[str] | None, Query(max_length=50)] = None,
+):
+    """How many copies of these characters' or photos' references sit in saved packages."""
+    with Session(request.app.state.engine) as session:
+        copies = find_copies(
+            session,
+            request.app.state.settings,
+            character_ids=set(character or ()),
+            photo_ids=set(photo or ()),
+        )
+        return copy_summary(session, copies)
+
+
+def queue_copies(session, copies) -> list[str]:
+    """Only when the user chose it: copies inside packages are deleted with the original."""
+    paths = deletion_paths(copies)
+    for path in paths:
+        session.merge(PendingFileDeletion(path=path))
+    return paths
+
+
 @router.delete("/characters/{character_id}")
-def delete_character(request: Request, character_id: str, revision: int = Query(ge=1)):
+def delete_character(
+    request: Request,
+    character_id: str,
+    revision: int = Query(ge=1),
+    remove_copies: bool = Query(default=False),
+):
     paths = []
+    settings = request.app.state.settings
     with writing(request) as session:
         item = require(session, Character, character_id)
         check_revision(item, revision)
+        copies = (
+            find_copies(session, settings, character_ids={character_id}) if remove_copies else []
+        )
+        paths.extend(queue_copies(session, copies))
         for photo in session.scalars(
             select(ReferencePhoto).where(ReferencePhoto.character_id == character_id)
         ):
@@ -281,8 +317,9 @@ def delete_character(request: Request, character_id: str, revision: int = Query(
         session.delete(item)
         session.flush()
         refresh_scenes(session, affected)
-    pending = clean_deleted_files(request.app.state.engine, request.app.state.settings, paths)
-    return {"deleted": True, "cleanup_pending": pending}
+    pending = clean_deleted_files(request.app.state.engine, settings, paths)
+    rebuild_exports(request.app.state.engine, settings, copies, {character_id})
+    return {"deleted": True, "cleanup_pending": pending, "copies_removed": len(copies)}
 
 
 def decode_image(payload, settings):
@@ -456,12 +493,19 @@ def backfill_photo_hashes(engine, settings) -> None:
 
 
 @router.delete("/photos/{photo_id}")
-def delete_photo(request: Request, photo_id: str, revision: int = Query(ge=1)):
+def delete_photo(
+    request: Request,
+    photo_id: str,
+    revision: int = Query(ge=1),
+    remove_copies: bool = Query(default=False),
+):
+    settings = request.app.state.settings
     with writing(request) as session:
         photo = require(session, ReferencePhoto, photo_id)
         item = require(session, Character, photo.character_id)
         check_revision(item, revision)
-        paths = queue_photo_deletion(session, photo)
+        copies = find_copies(session, settings, photo_ids={photo_id}) if remove_copies else []
+        paths = queue_copies(session, copies) + queue_photo_deletion(session, photo)
         session.flush()
         if item.primary_photo_id == photo.id:
             item.primary_photo_id = session.scalar(
@@ -473,9 +517,9 @@ def delete_photo(request: Request, photo_id: str, revision: int = Query(ge=1)):
         drop_from_mappings(session, item, photo.id)
         touch(item)
         result = character_data(session, item)
-    result["cleanup_pending"] = clean_deleted_files(
-        request.app.state.engine, request.app.state.settings, paths
-    )
+    result["cleanup_pending"] = clean_deleted_files(request.app.state.engine, settings, paths)
+    rebuild_exports(request.app.state.engine, settings, copies, set())
+    result["copies_removed"] = len(copies)
     return result
 
 
