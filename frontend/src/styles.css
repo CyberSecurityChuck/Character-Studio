@@ -547,6 +547,13 @@ button .inline-icon { margin-right: 6px; }
 .polish-body h2 { margin: 0 0 6px; }
 .polish-body del, .diff-text del { background: #f6d8d0; color: #842d22; text-decoration: line-through; text-decoration-thickness: 1px; }
 .polish-body ins, .diff-text ins { background: #d9ecd9; color: #2f5a3f; text-decoration: none; }
+.diff-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 12px 0 0; }
+.diff-summary .hint { margin: 0; }
+.diff-chip { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 650; }
+.diff-chip.removed { background: #f6d8d0; }
+.diff-chip.added { background: #d9ecd9; }
+.diff-chip del, .diff-chip ins { background: transparent; }
+.diff-text del, .diff-text ins { border-radius: 2px; padding: 0 1px; }
 .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .compare-grid section { min-width: 0; display: flex; flex-direction: column; }
 .compare-grid h3 { font-size: 13px; margin-bottom: 8px; }

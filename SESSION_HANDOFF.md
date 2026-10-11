@@ -27,7 +27,7 @@ Standing rules: no project file changes without the user's approval (describe, t
 
 - The user's review (`Phase_Checks/Phase4_Review_Report.md`, 34/34, "Needs fixes first") reported a clipped box label, no visible resizing, no warning after deleting the identity instruction in a polish edit, and asked for deleting prompt versions. Approved: "Yes, please go ahead with all four fixes".
 - Done and committed locally: removed the leftover `.subject-box span` CSS rule; eight handles on the selected box (`SubjectCanvas`, `HANDLES`); `check_prompt` "identity comes only from" requirement; `DELETE /api/scenes/{id}/prompts/{prompt_id}`, `workflow.next_prompt_version`, `approval_data.prompt_id`, `PromptHistory` dialog replacing the versions dropdown. 82 tests pass.
-- Follow-up checklist: `Phase_Checks/Phase4_Followup_Checklist.html` (export `Phase4_Followup_Report.md`).
+- Follow-up checklist: `Phase_Checks/Phase4_Followup_Checklist.html`; report `Phase4_Followup_Report.md` (13/13, "Needs fixes first": step 5, the comparison marked nothing on a long real prompt because the word diff gave up above ~3M cells). Fixed in `Mapping.tsx` `diffWords`/`compare` (lines first, then words in changed passages, 12M-cell limit, removed/added counts). Next: the user re-checks the comparison on a real polish, then decides on accepting Phase 4 and pushing.
 
 ## Runtime and next action
 

@@ -208,30 +208,75 @@ export function MappingPanel({ scene, token, characters, groups, busy, highlight
   </>
 }
 
-/** Word-level differences between two texts (longest common subsequence). */
+/** Differences between two texts: lines first, then words inside each changed passage. */
 export type Segment = { text: string; kind: 'same' | 'del' | 'ins' }
-export function diffWords(before: string, after: string): { left: Segment[]; right: Segment[]; exact: boolean } {
-  const a = before.split(/(\s+)/), b = after.split(/(\s+)/)
-  const n = a.length, m = b.length
-  if (n * m > 3_000_000) return { left: [{ text: before, kind: 'same' }], right: [{ text: after, kind: 'same' }], exact: false }
+export type Diff = { left: Segment[]; right: Segment[]; removed: number; added: number; exact: boolean }
+type Op = { kind: Segment['kind']; a?: string; b?: string }
+// Cells in one comparison table; a whole-prompt rewrite of ~3,000 words still fits.
+const CELL_LIMIT = 12_000_000
+
+/** Longest common subsequence on comparison keys; null when the table would be too large. */
+function compare(a: string[], b: string[], key: (t: string) => string): Op[] | null {
+  const ka = a.map(key), kb = b.map(key)
+  let start = 0
+  while (start < a.length && start < b.length && ka[start] === kb[start]) start++
+  let endA = a.length, endB = b.length
+  while (endA > start && endB > start && ka[endA - 1] === kb[endB - 1]) { endA--; endB-- }
+  const n = endA - start, m = endB - start
+  if (n * m > CELL_LIMIT) return null
   const width = m + 1
-  const table = new Uint32Array((n + 1) * width)
+  // Values never exceed min(n, m), which the cell limit keeps below 65,536.
+  const table = new Uint16Array((n + 1) * width)
   for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
-    table[i * width + j] = a[i] === b[j] ? table[(i + 1) * width + j + 1] + 1 : Math.max(table[(i + 1) * width + j], table[i * width + j + 1])
-  const left: Segment[] = [], right: Segment[] = []
+    table[i * width + j] = ka[start + i] === kb[start + j] ? table[(i + 1) * width + j + 1] + 1 : Math.max(table[(i + 1) * width + j], table[i * width + j + 1])
+  const ops: Op[] = a.slice(0, start).map((t, i) => ({ kind: 'same', a: t, b: b[i] }))
+  let i = 0, j = 0
+  while (i < n && j < m) {
+    if (ka[start + i] === kb[start + j]) { ops.push({ kind: 'same', a: a[start + i], b: b[start + j] }); i++; j++ }
+    else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) ops.push({ kind: 'del', a: a[start + i++] })
+    else ops.push({ kind: 'ins', b: b[start + j++] })
+  }
+  while (i < n) ops.push({ kind: 'del', a: a[start + i++] })
+  while (j < m) ops.push({ kind: 'ins', b: b[start + j++] })
+  for (let k = 0; k < a.length - endA; k++) ops.push({ kind: 'same', a: a[endA + k], b: b[endB + k] })
+  return ops
+}
+
+export function diffWords(before: string, after: string): Diff {
+  const lines = (text: string) => text.match(/[^\n]*\n|[^\n]+/g) ?? []
+  const words = (text: string) => text.match(/\s+|\S+\s*/g) ?? []
+  const wordCount = (text: string) => (text.match(/\S+/g) ?? []).length
+  const result: Diff = { left: [], right: [], removed: 0, added: 0, exact: true }
   const push = (list: Segment[], text: string, kind: Segment['kind']) => {
+    if (!text) return
+    if (kind === 'del') result.removed += wordCount(text)
+    if (kind === 'ins') result.added += wordCount(text)
     const last = list[list.length - 1]
     if (last && last.kind === kind) last.text += text; else list.push({ text, kind })
   }
-  let i = 0, j = 0
-  while (i < n && j < m) {
-    if (a[i] === b[j]) { push(left, a[i], 'same'); push(right, b[j], 'same'); i++; j++ }
-    else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) push(left, a[i++], 'del')
-    else push(right, b[j++], 'ins')
+  const lineOps = compare(lines(before), lines(after), t => t.trimEnd())
+  if (!lineOps) {
+    push(result.left, before, 'del'); push(result.right, after, 'ins')
+    return { ...result, exact: false }
   }
-  while (i < n) push(left, a[i++], 'del')
-  while (j < m) push(right, b[j++], 'ins')
-  return { left, right, exact: true }
+  let removedText = '', addedText = ''
+  const flush = () => {
+    // Inside a changed passage, compare words; whitespace and line wrapping alone are not changes.
+    const wordOps = compare(words(removedText), words(addedText), t => t.trim())
+    if (wordOps) for (const op of wordOps) {
+      if (op.kind === 'same') { push(result.left, op.a!, 'same'); push(result.right, op.b!, 'same') }
+      else if (op.kind === 'del') push(result.left, op.a!, /\S/.test(op.a!) ? 'del' : 'same')
+      else push(result.right, op.b!, /\S/.test(op.b!) ? 'ins' : 'same')
+    } else { push(result.left, removedText, 'del'); push(result.right, addedText, 'ins'); result.exact = false }
+    removedText = ''; addedText = ''
+  }
+  for (const op of lineOps) {
+    if (op.kind === 'del') removedText += op.a
+    else if (op.kind === 'ins') addedText += op.b
+    else { flush(); push(result.left, op.a!, 'same'); push(result.right, op.b!, 'same') }
+  }
+  flush()
+  return result
 }
 
 function DiffText({ segments }: { segments: Segment[] }) {
@@ -270,7 +315,10 @@ export function PolishDialog({ scene, pending, token, onClose, onSaved }: { scen
   return <dialog ref={ref} className="image-dialog polish-dialog" aria-labelledby="polish-title" onClose={onClose}>
     <div className="polish-body">
       <h2 id="polish-title">Compare the polished prompt</h2>
-      <p className="hint">Claude rewrote version {pending.prompt_version} for clarity under fixed rules: keep every fact, add nothing, keep the subject labels, image numbers and identity instructions. <del>Removed</del> and <ins>added</ins> words are marked.{!diff.exact && ' These prompts are too long to mark every change.'}</p>
+      <p className="hint">Claude rewrote version {pending.prompt_version} for clarity under fixed rules: keep every fact, add nothing, keep the subject labels, image numbers and identity instructions.</p>
+      <p className="diff-summary" role="status">{diff.removed || diff.added
+        ? <><span className="diff-chip removed"><del>{diff.removed} {diff.removed === 1 ? 'word' : 'words'} removed</del></span><span className="diff-chip added"><ins>{diff.added} {diff.added === 1 ? 'word' : 'words'} added</ins></span><span className="hint">Changes are highlighted in both columns.{!diff.exact && ' Some very long passages are marked as a whole.'}</span></>
+        : <span className="hint">No wording changes: the polished prompt is identical to the original.</span>}</p>
       <div className="compare-grid">
         <section aria-label="Original prompt"><h3>Original · version {pending.prompt_version}</h3><DiffText segments={diff.left} /></section>
         <section aria-label="Polished prompt"><div className="compare-head"><h3>Polished</h3><button type="button" className="link-button" onClick={() => setHandEdit(h => !h)}>{handEdit ? 'Show changes' : 'Edit by hand'}</button></div>

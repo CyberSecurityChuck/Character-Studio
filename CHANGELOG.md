@@ -7,6 +7,7 @@
 - Subject boxes can now be resized from any side or corner: eight handles on the selected box with larger grab areas, a box is selected when Adjust subjects opens, and the help text explains moving and resizing (Shift + arrow keys on the keyboard).
 - The required-element check now also needs the instruction that each subject's identity comes only from its own images; listing the attached images is no longer enough. Polish is told to keep it.
 - Prompt versions can be deleted from a new Version history window (list, preview, Load into editor, Delete version). The approved version and a version being polished cannot be deleted; version numbers recorded by approvals are never reused.
+- From the follow-up check (13/13; step 5 flagged): the polish comparison now marks changes in long prompts. It compares lines first, then words only inside changed passages, ignores line wrapping, and shows how many words were removed and added. Verified with a 3,671-word prompt.
 - No schema change. 82 tests pass (1 new, 1 extended).
 
 ## 2026-10-11 — Phase 4: Character Mapping and Approval (local commit, awaiting review)
