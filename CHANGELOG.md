@@ -1,6 +1,10 @@
 # Changelog
 
-## 2026-10-11 — Phase 5.5: Batch Processing (local commit, awaiting review)
+## 2026-10-11 — Phase 5.5 accepted
+
+- The user's review passed (`Phase_Checks/Phase5.5_Review_Report.md`: 20/20 steps, 0 problems, "Phase 5.5 looks good", no notes), including real Claude and Codex batches. Phase 5.5 (Batch Processing) is complete. Status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). Phase 6 needs "Approve Phase 6".
+
+## 2026-10-11 — Phase 5.5: Batch Processing
 
 - Approved by the user ("Approve Phase 5.5").
 - New scene accepts several images; each becomes a scene titled from its file name, and the new scenes stay selected for analysis.

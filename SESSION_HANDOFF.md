@@ -4,7 +4,7 @@ Checkpoint: 2026-10-11 IST (+05:30)
 
 ## Objective and authorization
 
-The user said **"Approve Phase 5.5"** on 2026-10-11 (Asia/Kolkata). Phase 5.5 (Batch Processing) is built and committed locally; it awaits the user's review with `Phase_Checks/Phase5.5_Review_Checklist.html` (git-ignored). Phase 5 is complete and accepted. Do not start Phase 6 without explicit approval. Pushing needs the user's approval each time.
+The user said **"Approve Phase 5.5"** on 2026-10-11 (Asia/Kolkata). Phase 5.5 (Batch Processing) is **complete and accepted**: the user's review (`Phase_Checks/Phase5.5_Review_Report.md`) passed 20/20 steps with 0 problems, verdict "Phase 5.5 looks good", no notes (2026-10-11). The user approved recording the acceptance and pushing `main` ("Record and push"). Phases 1–5 are complete and accepted. Do not start Phase 6 without explicit approval. Pushing needs the user's approval each time.
 
 Standing rules: no project file changes without the user's approval (describe, then wait for a yes; reading, testing and running the app are fine). No paid API calls or keys (D009). Every engine run is started by the user; batches run only after the user starts or continues them; nothing is retried or resumed automatically. Never read or store CLI logins.
 
@@ -19,7 +19,7 @@ Standing rules: no project file changes without the user's approval (describe, t
 
 - `uv run --locked pytest`: **106 passed**; batch tests repeated 3× clean. `uv run --locked ruff check .`: passed. `npm.cmd --prefix frontend run build`: passed.
 - Browser QA with Playwright on an isolated synthetic data folder (session scratchpad, port 8766, fake CLIs, drawn fictional characters): multi-upload, Analyse selected with Pause/Continue, waiting and paused cards, Suggest from group and Confirm, Generate approved scenes with a simulated plan limit, Continue, Try failed again, 3 variations from one scene, 1440 and 375 px, no console errors (only the existing favicon 404). The in-app browser pane could not take screenshots (window in the background), so Playwright was used.
-- Real CLIs were not run by the assistant.
+- Real CLIs were not run by the assistant; the user's review ran real Claude and Codex batches without problems.
 
 ## Scope notes and open questions for the user
 
@@ -28,7 +28,7 @@ Standing rules: no project file changes without the user's approval (describe, t
 
 ## Runtime and next action
 
-- The user's studio (http://127.0.0.1:8765) must be restarted to load Phase 5.5 (schema `0007_batches`).
-- Git: Phase 5.5 committed locally on `main`, **not pushed**. Push only `main` and only with approval; never `backup/pre-public-rewrite` or `refs/codex/*`. CI on request only.
+- The user's studio (http://127.0.0.1:8765) runs Phase 5.5 (schema `0007_batches`).
+- Git: Phase 5.5 and its acceptance pushed to the private `origin/main` with approval (CI not run); every later push needs new approval. Push only `main` and only with approval; never `backup/pre-public-rewrite` or `refs/codex/*`. CI on request only.
 - Gotchas: waiting batch items count as active runs (scenes locked until removed from the batch or run); Cancel remaining never stops a running item; `/api/batches/timing` must stay declared before `/api/batches/{batch_id}`.
-- Next action: wait for the user's Phase 5.5 review report; apply approved fixes; record acceptance; ask before pushing.
+- Next action: wait for "Approve Phase 6" (Quality and advanced features, PLAN.md). The paid API adapter stays unbuilt until separately approved.
