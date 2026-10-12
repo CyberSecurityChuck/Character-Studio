@@ -153,4 +153,39 @@ PROVIDERS = (
         formats=("jpeg",),
         pricing="Charged per use to your OpenAI API account. Each run asks for confirmation.",
     ),
+    # Phase 6C-1 (D025): image generation with the same keys. Both stay "unverified" until
+    # the user observes a real run; the assistant makes no paid calls.
+    ProviderCapabilities(
+        id="gemini_image",
+        name="Gemini image",
+        status="unverified",
+        description="Image generation with your own Google AI Studio key on a billed project. "
+        "Generate sends the Base Image and the approved reference photos, without location "
+        "data, with the approved prompt to Google, once per confirmed run.",
+        generation=True,
+        editing=True,
+        multiple_references=True,
+        sends_images_externally=True,
+        formats=("png", "jpeg"),
+        resolutions=("1K", "2K", "4K"),
+        max_references=14,
+        pricing="Not on the free tier; charged per image. Each run asks for confirmation.",
+    ),
+    ProviderCapabilities(
+        id="openai_images",
+        name="OpenAI Images",
+        status="unverified",
+        description="Image generation with your own OpenAI API key (organisation verification "
+        "required by OpenAI). Generate sends the Base Image and the approved reference photos, "
+        "without location data, with the approved prompt to OpenAI, once per confirmed run.",
+        generation=True,
+        editing=True,
+        multiple_references=True,
+        masks=True,
+        sends_images_externally=True,
+        formats=("png",),
+        resolutions=("1K", "2K"),
+        pricing="Charged per image token to your OpenAI API account. Each run asks for "
+        "confirmation.",
+    ),
 )

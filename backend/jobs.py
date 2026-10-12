@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
+from fastapi import HTTPException
 from PIL import Image, ImageOps
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
@@ -41,14 +42,18 @@ from backend.engines import (
     structured_reply,
 )
 from backend.generation import (
+    MODES,
     PackageError,
     generation_command,
     interpret_generation,
     prepare_generation_folder,
+    read_image_file,
     read_run,
     snapshot_of,
     store_codex_images,
+    store_result,
 )
+from backend.image_api import is_image_engine, run_image
 from backend.models import (
     Batch,
     EngineJob,
@@ -276,6 +281,9 @@ class JobRunner:
         try:
             if kind == "check":
                 self._run_check(job_id, engine, timeout, run_settings)
+                return
+            if kind == "generation" and is_image_engine(engine):
+                self._run_api_generation(job_id, engine, timeout, run_settings, batch_id)
                 return
             if is_api_engine(engine):
                 self._run_api_analysis(job_id, scene, engine, timeout, run_settings, batch_id)
@@ -530,8 +538,8 @@ class JobRunner:
             job.result_id = check.id
             self._finish(session, job, "completed")
 
-    def _run_generation(self, job_id: str, timeout: int) -> None:
-        """One Codex image run from the approval recorded with the job (PLAN.md Phase 5)."""
+    def _generation_folder(self, job_id: str, api: bool) -> tuple[str, list[Path], str]:
+        """The job folder for an image run, written from the approval recorded with the job."""
         with Session(self.engine) as session:
             job = session.get(EngineJob, job_id)
             scene = session.get(Scene, job.scene_id)
@@ -545,11 +553,80 @@ class JobRunner:
                 )
             mode = json.loads(job.settings_json or "{}").get("mode", "generate")
             try:
-                folder, images, instruction = prepare_generation_folder(
-                    self.settings, session, scene.id, snapshot_of(approval)["inputs"], mode
+                return prepare_generation_folder(
+                    self.settings, session, scene.id, snapshot_of(approval)["inputs"], mode, api
                 )
             except PackageError as error:
                 raise EngineError("missing_file", f"{error} Nothing was sent.") from error
+
+    def _run_api_generation(self, job_id, engine, timeout, run_settings, batch_id) -> None:
+        """One request to an API image engine (Phase 6C) with the model, size and quality
+        the user confirmed when the run was queued."""
+        model = run_settings.get("model")
+        try:
+            if not model:
+                raise EngineError(
+                    "model_problem", "No model was recorded for this run, so nothing was sent."
+                )
+            require_key(self.settings, engine)
+        except EngineError as error:
+            if batch_id is not None and error.kind in PAUSE_KINDS:
+                raise _NotSent(error) from error
+            raise
+        if self._cancel_requested(job_id):
+            raise _Stopped()
+        folder, images, instruction = self._generation_folder(job_id, api=True)
+        self._update(job_id, job_folder=folder, engine_version=model)
+        job_dir = asset_path(self.settings, folder)
+        try:
+            output, usage = run_image(
+                self.settings,
+                engine,
+                model,
+                job_dir,
+                images,
+                instruction,
+                run_settings,
+                timeout,
+                lambda: self._cancel_requested(job_id),
+            )
+        except ApiCancelled as error:
+            company = API_ENGINES[engine].company
+            raise _Stopped(
+                f"You cancelled this run. If the request had already reached {company}, it may "
+                "still finish there and be charged; nothing from it is saved."
+            ) from error
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            # Kept before the result is stored, so the figures survive a failed store.
+            job.settings_json = json.dumps({**run_settings, "usage": usage})
+            scene_id, approval_id = job.scene_id, job.input_id
+        mode = run_settings.get("mode", "generate")
+        try:
+            stored = store_result(
+                self.engine,
+                self.settings,
+                read_image_file(output),
+                scene_id=scene_id,
+                approval_id=approval_id,
+                source=engine,
+                mode=mode if mode in MODES else "generate",
+                job_id=job_id,
+                engine_version=model,
+            )
+        except HTTPException as error:
+            company = API_ENGINES[engine].company
+            raise EngineError(
+                "invalid_output", f"{company} sent a file that is not a usable image."
+            ) from error
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            job.result_id = stored
+            self._finish(session, job, "completed")
+
+    def _run_generation(self, job_id: str, timeout: int) -> None:
+        """One Codex image run from the approval recorded with the job (PLAN.md Phase 5)."""
+        folder, images, instruction = self._generation_folder(job_id, api=False)
         self._update(job_id, job_folder=folder)
         job_dir = asset_path(self.settings, folder)
         command = resolve_command("codex_cli", self.settings.engine_commands)

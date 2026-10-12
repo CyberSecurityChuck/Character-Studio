@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
+import { generationNames, isImageEngine, useApiEngines } from './ApiEngines'
 import { Comparison, type CompareBox, type CompareImage } from './Compare'
 import { CardMenu, Glyph, SelectionBar, type MenuItem } from './Controls'
 import { PresetSelect, usePresets } from './Presets'
@@ -9,9 +10,10 @@ import type { SceneDetail } from './Scenes'
 export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[] }
 export type Result = {
   id: string; scene_id: string; version: number; approval_id: string; approval_current: boolean; job_id: string | null
-  source: 'codex_cli' | 'manual_import'; mode: 'generate' | 'variation' | 'import'; note: string; media_type: string; width: number; height: number
+  source: 'codex_cli' | 'manual_import' | 'gemini_api' | 'openai_api'; mode: 'generate' | 'variation' | 'import'; note: string; media_type: string; width: number; height: number
   engine_version: string | null; recovered: boolean; seconds: number | null; is_preferred: boolean; created_at: string; image_url: string; thumbnail_url: string
   preset: string | null; check: QualityCheck | null
+  usage: { size?: string; quality?: string | null; aspect_ratio?: string; image_size?: string; input_tokens?: number | null; output_tokens?: number | null } | null
   prompt_version: number | null; analysis_version: number | null; is_polished: boolean; mappings: ResultMapping[]
   scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number
 }
@@ -21,12 +23,21 @@ export type Base = { url: string; width: number; height: number }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 const imageList = (images: number[]) => images.map(n => `Image ${n}`).join(', ')
-/** "48 s" or "1 min 12 s": how long a Codex run took. */
+/** "48 s" or "1 min 12 s": how long a run took. */
 export const duration = (seconds: number) => seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min${seconds % 60 ? ` ${seconds % 60} s` : ''}`
 
 export function sourceLabel(result: Result) {
   if (result.source === 'manual_import') return result.note ? `Imported · ${result.note}` : 'Imported'
-  return `${result.mode === 'variation' ? 'Codex variation' : 'Codex'}${result.recovered ? ' · recovered' : ''}`
+  const name = generationNames[result.source] ?? result.source
+  return `${result.mode === 'variation' ? `${name} variation` : name}${result.recovered ? ' · recovered' : ''}`
+}
+
+/** What an API image run asked for and used: "2K · 1,290 output tokens". */
+export function usageLabel(result: Result) {
+  const u = result.usage
+  if (!u) return ''
+  const size = u.image_size ?? u.size
+  return [size, u.quality ? `${u.quality} quality` : '', u.output_tokens != null ? `${u.output_tokens.toLocaleString()} output tokens` : ''].filter(Boolean).join(' · ')
 }
 
 function copyText(text: string, done: (message: string) => void) {
@@ -53,7 +64,7 @@ export function ResultCard({ result, onOpen, title, selecting, picked, menu, dis
       <span className="result-copy">
         {title && <strong className="result-scene">{title}</strong>}
         <span className="result-line"><strong>Result {result.version}</strong><span className="hint">{formatDate(result.created_at)}</span></span>
-        <span className="result-line"><span className="source-chip">{sourceLabel(result)}</span>{side && <span className="hint" title={result.seconds != null ? 'How long Codex took to make it' : undefined}>{side}</span>}</span>
+        <span className="result-line"><span className="source-chip">{sourceLabel(result)}</span>{side && <span className="hint" title={result.seconds != null ? 'How long the engine took to make it' : undefined}>{side}</span>}</span>
         {badge && <span className="result-line"><span className={`check-chip ${badge.tone}`} title="Latest quality check (the weaker of composition and identity)">Check: {badge.label}</span></span>}
       </span>
     </button>
@@ -170,7 +181,7 @@ export function ResultViewer({ result, base, sceneTitle, token, others = [], box
     <div className="viewer-body">
       <div className="viewer-head">
         <div><h2 id="viewer-title">Result {result.version}{result.is_preferred && <span className="preferred-badge inline">★ Preferred</span>}</h2>
-          <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''}{result.seconds != null ? ` · generated in ${duration(result.seconds)}` : ''}{result.preset ? ` · preset “${result.preset}”` : ''} · {result.width} × {result.height}</p></div>
+          <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''}{result.seconds != null ? ` · generated in ${duration(result.seconds)}` : ''}{result.preset ? ` · preset “${result.preset}”` : ''}{usageLabel(result) ? ` · ${usageLabel(result)}` : ''} · {result.width} × {result.height}</p></div>
       </div>
       <Comparison images={[baseImage(base), resultImage(result), ...others.filter(o => o.id !== result.id).sort((a, b) => a.version - b.version).map(resultImage)]} frame={base} boxes={boxes}
         modes={['single', 'side', 'slider', 'overlay', 'difference']} initialMode="side" initialA={result.id} initialB="base" />
@@ -179,7 +190,7 @@ export function ResultViewer({ result, base, sceneTitle, token, others = [], box
         <p><strong>Made from</strong> {result.prompt_version ? `prompt version ${result.prompt_version}${result.is_polished ? ' (polished)' : ''}, analysis version ${result.analysis_version}` : 'an approval that is no longer available'} · {result.approval_current ? 'the current approval' : 'an earlier approval'}</p>
         <ul className="plain-list">{result.mappings.map(m => <li key={m.subject}><strong>{m.subject}</strong>: {m.action === 'replace' ? `${m.character_name ?? 'Deleted character'} (${imageList(m.images)})` : m.action === 'keep' ? 'Kept original' : 'Not assigned'}</li>)}</ul>
         {result.source === 'manual_import' && <p className="hint">Imported by you{result.note ? ` from ${result.note}` : ''}. The studio did not make this image, so its source is as you described it.</p>}
-        {result.recovered && <p className="hint">Found in the run’s own Codex folder after the run did not finish normally.</p>}
+        {result.recovered && <p className="hint">{result.source === 'codex_cli' ? 'Found in the run’s own Codex folder after the run did not finish normally.' : 'Found in the run’s own job folder after the run did not finish normally.'}</p>}
       </section>
       <QualityPanel resultId={result.id} resultVersion={result.version} token={token} runningJobId={runningCheck}
         references={result.mappings.reduce((sum, m) => sum + (m.action === 'replace' ? m.images.length : 0), 0)}
@@ -296,8 +307,9 @@ export function ImportDialog({ scene, token, data, preselect, onClose, onImporte
 }
 
 /** Step 05: generate from the approval, then compare and keep results. */
-export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, exportOpen, onExportOpen, onGenerate, onChanged, onRefresh, onGo }: {
-  scene: SceneDetail; data: Bootstrap; generationEngine: string; busy: boolean; runStatus: ReactNode; exportOpen: boolean; onExportOpen: (open: boolean) => void
+export function GeneratePanel({ scene, data, generationEngine, generationModel, imageOptions, busy, runStatus, exportOpen, onExportOpen, onGenerate, onChanged, onRefresh, onGo }: {
+  scene: SceneDetail; data: Bootstrap; generationEngine: string; generationModel: string | null; imageOptions: { size: string; quality?: string }
+  busy: boolean; runStatus: ReactNode; exportOpen: boolean; onExportOpen: (open: boolean) => void
   onGenerate: (mode: 'generate' | 'variation', count: number, presetId: string | null) => void; onChanged: (detail: SceneDetail, message: string) => void; onRefresh: (message: string) => void; onGo: () => void
 }) {
   const { presets } = usePresets()
@@ -322,7 +334,11 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
   const [importing, setImporting] = useState<string | null | false>(false)
   const [note, setNote] = useState('')
   const approval = scene.approval.state === 'approved' ? scene.approval.current : null
-  const codex = generationEngine === 'codex_cli'
+  // Codex and the API image engines generate from here; Manual only exports and imports.
+  const api = isImageEngine(generationEngine)
+  const codex = generationEngine === 'codex_cli' || api
+  const name = generationNames[generationEngine] ?? generationEngine
+  const company = useApiEngines().byId[generationEngine]?.company ?? (generationEngine === 'gemini_api' ? 'Google' : 'OpenAI')
   const fromApproval = scene.results.filter(r => r.approval_current)
   const references = scene.subjects.reduce((sum, s) => sum + (s.action === 'replace' ? s.images.length : 0), 0)
   const running = !!scene.active_job
@@ -330,13 +346,15 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
   const base = { url: scene.original_url, width: scene.width, height: scene.height }
   const boxes = scene.analyses[0]?.analysis.subjects.map(s => ({ label: s.label, bounding_box: s.bounding_box })) ?? []
   const estimate = timing.average_seconds != null && count > 1 ? ` (about ${duration(timing.average_seconds * count)} in all)` : ''
+  // API image engines confirm the charge in their own dialog (opened by onGenerate).
   const again = (mode: 'generate' | 'variation') => {
+    if (api) { onGenerate(mode, count, presetId || null); return }
     const what = count > 1 ? (mode === 'variation' ? `Make ${count} variations` : `Generate ${count} more images`) : mode === 'variation' ? 'Make a variation' : 'Generate again'
     const runs = count > 1 ? `This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex` : 'This sends the approved images to OpenAI via Codex once more'
     if (window.confirm(`${what}? ${runs} and using your ChatGPT plan’s image allowance. Earlier results are kept.`)) onGenerate(mode, count, presetId || null)
   }
   const first = () => {
-    if (count === 1 || window.confirm(`Generate ${count} images? This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex and using your ChatGPT plan’s image allowance.`)) onGenerate('generate', count, presetId || null)
+    if (api || count === 1 || window.confirm(`Generate ${count} images? This makes ${count} runs, one after another${estimate}, each sending the approved images to OpenAI via Codex and using your ChatGPT plan’s image allowance.`)) onGenerate('generate', count, presetId || null)
   }
   return <>
     {runStatus}
@@ -346,10 +364,11 @@ export function GeneratePanel({ scene, data, generationEngine, busy, runStatus, 
     </div> : <div className="generate-card">
       <div className="generate-copy">
         <strong>{fromApproval.length ? `${plural(fromApproval.length, 'result')} from this approval` : 'Ready to generate'}</strong>
-        <p>{codex ? <>Generate sends the Base Image and {plural(references, 'reference photo')} to OpenAI via Codex, using your own ChatGPT sign-in. Each image is one run from your plan’s image allowance; several images run one after another. Nothing is retried on its own.</>
+        <p>{api ? <>Generate sends the Base Image and {plural(references, 'reference photo')}, without location data, with the approved prompt to {company} with your {company} API key{generationModel ? ` (${generationModel}, ${imageOptions.size}${imageOptions.quality ? `, ${imageOptions.quality} quality` : ''})` : ''}. Each image is one charged request, and you confirm before anything is sent; several images run one after another. Nothing is retried on its own.</>
+          : codex ? <>Generate sends the Base Image and {plural(references, 'reference photo')} to OpenAI via Codex, using your own ChatGPT sign-in. Each image is one run from your plan’s image allowance; several images run one after another. Nothing is retried on its own.</>
           : <>Manual generation is selected in Studio settings. Export the package, make the image in any app, then import it here. Nothing is sent from the studio.</>}</p>
         <p className="hint">Approved {formatDate(approval.approved_at)} · prompt version {approval.prompt_version}{approval.is_polished ? ' (polished)' : ''} · {scene.total_images} {scene.total_images === 1 ? 'image' : 'images'} attached</p>
-        {timing.average_seconds != null && <p className="hint">Codex has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
+        {timing.average_seconds != null && <p className="hint">{name} has taken about {duration(timing.average_seconds)} per image on this computer ({plural(timing.runs, 'finished run')}).</p>}
       </div>
       {codex ? <>
         {presets.length > 0 && <div className="generate-preset"><PresetSelect id="generate-preset" presets={presets} value={presetId} disabled={busy || running} label="Preset"
@@ -430,7 +449,7 @@ export default function ResultsGallery({ data, onOpenScene }: { data: Bootstrap;
     <p className="library-status" role="status">{message}</p>
     {loading ? <p role="status">Loading your results…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">EVERY VERSION HAS A HOME.</span>
       <h2>{results.length ? 'No matching results' : 'Your results will appear here'}</h2>
-      <p>{results.length ? 'Try another title or show all results.' : 'Approve a scene, then generate it with Codex or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p></div>
+      <p>{results.length ? 'Try another title or show all results.' : 'Approve a scene, then generate it with your generation engine or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p></div>
       : <ResultsGrid className="gallery" results={filtered} token={data.session_token} titleOf={r => r.scene_title ?? 'Scene'} showTitles selecting={selecting} onSelecting={setSelecting} onOpen={setViewing}
         baseOf={r => ({ url: r.scene_image_url!, width: r.scene_width!, height: r.scene_height! })}
         onChanged={(_detail, note) => { setMessage(note); void load() }} />}

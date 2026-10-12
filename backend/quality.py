@@ -267,6 +267,8 @@ def _builtin(slug, category, name, changes, avoid, images=2):
         "scene_changes": changes,
         "negative_additions": avoid,
         "images": images,
+        "image_size": None,
+        "image_quality": None,
         "builtin": True,
     }
 
@@ -316,6 +318,20 @@ def preset_name(session, preset_id: str | None) -> str | None:
     if preset is None:
         raise HTTPException(409, "The chosen preset no longer exists. Reload the page.")
     return preset.name
+
+
+def preset_image_options(session, preset_id: str | None) -> dict:
+    """The image size and quality a chosen preset sets (Phase 6C); empty if none."""
+    if not preset_id or preset_id in BUILTIN_BY_ID:
+        return {}
+    preset = session.get(GenerationPreset, preset_id)
+    if preset is None:
+        return {}
+    return {
+        k: v
+        for k, v in (("image_size", preset.image_size), ("image_quality", preset.image_quality))
+        if v
+    }
 
 
 def check_data(check: QualityCheck) -> dict:

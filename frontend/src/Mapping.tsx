@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { send } from './api'
+import { generationNames, isImageEngine } from './ApiEngines'
 import { sentence } from './Controls'
 import { Avatar, type Character, type Group } from './Library'
 import type { ApprovalRecord, Box, PendingPolish, Prompt, SceneDetail, SubjectAssignment } from './Scenes'
@@ -449,9 +450,13 @@ export function ReviewPanel({ scene, characters, generationEngine, busy, unsaved
       </section>
       <section className="review-card">
         <div className="review-card-head"><h4>Generation</h4></div>
-        <p><strong>{generationEngine === 'manual' ? 'Manual' : 'Codex'}</strong> is the generation engine in Studio settings.</p>
-        <p className="hint">Approval covers the content, not the engine, so you can switch engines later without approving again. Output: one image framed like the Base Image. Codex offers no size or quality options, so there are no generation settings to lock.</p>
-        <p className="hint"><strong>Cost:</strong> no per-use charge and no API key. Each Codex attempt uses your ChatGPT plan’s allowance, which image generation uses faster than text. Generate sends the Base Image and the reference photos below to OpenAI; nothing is sent until you click it.</p>
+        <p><strong>{generationNames[generationEngine] ?? generationEngine}</strong> is the generation engine in Studio settings.</p>
+        <p className="hint">Approval covers the content, not the engine, so you can switch engines later without approving again. Output: one image framed like the Base Image.{isImageEngine(generationEngine) ? ' Size and quality come from Studio settings or the preset you choose when generating.' : ' Codex offers no size or quality options, so there are no generation settings to lock.'}</p>
+        {isImageEngine(generationEngine)
+          ? <p className="hint"><strong>Cost:</strong> charged per image to your {generationEngine === 'gemini_api' ? 'Google' : 'OpenAI'} API account. Generate sends the Base Image and the reference photos below, without location data, to {generationEngine === 'gemini_api' ? 'Google' : 'OpenAI'}; it asks you to confirm the charge first, every time.</p>
+          : generationEngine === 'manual'
+            ? <p className="hint"><strong>Cost:</strong> nothing is sent from the studio. Export the package and use any app you like.</p>
+            : <p className="hint"><strong>Cost:</strong> no per-use charge and no API key. Each Codex attempt uses your ChatGPT plan’s allowance, which image generation uses faster than text. Generate sends the Base Image and the reference photos below to OpenAI; nothing is sent until you click it.</p>}
       </section>
     </div>
 

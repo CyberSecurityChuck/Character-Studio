@@ -69,13 +69,25 @@ def images_in(inputs: dict) -> list[tuple[int, str]]:
     return sorted(entries)
 
 
-def generation_instruction(inputs: dict, mode: str) -> str:
-    """The approved prompt wrapped with fixed instructions for Codex (D016)."""
+def generation_instruction(inputs: dict, mode: str, api: bool = False) -> str:
+    """The approved prompt wrapped with fixed instructions for Codex (D016).
+
+    API image engines (Phase 6C) get the same brief without the Codex-specific lines.
+    """
+    if api:
+        opening = (
+            "You are the image-generation step of Character Studio, a local app. Create "
+            "exactly one new image from the attached images and the brief below."
+        )
+    else:
+        opening = (
+            "You are the image-generation step of Character Studio, a local app. Use your "
+            "built-in image generation to create exactly one new image from the attached "
+            "images and the brief below. Do not run shell commands, do not read, create or "
+            "change any files yourself, and do not ask questions."
+        )
     lines = [
-        "You are the image-generation step of Character Studio, a local app. Use your built-in "
-        "image generation to create exactly one new image from the attached images and the "
-        "brief below. Do not run shell commands, do not read, create or change any files "
-        "yourself, and do not ask questions.",
+        opening,
         "",
         "The images are attached in this order:",
         *(f"- Image {n}: image-{n}.jpg, {role}." for n, role in images_in(inputs)),
@@ -86,8 +98,9 @@ def generation_instruction(inputs: dict, mode: str) -> str:
     lines += ["", "BRIEF", prompt["prompt_text"].strip()]
     if prompt["negative_prompt"].strip():
         lines += ["", "AVOID", prompt["negative_prompt"].strip()]
-    lines += ["", "When the image has been generated, reply with only the full path of the saved "
-              "image file."]
+    if not api:
+        lines += ["", "When the image has been generated, reply with only the full path of the "
+                  "saved image file."]
     return "\n".join(lines)
 
 
@@ -144,12 +157,12 @@ def new_job_folder(settings: Settings, scene_id: str, kind: str) -> tuple[str, P
 
 
 def prepare_generation_folder(
-    settings: Settings, session, scene_id: str, inputs: dict, mode: str
+    settings: Settings, session, scene_id: str, inputs: dict, mode: str, api: bool = False
 ) -> tuple[str, list[Path], str]:
-    """Job folder for a Codex run: the package without names, plus the exact instruction."""
+    """Job folder for a run: the package without names, plus the exact instruction."""
     key, folder, _number = new_job_folder(settings, scene_id, "generation")
     files = write_package(settings, session, folder, inputs, None)
-    instruction = generation_instruction(inputs, mode)
+    instruction = generation_instruction(inputs, mode, api)
     write_text(folder / "instruction.txt", instruction)
     return key, files, instruction
 
@@ -316,13 +329,15 @@ def run_seconds(job) -> int | None:
     return max(0, round((datetime.fromisoformat(job.finished_at) - started).total_seconds()))
 
 
-def generation_timing(session) -> dict:
-    """Average time of completed Codex image runs on this PC (for planning batches)."""
+def generation_timing(session, engine: str = "codex_cli") -> dict:
+    """Average time of completed image runs with this engine on this PC (for planning)."""
     times = [
         seconds
         for job in session.scalars(
             select(EngineJob).where(
-                EngineJob.kind == "generation", EngineJob.status == "completed"
+                EngineJob.kind == "generation",
+                EngineJob.status == "completed",
+                EngineJob.engine == engine,
             )
         )
         if (seconds := run_seconds(job)) is not None
@@ -356,13 +371,15 @@ def result_data(
         "height": result.height,
         "engine_version": result.engine_version,
         "recovered": result.recovered,
-        # Only a normally finished Codex run was timed by the studio.
+        # Only a normally finished run was timed by the studio.
         "seconds": run_seconds(job)
         if job is not None and job.kind == "generation" and job.status == "completed"
         else None,
         "is_preferred": result.is_preferred,
         # The preset chosen when the run was started (Phase 6B), if any.
         "preset": json.loads(job.settings_json or "{}").get("preset") if job else None,
+        # API image runs (Phase 6C): the size, quality and tokens the provider reported.
+        "usage": json.loads(job.settings_json or "{}").get("usage") if job else None,
         "check": check,
         "created_at": result.created_at,
         "image_url": f"/api/results/{result.id}/image/original",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { request, send } from './api'
-import { ChargeSummary, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
+import { ChargeSummary, engineNames, generationNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { PresetSelect, usePresets } from './Presets'
 import { Avatar, type Character, type Group } from './Library'
 import { duration } from './Results'
@@ -183,10 +183,14 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
   const [average, setAverage] = useState<number | null>(null)
   const apiEngines = useApiEngines()
   const [model, setModel] = useState<string | null>(null)
+  const [imageOptions, setImageOptions] = useState<{ size: string; quality?: string } | null>(null)
   const charged = isApiEngine(engine)
   useEffect(() => {
-    if (charged) request<{ models: Record<string, { analysis?: string }> }>('/api/engines/settings').then(s => setModel(s.models[engine]?.analysis ?? null), () => undefined)
-  }, [charged, engine])
+    if (charged) request<{ models: Record<string, { analysis?: string; generation?: string }>; image_options: Record<string, { size: string; quality?: string }> }>('/api/engines/settings').then(s => {
+      setModel(s.models[engine]?.[kind] ?? null)
+      setImageOptions(s.image_options[engine] ?? (engine === 'openai_api' ? { size: '1K', quality: 'medium' } : { size: '1K' }))
+    }, () => undefined)
+  }, [charged, engine, kind])
   useEffect(() => {
     request<{ analysis: Record<string, number | null>; generation: number | null }>('/api/batches/timing')
       .then(t => setAverage(kind === 'generation' ? t.generation : t.analysis[engine] ?? null), () => setAverage(null))
@@ -209,19 +213,23 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
   const analysed = kind === 'analysis' ? scenes.filter(s => !s.active_job && s.analysis_version != null).length : 0
   const runs = kind === 'generation' ? queued.length * count : queued.length
   const limit = kind === 'generation' ? MAX_GENERATION_RUNS : MAX_ANALYSIS_RUNS
-  const name = engineNames[engine] ?? engine
+  const name = (kind === 'generation' ? generationNames[engine] : engineNames[engine]) ?? engine
+  const preset = presets.find(p => p.id === presetId)
+  const image = kind === 'generation' && charged && imageOptions
+    ? { size: preset?.image_size ?? imageOptions.size, ...(imageOptions.quality ? { quality: preset?.image_quality ?? imageOptions.quality } : {}) } : undefined
+  const from = kind === 'generation' && charged ? `your ${name} key (charged per image)` : allowance[engine]
   async function start() {
     setBusy(true); setError('')
     try {
       const result = kind === 'analysis'
         ? await send<BatchStart>('/api/batches/analysis', 'POST', token, { scene_ids: queued.map(s => s.id), include_analysed: includeAnalysed, ...(charged ? { confirm_charges: true } : {}) })
-        : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode, ...(presetId ? { preset_id: presetId } : {}) })
+        : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode, ...(presetId ? { preset_id: presetId } : {}), ...(charged ? { confirm_charges: true } : {}) })
       onStarted(result)
     } catch (e) { setError(e instanceof Error ? e.message : 'The batch could not be started.'); setBusy(false) }
   }
   return <Dialog label="batch-title" onClose={onClose}>
     <div className="text-dialog-form">
-      <h2 id="batch-title">{kind === 'analysis' ? `Analyse ${plural(queued.length, 'scene')} with ${name}` : 'Generate approved scenes'}</h2>
+      <h2 id="batch-title">{kind === 'analysis' ? `Analyse ${plural(queued.length, 'scene')} with ${name}` : `Generate approved scenes with ${name}`}</h2>
       {kind === 'generation' && <>
         <p className="hint">Each scene uses its own approval: exactly the prompt and photos you approved for it.</p>
         {eligible.length ? <ul className="batch-choices">{eligible.map(s => <li key={s.id}><label className="checkbox-label">
@@ -240,20 +248,21 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
       </>}
       {kind === 'analysis' && analysed > 0 && <label className="checkbox-label"><input type="checkbox" checked={includeAnalysed} disabled={busy} onChange={e => setIncludeAnalysed(e.target.checked)} />
         <span>Also analyse the {plural(analysed, 'scene')} that already {analysed === 1 ? 'has' : 'have'} an analysis. A new version is added; an approval is cancelled when it arrives.</span></label>}
-      {runs > 0 && charged && apiEngines.byId[engine] && <ChargeSummary engine={apiEngines.byId[engine]} model={model} runs={runs} />}
+      {runs > 0 && charged && apiEngines.byId[engine] && <ChargeSummary engine={apiEngines.byId[engine]} model={model} runs={runs} image={image}
+        what={kind === 'generation' ? 'each scene’s Base Image and approved reference photos (without location data) with its approved prompt' : undefined} />}
       {runs > 0 && <div className="check-box batch-summary">
-        <strong>{kind === 'generation' ? `${plural(runs, 'image')} from ${allowance[engine]}` : `${runs} ${runs === 1 ? 'run' : 'runs'} from ${allowance[engine]}`}</strong>
+        <strong>{kind === 'generation' ? `${plural(runs, 'image')} from ${from}` : `${runs} ${runs === 1 ? 'run' : 'runs'} from ${from}`}</strong>
         <ul>
           <li>{kind === 'generation' ? 'Each run sends one scene’s Base Image and approved reference photos' : 'Each run sends one Base Image'} to {sendsTo[engine]}{charged ? '' : ', using your own sign-in'}.</li>
           <li>They run one after another, never at the same time{average ? `: about ${duration(average * runs)} in all, going by earlier runs on this computer` : ''}.</li>
           <li>A failed item is marked Failed and the next one starts. {charged ? 'A refused key or a rate or spending limit' : 'A plan limit or signing out'} pauses the batch until you continue it. Nothing is retried on its own.</li>
         </ul>
       </div>}
-      {runs > limit && <p className="frame-error" role="alert">A batch makes at most {limit} {kind === 'generation' ? 'images, because image generation uses your allowance quickly' : 'runs'}. Choose fewer.</p>}
+      {runs > limit && <p className="frame-error" role="alert">A batch makes at most {limit} {kind === 'generation' ? `images, because ${charged ? 'each image is charged' : 'image generation uses your allowance quickly'}` : 'runs'}. Choose fewer.</p>}
       <SkippedList items={skipped} />
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button>
-        <button type="button" disabled={busy || !runs || runs > limit} onClick={() => void start()}>{busy ? 'Starting…' : kind === 'generation' ? `Generate ${plural(runs, 'image')}` : `Analyse ${plural(runs, 'scene')}${charged ? ' and accept charges' : ''}`}</button></div>
+        <button type="button" disabled={busy || !runs || runs > limit} onClick={() => void start()}>{busy ? 'Starting…' : kind === 'generation' ? `Generate ${plural(runs, 'image')}${charged ? ' and accept charges' : ''}` : `Analyse ${plural(runs, 'scene')}${charged ? ' and accept charges' : ''}`}</button></div>
     </div>
   </Dialog>
 }

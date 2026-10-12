@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
+from backend.api_engines import engine_timeout
 from backend.configuration import asset_path
 from backend.engines import EngineError
 from backend.generation import (
@@ -36,6 +37,7 @@ from backend.generation import (
     snapshot_of,
     store_result,
 )
+from backend.image_api import is_image_engine, run_label, saved_output
 from backend.library import clean_deleted_files
 from backend.models import (
     Approval,
@@ -48,7 +50,15 @@ from backend.models import (
 )
 from backend.quality import latest_check, preset_name
 from backend.scene_store import now
-from backend.scenes import RECOVERABLE, require_idle, require_scene, scene_detail, visible, writing
+from backend.scenes import (
+    RECOVERABLE,
+    image_run_settings,
+    require_idle,
+    require_scene,
+    scene_detail,
+    visible,
+    writing,
+)
 from backend.workflow import (
     ApprovalError,
     current_approval,
@@ -64,6 +74,8 @@ class GenerateInput(BaseModel):
     approval_id: str = Field(max_length=32)
     mode: Literal["generate", "variation"] = "generate"
     preset_id: str | None = Field(default=None, max_length=32)
+    # API image engines only: the user confirmed that this run may be charged (Phase 6C).
+    confirm_charges: bool = False
 
 
 class ExportInput(BaseModel):
@@ -89,26 +101,33 @@ def approved(session, scene: Scene, approval_id: str) -> Approval:
 
 @router.post("/scenes/{scene_id}/generate", status_code=202)
 def generate(request: Request, scene_id: str, body: GenerateInput):
-    """Queue one Codex image run. Runs once; never retried or repeated automatically."""
+    """Queue one image run with the selected generation engine (Codex or an API image
+    engine). Runs once; never retried or repeated automatically."""
     with writing(request) as session:
         scene = require_scene(session, scene_id)
         settings = session.get(EngineSettings, 1)
-        if settings.generation_engine != "codex_cli":
+        engine = settings.generation_engine
+        if engine == "manual":
             raise HTTPException(
                 409,
                 "Manual generation is selected in Studio settings. Use Export for manual use, "
-                "or choose Codex in Studio settings.",
+                "or choose an engine in Studio settings.",
             )
         require_idle(session, scene_id, "generating")
         approval = approved(session, scene, body.approval_id)
-        instruction = generation_instruction(snapshot_of(approval)["inputs"], body.mode)
+        api = is_image_engine(engine)
+        instruction = generation_instruction(snapshot_of(approval)["inputs"], body.mode, api)
         if len(instruction) > MAX_GENERATION_INSTRUCTION:
             raise HTTPException(
                 422,
-                "This prompt is too long to send to Codex in one run. Shorten it, or use "
-                "Export for manual use.",
+                f"This prompt is too long to send to {run_label(engine, 'generation')} in one run. "
+                "Shorten it, or use Export for manual use.",
             )
         run_settings = {"mode": body.mode}
+        if api:
+            run_settings |= image_run_settings(
+                request, session, settings, body.confirm_charges, body.preset_id
+            )
         if preset := preset_name(session, body.preset_id):
             run_settings["preset"] = preset
         session.add(
@@ -116,11 +135,11 @@ def generate(request: Request, scene_id: str, body: GenerateInput):
                 id=uuid4().hex,
                 kind="generation",
                 scene_id=scene_id,
-                engine="codex_cli",
+                engine=engine,
                 status="not_started",
                 input_id=approval.id,
                 settings_json=json.dumps(run_settings),
-                timeout_seconds=settings.codex_timeout,
+                timeout_seconds=engine_timeout(settings, engine),
                 created_at=now(),
             )
         )
@@ -269,7 +288,11 @@ async def import_result(
 
 @router.post("/jobs/{job_id}/recover")
 def recover_images(request: Request, job_id: str):
-    """Look for images an unfinished Codex run saved in its own folder. Nothing is resent."""
+    """Look for images an unfinished run saved in its own folder. Nothing is resent.
+
+    Codex keeps images under its own `generated_images/<thread>`; API image runs (Phase 6C)
+    save theirs as `output.*` in the job folder before the result is stored.
+    """
     engine, settings = request.app.state.engine, request.app.state.settings
     with Session(engine) as session:
         job = session.get(EngineJob, job_id)
@@ -278,12 +301,13 @@ def recover_images(request: Request, job_id: str):
         if job.status not in RECOVERABLE or not job.job_folder:
             raise HTTPException(409, "Only unfinished generation runs can be checked.")
         folder = asset_path(settings, job.job_folder)
-        thread_id = job.provider_request_id or read_run(folder).thread_id
+        api = is_image_engine(job.engine)
+        thread_id = None if api else job.provider_request_id or read_run(folder).thread_id
         known = known_hashes(session, job.id)
         mode = json.loads(job.settings_json or "{}").get("mode", "generate")
         session.expunge(job)
     found = 0
-    for path in saved_images(thread_id):
+    for path in saved_output(folder) if api else saved_images(thread_id):
         try:
             payload = read_image_file(path)
         except (EngineError, OSError):
@@ -297,7 +321,7 @@ def recover_images(request: Request, job_id: str):
                 payload,
                 scene_id=job.scene_id,
                 approval_id=job.input_id,
-                source="codex_cli",
+                source=job.engine,
                 mode=mode if mode in MODES else "generate",
                 job_id=job.id,
                 engine_version=job.engine_version,

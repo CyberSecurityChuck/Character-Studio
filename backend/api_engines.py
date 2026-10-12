@@ -159,6 +159,14 @@ class ApiReply:
     seconds: float
 
 
+@dataclass(frozen=True)
+class RawBody:
+    """A request body that is not JSON, such as OpenAI's multipart image edits (Phase 6C)."""
+
+    data: bytes
+    content_type: str
+
+
 def _base(settings: Settings, engine: str) -> str:
     # Tests point engines at a local fake server; never read from the environment.
     return settings.api_base_urls.get(engine, API_ENGINES[engine].base_url).rstrip("/")
@@ -172,14 +180,18 @@ def _headers(engine: str, key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
-def _send(url: str, headers: dict, body: dict | None, timeout: float) -> ApiReply:
+def _send(url: str, headers: dict, body: dict | RawBody | None, timeout: float) -> ApiReply:
     started = time.monotonic()
-    data = None if body is None else json.dumps(body).encode("utf-8")
+    if isinstance(body, RawBody):
+        data, content_type = body.data, body.content_type
+    else:
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        content_type = "application/json"
     request = urllib.request.Request(
         url,
         data=data,
         method="GET" if body is None else "POST",
-        headers={**headers, "Content-Type": "application/json", "User-Agent": "CharacterStudio"},
+        headers={**headers, "Content-Type": content_type, "User-Agent": "CharacterStudio"},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -196,7 +208,7 @@ def _send(url: str, headers: dict, body: dict | None, timeout: float) -> ApiRepl
 def _call(
     url: str,
     headers: dict,
-    body: dict | None,
+    body: dict | RawBody | None,
     timeout: float,
     company: str,
     should_stop: Callable[[], bool] = lambda: False,
@@ -339,13 +351,24 @@ def _model_page(settings: Settings, engine: str, key: str, page: str | None) -> 
 
 _NOT_FOR_ANALYSIS = re.compile(
     r"embed|whisper|tts|dall-e|moderation|audio|realtime|transcribe|image|search|speech|"
-    r"imagen|veo|lyria|aqa|robotics|computer-use|codex",
+    r"imagen|veo|lyria|aqa|robotics|computer-use|codex|banana",
     re.IGNORECASE,
 )
 
 
-def list_models(settings: Settings, engine: str) -> list[str]:
-    """Check the key with the provider's free model-list call and return usable models."""
+# Image models that make images through the endpoints the studio uses (Phase 6C):
+# Gemini image models answer `generateContent` (Imagen does not); OpenAI's GPT Image models.
+_IMAGE_MODEL = {
+    "gemini_api": re.compile(r"^gemini-.*(image|banana)", re.IGNORECASE),
+    "openai_api": re.compile(r"^(gpt-image|chatgpt-image)", re.IGNORECASE),
+}
+
+
+def list_models(settings: Settings, engine: str) -> tuple[list[str], list[str]]:
+    """Check the key with the provider's free model-list call.
+
+    Returns (analysis models, image models).
+    """
     key = require_key(settings, engine)
     found, page = [], None
     for _ in range(5):
@@ -353,10 +376,11 @@ def list_models(settings: Settings, engine: str) -> list[str]:
         found.extend(items)
         if not page:
             break
-    usable = {
-        m for m in found if m and len(m) <= MAX_MODEL_NAME and not _NOT_FOR_ANALYSIS.search(m)
-    }
-    return sorted(usable)
+    named = {m for m in found if m and len(m) <= MAX_MODEL_NAME}
+    analysis = {m for m in named if not _NOT_FOR_ANALYSIS.search(m)}
+    pattern = _IMAGE_MODEL.get(engine)
+    images = {m for m in named if pattern and pattern.search(m)}
+    return sorted(analysis), sorted(images)
 
 
 # ---------------------------------------------------------------- analysis

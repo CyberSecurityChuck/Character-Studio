@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-12 — Phase 6C-1: API image engines
+
+- Planned with the user (D025, one question at a time): 6C is built as 6C-1 (API image engines) and 6C-2 (region editing and selective replacement with Codex, OpenAI Images, Gemini image, FLUX.1 Fill for fixes and FLUX 3), with one combined review. Provider facts re-checked (docs/PROVIDER_FINDINGS.md). See D026.
+- Studio settings → **Generation engine** now offers **Gemini image** and **OpenAI Images** beside Codex and Manual, grouped like the analysis engines, with the shared API key box, an image model picker (image models listed separately), image size, quality (OpenAI) and the API time limit.
+- Generate, Variation, several images per click, Try again and **Generate approved scenes** work with them; every run or batch first shows a charge dialog (what is sent, company, model, size, quality, run count, earlier tokens) and runs only after **…accept charges**. Results show the engine, model, size and reported tokens. Presets can set an image size and quality.
+- The provider's image is kept in the run's folder before it is stored; **Look for a saved image** can recover it. Refusals, missing images, unverified OpenAI organisations and limits are reported in plain words; nothing is retried.
+- Schema `0011_image_engines`. New `backend/image_api.py`, `tests/test_image_engines.py` (6 tests). The fake provider server understands OpenAI's multipart image edits. No dependencies added; no real provider was called.
+
 ## 2026-10-12 — Phase 6A + 6B accepted
 
 - The user's follow-up check passed (`Phase_Checks/Phase6AB_Followup_Report.md`: 14/14 steps, 0 problems, "Phase 6A and 6B look good"), after the combined review (`Phase6AB_Review_Report.md`) whose findings were fixed in D024. The reviews included real Gemini API analyses with the user's free key and a real Claude Code analysis with a chosen model. The Gemini API engine is now `available` in the provider registry; the Anthropic and OpenAI APIs stay `unverified`. Status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). 6C and 6D follow in a new chat.

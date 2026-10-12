@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.api_engines import API_ENGINES, list_models, model_lists_of
 from backend.engines import EngineError
+from backend.image_api import IMAGE_ENGINES
 from backend.keystore import KeyStoreError, delete_key, key_info, save_key
 from backend.models import EngineJob, EngineSettings
 from backend.persistence import writing_session
@@ -33,13 +34,13 @@ def require_engine(engine: str):
     return API_ENGINES[engine]
 
 
-def typical_usage(session, engine: str) -> dict | None:
-    """Average tokens of completed analyses with this engine, for the cost dialog."""
+def typical_usage(session, engine: str, kind: str = "analysis") -> dict | None:
+    """Average tokens of completed runs of this kind with this engine, for the cost dialog."""
     used = []
     for raw in session.scalars(
         select(EngineJob.settings_json).where(
             EngineJob.engine == engine,
-            EngineJob.kind == "analysis",
+            EngineJob.kind == kind,
             EngineJob.status == "completed",
         )
     ):
@@ -60,7 +61,9 @@ def engine_data(request: Request, engine: str, models_error: str | None = None) 
     item = API_ENGINES[engine]
     with Session(request.app.state.engine) as session:
         typical = typical_usage(session, engine)
+        typical_image = typical_usage(session, engine, "generation")
         saved = model_lists_of(session.get(EngineSettings, 1)).get(engine) or {}
+    image = IMAGE_ENGINES.get(engine)
     return {
         "id": item.id,
         "name": item.name,
@@ -71,6 +74,13 @@ def engine_data(request: Request, engine: str, models_error: str | None = None) 
         "charge_note": item.charge_note,
         "key": key_info(request.app.state.settings, engine),
         "typical_usage": typical,
+        # Phase 6C: engines that can also make images, and their own figures and models.
+        "makes_images": image is not None,
+        "image_name": image.name if image else None,
+        "suggested_image_model": image.suggested_model if image else None,
+        "image_charge_note": image.charge_note if image else None,
+        "typical_image_usage": typical_image,
+        "image_models": saved.get("image_models", []),
         # The last list the key returned, kept so the model picker is filled on every visit.
         "models": saved.get("models", []),
         "models_checked_at": saved.get("checked_at"),
@@ -78,14 +88,14 @@ def engine_data(request: Request, engine: str, models_error: str | None = None) 
     }
 
 
-def _store_list(request: Request, engine: str, models: list[str] | None) -> None:
+def _store_list(request: Request, engine: str, models: tuple[list, list] | None) -> None:
     with writing_session(request.app.state.engine) as session:
         row = session.get(EngineSettings, 1)
         lists = model_lists_of(row)
         if models is None:
             lists.pop(engine, None)
         else:
-            lists[engine] = {"models": models, "checked_at": now()}
+            lists[engine] = {"models": models[0], "image_models": models[1], "checked_at": now()}
         row.model_lists_json = json.dumps(lists, sort_keys=True)
 
 
@@ -120,10 +130,15 @@ async def store_key(request: Request, engine: str, body: KeyInput):
 def remove_key(request: Request, engine: str):
     item = require_engine(engine)
     with Session(request.app.state.engine) as session:
-        if session.get(EngineSettings, 1).analysis_engine == engine:
-            raise HTTPException(
-                409, f"The {item.name} is the selected analysis engine. Choose another first."
-            )
+        row = session.get(EngineSettings, 1)
+        for purpose, selected in (
+            ("analysis", row.analysis_engine),
+            ("generation", row.generation_engine),
+        ):
+            if selected == engine:
+                raise HTTPException(
+                    409, f"The {item.name} is the selected {purpose} engine. Choose another first."
+                )
     delete_key(request.app.state.settings, engine)
     _store_list(request, engine, None)
     return engine_data(request, engine)

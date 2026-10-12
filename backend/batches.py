@@ -19,7 +19,6 @@ from starlette.concurrency import run_in_threadpool
 from backend.api_engines import (
     API_ENGINES,
     charge_confirmation,
-    engine_label,
     engine_timeout,
     is_api_engine,
 )
@@ -30,6 +29,7 @@ from backend.generation import (
     run_seconds,
     snapshot_of,
 )
+from backend.image_api import is_image_engine, run_label
 from backend.keystore import key_info
 from backend.models import (
     Batch,
@@ -45,7 +45,7 @@ from backend.models import (
 )
 from backend.quality import preset_name
 from backend.scene_store import active_job, latest, now
-from backend.scenes import api_run_settings, writing
+from backend.scenes import api_run_settings, image_run_settings, writing
 from backend.workflow import (
     SUGGESTED,
     ApprovalError,
@@ -94,6 +94,8 @@ class GenerationBatchInput(BaseModel):
     count: int = Field(default=1, ge=1, le=MAX_IMAGES_PER_SCENE)
     mode: str = Field(default="generate", pattern="^(generate|variation)$")
     preset_id: str | None = Field(default=None, max_length=32)
+    # API image engines (Phase 6C): the user confirmed that every run may be charged.
+    confirm_charges: bool = False
 
 
 class GroupSuggestionInput(BaseModel):
@@ -161,7 +163,7 @@ def batch_data(session, batch: Batch) -> dict:
         "id": batch.id,
         "kind": batch.kind,
         "engine": batch.engine,
-        "engine_name": engine_label(batch.engine),
+        "engine_name": run_label(batch.engine, batch.kind),
         "status": batch.status,
         "state": batch_state(batch, counts),
         "pause_kind": batch.pause_kind,
@@ -252,7 +254,9 @@ def timing(request: Request):
             "analysis": {
                 e: average_seconds(session, "analysis", e) for e in [*ENGINE_NAMES, *API_ENGINES]
             },
-            "generation": average_seconds(session, "generation", "codex_cli"),
+            "generation": average_seconds(
+                session, "generation", session.get(EngineSettings, 1).generation_engine
+            ),
         }
 
 
@@ -315,30 +319,44 @@ def analyse_selected(request: Request, body: AnalysisBatchInput):
 
 @router.post("/batches/generation", status_code=202)
 def generate_approved(request: Request, body: GenerationBatchInput):
-    """Queue `count` Codex runs for each scene, each from that scene's own valid approval."""
+    """Queue `count` image runs for each scene with the selected generation engine, each
+    from that scene's own valid approval."""
     if len({i.scene_id for i in body.items}) != len(body.items):
         raise HTTPException(422, "A scene was selected twice.")
     total = len(body.items) * body.count
-    if total > MAX_GENERATION_RUNS:
-        raise HTTPException(
-            422,
-            f"That would be {total} images. A batch makes at most {MAX_GENERATION_RUNS}, "
-            "because image generation uses your plan's allowance quickly.",
-        )
     with writing(request) as session:
         settings = session.get(EngineSettings, 1)
-        if settings.generation_engine != "codex_cli":
+        engine = settings.generation_engine
+        if engine == "manual":
             raise HTTPException(
                 409,
-                "Manual generation is selected in Studio settings. Choose Codex there to "
+                "Manual generation is selected in Studio settings. Choose an engine there to "
                 "generate several scenes in a row.",
             )
+        api = is_image_engine(engine)
+        if total > MAX_GENERATION_RUNS:
+            why = (
+                "each image is charged"
+                if api
+                else "image generation uses your plan's allowance quickly"
+            )
+            raise HTTPException(
+                422,
+                f"That would be {total} images. A batch makes at most {MAX_GENERATION_RUNS}, "
+                f"because {why}.",
+            )
+        run = (
+            image_run_settings(request, session, settings, body.confirm_charges, body.preset_id)
+            if api
+            else {}
+        )
         preset = preset_name(session, body.preset_id)
         batch = _new_batch(
             session,
             "generation",
-            "codex_cli",
-            {"count": body.count, "mode": body.mode} | ({"preset": preset} if preset else {}),
+            engine,
+            {"count": body.count, "mode": body.mode, **run}
+            | ({"preset": preset} if preset else {}),
         )
         skipped, queued = [], []
         for item in body.items:
@@ -358,9 +376,10 @@ def generate_approved(request: Request, body: GenerationBatchInput):
             if item.approval_id and approval.id != item.approval_id:
                 _skip(skipped, scene, scene.id, "The approval changed in another window.")
                 continue
-            instruction = generation_instruction(snapshot_of(approval)["inputs"], body.mode)
+            instruction = generation_instruction(snapshot_of(approval)["inputs"], body.mode, api)
             if len(instruction) > MAX_GENERATION_INSTRUCTION:
-                _skip(skipped, scene, scene.id, "Its prompt is too long to send to Codex.")
+                reason = f"Its prompt is too long to send to {run_label(engine, 'generation')}."
+                _skip(skipped, scene, scene.id, reason)
                 continue
             queued.append((scene, approval))
         if not queued:
@@ -370,7 +389,12 @@ def generate_approved(request: Request, body: GenerationBatchInput):
             for _ in range(body.count):
                 session.add(
                     _generation_job(
-                        batch, scene.id, approval.id, body.mode, position, settings.codex_timeout
+                        batch,
+                        scene.id,
+                        approval.id,
+                        body.mode,
+                        position,
+                        engine_timeout(settings, engine),
                     )
                 )
                 position += 1
@@ -386,13 +410,16 @@ def _generation_job(
     batch, scene_id, approval_id, mode, position, timeout, retry_of=None, stamp=None
 ):
     settings = {"mode": mode} | ({"retry_of": retry_of} if retry_of else {})
-    if preset := json.loads(batch.settings_json).get("preset"):
-        settings["preset"] = preset
+    chosen = json.loads(batch.settings_json)
+    # API image runs keep the model, size and quality the batch was confirmed with.
+    for name in ("preset", "model", "size", "quality"):
+        if chosen.get(name):
+            settings[name] = chosen[name]
     return EngineJob(
         id=uuid4().hex,
         kind="generation",
         scene_id=scene_id,
-        engine="codex_cli",
+        engine=batch.engine,
         status="not_started",
         input_id=approval_id,
         settings_json=json.dumps(settings),
@@ -401,6 +428,18 @@ def _generation_job(
         timeout_seconds=timeout,
         created_at=stamp or batch.created_at,
     )
+
+
+def _require_generation_engine(settings: EngineSettings, batch: Batch) -> None:
+    """A generation batch only continues with the engine it was started (and confirmed) with."""
+    if settings.generation_engine != batch.engine:
+        started = run_label(batch.engine, "generation")
+        now_used = run_label(settings.generation_engine, "generation")
+        raise HTTPException(
+            409,
+            f"This batch was started with {started}, but Studio settings now use {now_used}. "
+            f"Choose {started} there to continue it, or start a new batch.",
+        )
 
 
 @router.post("/batches/{batch_id}/pause")
@@ -451,11 +490,7 @@ async def continue_batch(request: Request, batch_id: str, body: ChargeInput | No
         ):
             raise HTTPException(409, "Nothing is left to run in this batch.")
         if batch.kind == "generation":
-            settings = session.get(EngineSettings, 1)
-            if settings.generation_engine != "codex_cli":
-                raise HTTPException(
-                    409, "Manual generation is selected in Studio settings. Choose Codex there."
-                )
+            _require_generation_engine(session.get(EngineSettings, 1), batch)
         batch.status, batch.pause_kind, batch.pause_details = "running", None, None
         batch.updated_at = now()
         result = batch_data(session, batch)
@@ -506,10 +541,8 @@ def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = Non
         if not failed:
             raise HTTPException(409, "No failed items are left to try again.")
         settings = session.get(EngineSettings, 1)
-        if batch.kind == "generation" and settings.generation_engine != "codex_cli":
-            raise HTTPException(
-                409, "Manual generation is selected in Studio settings. Choose Codex there."
-            )
+        if batch.kind == "generation":
+            _require_generation_engine(settings, batch)
         stamp, position = now(), max(j.batch_position or 0 for j in items) + 1
         skipped, added, scenes = [], 0, set()
         for job in failed:
@@ -531,7 +564,7 @@ def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = Non
                         approval.id,
                         mode,
                         position,
-                        settings.codex_timeout,
+                        engine_timeout(settings, batch.engine),
                         job.id,
                         stamp,
                     )

@@ -46,12 +46,39 @@ MODEL_LISTS = {
     "gemini": {
         "models": [
             {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+            {
+                "name": "models/gemini-nano-banana-2.1",
+                "supportedGenerationMethods": ["generateContent"],
+            },
             {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]},
         ]
     },
     "anthropic": {"data": [{"id": "claude-test-1"}], "has_more": False},
-    "openai": {"data": [{"id": "gpt-test-vision"}, {"id": "whisper-1"}, {"id": "tts-1"}]},
+    "openai": {
+        "data": [
+            {"id": "gpt-test-vision"},
+            {"id": "whisper-1"},
+            {"id": "tts-1"},
+            {"id": "gpt-image-2.5-sunburst"},
+        ]
+    },
 }
+
+
+def multipart(raw: bytes, content_type: str) -> dict:
+    """Fields and files of a multipart form, as the fake OpenAI image endpoint sees them."""
+    boundary = content_type.split("boundary=")[1].encode()
+    fields, files = {}, []
+    for part in raw.split(b"--" + boundary)[1:-1]:
+        # Each part sits between CRLF pairs; its headers end at the first blank line.
+        head, _, data = part[2:-2].partition(b"\r\n\r\n")
+        disposition = head.decode().split("\r\n")[0]
+        name = disposition.split('name="')[1].split('"')[0]
+        if "filename=" in disposition:
+            files.append({"name": name, "bytes": data})
+        else:
+            fields[name] = data.decode("utf-8")
+    return {"multipart": True, "fields": fields, "files": files}
 
 
 class FakeProviders:
@@ -97,7 +124,10 @@ class FakeProviders:
 
             def do_POST(self):
                 length = int(self.headers.get("Content-Length", 0))
-                self._answer(json.loads(self.rfile.read(length)))
+                raw = self.rfile.read(length)
+                kind = self.headers.get("Content-Type", "")
+                form = kind.startswith("multipart/")
+                self._answer(multipart(raw, kind) if form else json.loads(raw))
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

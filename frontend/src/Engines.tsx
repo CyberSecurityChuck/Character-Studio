@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { ApiError, request, send } from './api'
-import { ApiKeyBox, isApiEngine, useApiEngines, type ApiEngine } from './ApiEngines'
+import { ApiKeyBox, isApiEngine, isImageEngine, useApiEngines, type ApiEngine } from './ApiEngines'
 import { InfoTip } from './Controls'
 import { ModelPicker } from './ModelPicker'
 
 type Status = { engine: string; name: string; installed: boolean; version: string | null; signed_in: boolean; plan: string | null; message: string }
-type Settings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number; models: Record<string, { analysis?: string }>; revision: number }
+type Purpose = 'analysis' | 'generation'
+type ImageOptions = { size: string; quality?: string }
+type Settings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number
+  models: Record<string, { analysis?: string; generation?: string }>; image_options: Record<string, ImageOptions>; revision: number }
 type Choice = { id: string; name: string; tag?: string; line: string }
+type Group = { title: string; hint: string; items: Choice[] }
 
 // Aliases that `claude --help` documents for `--model`; Codex takes any model name.
 const claudeModels = ['opus', 'sonnet', 'fable']
-const analysisGroups: { title: string; hint: string; items: Choice[] }[] = [
+const analysisGroups: Group[] = [
   { title: 'Your subscriptions', hint: 'Plans you already pay for. No API key, no per-use billing.', items: [
     { id: 'claude_cli', name: 'Claude Code', tag: 'Subscription', line: 'Your Claude plan · sends the Base Image to Anthropic' },
     { id: 'codex_cli', name: 'Codex', tag: 'Subscription', line: 'Your ChatGPT plan · shares its allowance with image generation' },
@@ -24,15 +28,50 @@ const analysisGroups: { title: string; hint: string; items: Choice[] }[] = [
     { id: 'manual', name: 'Manual', line: 'Copy the instruction into any app and paste the reply back' },
   ] },
 ]
-const generationChoices: Choice[] = [
-  { id: 'codex_cli', name: 'Codex', tag: 'Subscription', line: 'Your ChatGPT plan · generates from the approved images' },
-  { id: 'manual', name: 'Manual', line: 'Export the package, make the image in any app, import it' },
+const generationGroups: Group[] = [
+  { title: 'Your subscriptions', hint: 'No API key, no per-use billing.', items: [
+    { id: 'codex_cli', name: 'Codex', tag: 'Subscription', line: 'Your ChatGPT plan · generates from the approved images' },
+  ] },
+  { title: 'Pay per use', hint: 'Your own API key, billed by the provider. Every run asks you first.', items: [
+    { id: 'gemini_api', name: 'Gemini image', tag: 'API key', line: 'Google · charged per image, not on the free tier' },
+    { id: 'openai_api', name: 'OpenAI Images', tag: 'API key', line: 'OpenAI · charged per image; your organisation must be verified' },
+  ] },
+  { title: 'Without an engine', hint: '', items: [
+    { id: 'manual', name: 'Manual', line: 'Export the package, make the image in any app, import it' },
+  ] },
 ]
-const analysisFields = ['analysis_engine', 'models', 'claude_timeout', 'codex_timeout', 'api_timeout'] as const
-const generationFields = ['generation_engine', 'codex_timeout'] as const
-type Field = keyof Settings
-const pick = (s: Settings, fields: readonly Field[]) => Object.fromEntries(fields.map(f => [f, s[f]])) as Partial<Settings>
-const same = (a: Settings, b: Settings, fields: readonly Field[]) => JSON.stringify(pick(a, fields)) === JSON.stringify(pick(b, fields))
+// What each API image engine documents (October 2026); the server checks them again.
+const imageSizes: Record<string, string[]> = { gemini_api: ['1K', '2K', '4K'], openai_api: ['1K', '2K'] }
+const imageQualities: Record<string, string[]> = { openai_api: ['low', 'medium', 'high', 'xhigh', 'max'] }
+const defaultOptions = (id: string): ImageOptions => imageQualities[id] ? { size: '1K', quality: 'medium' } : { size: '1K' }
+const sizeHints: Record<string, string> = { '1K': 'About 1 megapixel', '2K': 'About 3–4 megapixels', '4K': 'About 8–16 megapixels' }
+
+// Each panel saves only its own choices: its engine, its models and (generation) image options.
+// The Codex and API time limits are shared by both panels.
+const panelFields: Record<Purpose, readonly (keyof Settings)[]> = {
+  analysis: ['analysis_engine', 'claude_timeout', 'codex_timeout', 'api_timeout'],
+  generation: ['generation_engine', 'codex_timeout', 'api_timeout', 'image_options'],
+}
+function modelsFor(s: Settings, purpose: Purpose) {
+  return Object.fromEntries(Object.keys(s.models).sort().map(id => [id, s.models[id]?.[purpose] ?? '']).filter(([, v]) => v))
+}
+function panelView(s: Settings, purpose: Purpose) {
+  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose)])
+}
+const same = (a: Settings, b: Settings, purpose: Purpose) => panelView(a, purpose) === panelView(b, purpose)
+/** `target` with `source`'s choices for one panel; the other panel's choices are kept. */
+function applyPanel(target: Settings, source: Settings, purpose: Purpose): Settings {
+  const models: Settings['models'] = {}
+  for (const id of new Set([...Object.keys(target.models), ...Object.keys(source.models)])) {
+    const entry = { ...target.models[id] }
+    const value = source.models[id]?.[purpose]
+    if (value) entry[purpose] = value
+    else delete entry[purpose]
+    if (Object.keys(entry).length) models[id] = entry
+  }
+  const fields = Object.fromEntries(panelFields[purpose].map(f => [f, source[f]]))
+  return { ...target, ...fields, models }
+}
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 function statusText(status: Status | undefined, checking: boolean) {
@@ -80,7 +119,7 @@ export default function Engines({ token }: { token: string }) {
   const [checking, setChecking] = useState(false)
   const [saved, setSaved] = useState<Settings | null>(null)
   const [form, setForm] = useState<Settings | null>(null)
-  const [busy, setBusy] = useState<'analysis' | 'generation' | ''>('')
+  const [busy, setBusy] = useState<Purpose | ''>('')
   const [errors, setErrors] = useState({ analysis: '', generation: '' })
   const [messages, setMessages] = useState({ analysis: '', generation: '' })
   const api = useApiEngines()
@@ -95,14 +134,14 @@ export default function Engines({ token }: { token: string }) {
     void check()
   }, [check])
 
-  async function save(panel: 'analysis' | 'generation', fields: readonly Field[]) {
+  async function save(panel: Purpose) {
     if (!form || !saved) return
     setBusy(panel); setErrors(e => ({ ...e, [panel]: '' })); setMessages(m => ({ ...m, [panel]: '' }))
     try {
-      const next = await send<Settings>('/api/engines/settings', 'PUT', token, { ...saved, ...pick(form, fields), revision: saved.revision })
+      const next = await send<Settings>('/api/engines/settings', 'PUT', token, { ...applyPanel(saved, form, panel), revision: saved.revision })
       setSaved(next)
       // Keep the other panel's unsaved edits.
-      setForm(f => f && { ...f, ...pick(next, fields), revision: next.revision })
+      setForm(f => f && { ...applyPanel(f, next, panel), revision: next.revision })
       setMessages(m => ({ ...m, [panel]: 'Saved to this computer' }))
     } catch (e) {
       const text = e instanceof Error ? e.message : 'Settings could not be saved.'
@@ -114,7 +153,8 @@ export default function Engines({ token }: { token: string }) {
   const byStatus = Object.fromEntries(statuses.map(s => [s.engine, s]))
   const engine = form.analysis_engine
   const model = form.models[engine]?.analysis ?? ''
-  const setModel = (id: string, value: string) => setForm({ ...form, models: { ...form.models, [id]: { analysis: value } } })
+  const setModel = (id: string, value: string, purpose: Purpose = 'analysis') => setForm({ ...form, models: { ...form.models, [id]: { ...form.models[id], [purpose]: value } } })
+  const inUse = (id: string) => saved.analysis_engine === id || saved.generation_engine === id
   const apiItem: ApiEngine | undefined = isApiEngine(engine) ? api.byId[engine] : undefined
   const blocked = apiItem && !apiItem.key.saved ? `Add a ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : undefined
   const choiceState = (id: string) => isApiEngine(id) ? (api.byId[id]?.key.saved ? 'Key saved' : 'Needs a key') : id === 'manual' ? undefined : statusText(byStatus[id], checking)
@@ -138,7 +178,7 @@ export default function Engines({ token }: { token: string }) {
     const options = apiItem.models.map(m => ({ value: m, tag: m === apiItem.suggested_model ? 'Recommended' : undefined }))
     if (apiItem.suggested_model && !apiItem.models.includes(apiItem.suggested_model)) options.unshift({ value: apiItem.suggested_model, tag: 'Recommended' })
     details = <>
-      <ApiKeyBox engine={apiItem} token={token} selected={saved.analysis_engine === engine} onChanged={() => void api.reload()} />
+      <ApiKeyBox engine={apiItem} token={token} selected={inUse(engine)} onChanged={() => void api.reload()} />
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="api-model">Model</label><InfoTip label="Model">The models your key can use, listed when you saved or tested the key.{apiItem.suggested_model ? ` ${apiItem.suggested_model} is on Google’s free tier for analysis (October 2026).` : ''}</InfoTip></div>
           <ModelPicker id="api-model" value={model} options={options} disabled={!apiItem.key.saved} placeholder={apiItem.key.saved ? 'Choose a model' : 'Add a key to list models'}
@@ -153,6 +193,51 @@ export default function Engines({ token }: { token: string }) {
     details = <p className="hint">The Analyse step offers <b>Do it manually</b>: copy the instruction into any app, attach the Base Image, and paste the reply back. Nothing is sent from the studio. Quality checks need an engine.</p>
   }
 
+  const generator = form.generation_engine
+  const imageItem: ApiEngine | undefined = isImageEngine(generator) ? api.byId[generator] : undefined
+  const imageModel = form.models[generator]?.generation ?? ''
+  const options = form.image_options[generator] ?? defaultOptions(generator)
+  const setOptions = (change: Partial<ImageOptions>) => setForm({ ...form, image_options: { ...form.image_options, [generator]: { ...options, ...change } } })
+  const generationBlocked = imageItem && !imageItem.key.saved ? `Add a ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : undefined
+  let generationDetails: ReactNode
+  if (generator === 'codex_cli') {
+    generationDetails = <>
+      <CliStatus name="Codex" status={byStatus.codex_cli} checking={checking} onCheck={() => void check()} />
+      <div className="engine-fields"><TimeLimit id="generation-timeout" label="Time limit" value={form.codex_timeout}
+        tip="A Codex run that reaches this limit is stopped. One image took about 70 seconds in testing. Shared with Codex analysis." onChange={v => setForm({ ...form, codex_timeout: v })} /></div>
+      <p className="hint">Codex always uses its built-in image model; there is no model to choose here.</p>
+    </>
+  } else if (imageItem) {
+    const choices = imageItem.image_models.map(m => ({ value: m, tag: m === imageItem.suggested_image_model ? 'Recommended' : undefined }))
+    if (imageItem.suggested_image_model && !imageItem.image_models.includes(imageItem.suggested_image_model)) choices.unshift({ value: imageItem.suggested_image_model, tag: 'Recommended' })
+    const qualities = imageQualities[generator]
+    generationDetails = <>
+      <ApiKeyBox engine={imageItem} token={token} selected={inUse(generator)} onChanged={() => void api.reload()} />
+      <div className="engine-fields">
+        <div className="engine-field"><div className="label-row"><label htmlFor="image-model">Image model</label><InfoTip label="Image model">The image models your key can use, listed when you saved or tested the key. {imageItem.suggested_image_model} is what {imageItem.company} recommends (October 2026).</InfoTip></div>
+          <ModelPicker id="image-model" value={imageModel} options={choices} disabled={!imageItem.key.saved} placeholder={imageItem.key.saved ? 'Choose an image model' : 'Add a key to list models'}
+            empty="No image models listed yet. Use Test key." onChange={v => setModel(generator, v, 'generation')}
+            footer={<span className="hint">{imageItem.models_checked_at ? `List updated ${formatDate(imageItem.models_checked_at)}. Test key refreshes it.` : 'Test key fetches the list.'}</span>} /></div>
+        <TimeLimit id="generation-timeout" label="Time limit" value={form.api_timeout}
+          tip="How long the studio waits for the image. Complex images can take up to two minutes. A request that has already been sent may still finish and be charged after the studio stops waiting. Shared with the API analysis engines."
+          onChange={v => setForm({ ...form, api_timeout: v })} />
+      </div>
+      <div className="engine-fields image-options">
+        <div className="engine-field"><div className="label-row"><span className="field-label" id="image-size-label">Image size</span><InfoTip label="Image size">The result keeps the Base Image’s shape. Larger sizes cost more. A preset can choose another size for its runs.</InfoTip></div>
+          <div className="segmented" role="radiogroup" aria-labelledby="image-size-label">{imageSizes[generator].map(size => <label key={size} className={`segment ${options.size === size ? 'selected' : ''}`} title={sizeHints[size]}>
+            <input type="radio" name="image-size" checked={options.size === size} onChange={() => setOptions({ size })} />{size}</label>)}</div></div>
+        {qualities && <div className="engine-field"><div className="label-row"><span className="field-label" id="image-quality-label">Quality</span><InfoTip label="Quality">Higher quality takes longer and uses more image tokens, so it costs more. Medium is a good start.</InfoTip></div>
+          <div className="segmented" role="radiogroup" aria-labelledby="image-quality-label">{qualities.map(q => <label key={q} className={`segment ${options.quality === q ? 'selected' : ''}`}>
+            <input type="radio" name="image-quality" checked={options.quality === q} onChange={() => setOptions({ quality: q })} />{q === 'xhigh' ? 'Extra high' : q[0].toUpperCase() + q.slice(1)}</label>)}</div></div>}
+      </div>
+      {imageItem.image_charge_note && <p className="hint">{imageItem.image_charge_note}</p>}
+    </>
+  } else {
+    generationDetails = <p className="hint">The Generate step offers <b>Export for manual use</b> and <b>Import result</b>. Nothing is sent from the studio.</p>
+  }
+  const generationState = (id: string) => id === 'codex_cli' ? statusText(byStatus.codex_cli, checking) : choiceState(id)
+  const generationReady = (id: string) => id === 'codex_cli' ? !!byStatus.codex_cli?.signed_in : choiceReady(id)
+
   return <>
     <section className="panel provider-panel engines-panel" aria-labelledby="analysis-engine-title">
       <div className="panel-head"><div><span className="tiny-label">READS THE SCENE</span><h2 id="analysis-engine-title">Analysis engine</h2></div></div>
@@ -165,26 +250,24 @@ export default function Engines({ token }: { token: string }) {
         </div>)}
       </div>
       <div className="engine-details" aria-label="Selected engine settings">{details}</div>
-      <PanelFooter dirty={!same(form, saved, analysisFields)} busy={busy === 'analysis'} message={messages.analysis} error={errors.analysis} blocked={blocked}
-        label="Save analysis engine" onCancel={() => setForm({ ...form, ...pick(saved, analysisFields) })} onSave={() => void save('analysis', analysisFields)} />
+      <PanelFooter dirty={!same(form, saved, 'analysis')} busy={busy === 'analysis'} message={messages.analysis} error={errors.analysis} blocked={blocked}
+        label="Save analysis engine" onCancel={() => setForm(applyPanel(form, saved, 'analysis'))} onSave={() => void save('analysis')} />
     </section>
 
     <section className="panel provider-panel engines-panel" aria-labelledby="generation-engine-title">
       <div className="panel-head"><div><span className="tiny-label">MAKES THE IMAGE</span><h2 id="generation-engine-title">Generation engine</h2></div></div>
-      <p>Creates the final image from an approved scene, one run per click. API image engines arrive in Phase 6C.</p>
-      <div className="engine-cards" role="radiogroup" aria-labelledby="generation-engine-title">{generationChoices.map(c => <ChoiceCard key={c.id} choice={c} name="generation-engine" checked={form.generation_engine === c.id}
-        state={c.id === 'manual' ? undefined : statusText(byStatus.codex_cli, checking)} ready={!!byStatus.codex_cli?.signed_in} onSelect={() => setForm({ ...form, generation_engine: c.id })} />)}</div>
-      <div className="engine-details">
-        {form.generation_engine === 'codex_cli' ? <>
-          <CliStatus name="Codex" status={byStatus.codex_cli} checking={checking} onCheck={() => void check()} />
-          <div className="engine-fields"><TimeLimit id="generation-timeout" label="Time limit" value={form.codex_timeout}
-            tip="A Codex run that reaches this limit is stopped. One image took about 70 seconds in testing. Shared with Codex analysis." onChange={v => setForm({ ...form, codex_timeout: v })} /></div>
-          <p className="hint">Codex always uses its built-in image model; there is no model to choose here.</p>
-        </> : <p className="hint">The Generate step offers <b>Export for manual use</b> and <b>Import result</b>. Nothing is sent from the studio.</p>}
+      <p>Creates the final image from an approved scene, one run per click. Every engine receives exactly what you approved.</p>
+      <div className="engine-groups" role="radiogroup" aria-labelledby="generation-engine-title">
+        {generationGroups.map(group => <div key={group.title} className="engine-group">
+          <div className="engine-group-head"><h3>{group.title}</h3>{group.hint && <span className="hint">{group.hint}</span>}</div>
+          <div className="engine-cards">{group.items.map(c => <ChoiceCard key={c.id} choice={c} name="generation-engine" checked={generator === c.id}
+            state={generationState(c.id)} ready={generationReady(c.id)} onSelect={() => setForm({ ...form, generation_engine: c.id })} />)}</div>
+        </div>)}
       </div>
-      <PanelFooter dirty={!same(form, saved, generationFields)} busy={busy === 'generation'} message={messages.generation} error={errors.generation}
-        label="Save generation engine" onCancel={() => setForm({ ...form, ...pick(saved, generationFields) })} onSave={() => void save('generation', generationFields)} />
-      <div className="privacy-note"><strong>What leaves this computer</strong><p>Analyse and quality checks send the Base Image (checks also the reference photos and the result), without location data, to the analysis engine’s company: Anthropic for Claude Code and the Anthropic API, OpenAI for Codex and the OpenAI API, Google for the Gemini API. Polish prompt sends the prompt text and the analysis to Anthropic. Generate sends the Base Image and the approved reference photos to OpenAI via Codex. Character names are never sent. Manual analysis and manual export send nothing.</p></div>
+      <div className="engine-details" aria-label="Selected generation engine settings">{generationDetails}</div>
+      <PanelFooter dirty={!same(form, saved, 'generation')} busy={busy === 'generation'} message={messages.generation} error={errors.generation} blocked={generationBlocked}
+        label="Save generation engine" onCancel={() => setForm(applyPanel(form, saved, 'generation'))} onSave={() => void save('generation')} />
+      <div className="privacy-note"><strong>What leaves this computer</strong><p>Analyse and quality checks send the Base Image (checks also the reference photos and the result), without location data, to the analysis engine’s company: Anthropic for Claude Code and the Anthropic API, OpenAI for Codex and the OpenAI API, Google for the Gemini API. Polish prompt sends the prompt text and the analysis to Anthropic. Generate sends the Base Image and the approved reference photos, without location data, with the approved prompt to the generation engine’s company: OpenAI for Codex and OpenAI Images, Google for Gemini image. Character names are never sent. Manual analysis and manual export send nothing.</p></div>
     </section>
   </>
 }

@@ -93,6 +93,9 @@ class PresetInput(BaseModel):
     negative_additions: str = Field(default="", max_length=2000)
     images: int = Field(default=1, ge=1, le=10)
     category: Literal["individual", "couple", "family", "friends", "other"] = "other"
+    # Phase 6C: for the API image engines; None keeps the Studio settings choice.
+    image_size: Literal["1K", "2K", "4K"] | None = None
+    image_quality: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     revision: int | None = Field(default=None, ge=1)
 
     @field_validator("name")
@@ -111,6 +114,8 @@ def preset_data(preset: GenerationPreset) -> dict:
         "negative_additions": preset.negative_additions,
         "images": preset.images,
         "category": preset.category,
+        "image_size": preset.image_size,
+        "image_quality": preset.image_quality,
         "builtin": False,
         "revision": preset.revision,
         "created_at": preset.created_at,

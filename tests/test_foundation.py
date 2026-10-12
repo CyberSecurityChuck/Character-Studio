@@ -26,9 +26,16 @@ def test_health_and_provider_registry_are_honest(client):
         "gemini_api": "available",
         "anthropic_api": "unverified",
         "openai_api": "unverified",
+        "gemini_image": "unverified",
+        "openai_images": "unverified",
     }
-    # Phase 6A: API engines analyse only; Codex and the manual bridge generate.
-    assert {p["id"] for p in data["providers"] if p["generation"]} == {"codex_cli", "manual_bridge"}
+    # Phase 6C-1: the API image engines generate beside Codex and the manual bridge.
+    assert {p["id"] for p in data["providers"] if p["generation"]} == {
+        "codex_cli",
+        "manual_bridge",
+        "gemini_image",
+        "openai_images",
+    }
     assert client.get("/api/generate").status_code == 404
     assert client.post("/api/generate", headers=authorization(client)).status_code == 405
 

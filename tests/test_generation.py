@@ -409,7 +409,7 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0010_model_lists"
+        assert client.get("/api/health").json()["schema_revision"] == "0011_image_engines"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []
@@ -419,9 +419,17 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
         db.execute("UPDATE engine_settings SET analysis_engine = 'gemini_api'")
         db.execute("UPDATE scene_analyses SET source = 'openai_api'")
+        # Phase 6C-1: the API image engines may generate and be a result's source.
+        db.execute("UPDATE engine_settings SET generation_engine = 'openai_api'")
+        db.execute("UPDATE generation_results SET source = 'gemini_api'")
         for statement in (
             "UPDATE engine_settings SET analysis_engine = 'other'",
             "UPDATE scene_analyses SET source = 'other'",
+            "UPDATE engine_settings SET generation_engine = 'anthropic_api'",
+            "INSERT INTO generation_results (id, scene_id, approval_id, version, source, mode, "
+            "note, original_path, thumbnail_path, media_type, width, height, content_hash, "
+            "recovered, is_preferred, created_at) SELECT 'x', scene_id, id, 99, 'other', "
+            "'generate', '', 'a', 'b', 'image/png', 1, 1, 'h', 0, 0, 'z' FROM approvals LIMIT 1",
         ):
             with pytest.raises(sqlite3.IntegrityError):
                 db.execute(statement)

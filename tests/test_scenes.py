@@ -370,6 +370,7 @@ def test_manual_engine_setting_and_settings_validation(engine_client):
         "codex_timeout": 300,
         "api_timeout": 180,
         "models": {},
+        "image_options": {},
         "revision": 1,
     }
     status = {s["engine"]: s for s in client.get("/api/engines/status").json()}

@@ -29,7 +29,6 @@ from backend.api_engines import (
     charge_confirmation,
     check_model_name,
     chosen_model,
-    engine_label,
     engine_timeout,
     is_api_engine,
     models_of,
@@ -37,6 +36,16 @@ from backend.api_engines import (
 from backend.configuration import asset_path
 from backend.engines import CLI_MODELS, ENGINE_NAMES, engine_status
 from backend.generation import generation_timing, result_data, run_seconds
+from backend.image_api import (
+    IMAGE_ENGINES,
+    QUALITIES,
+    SIZES,
+    image_options_of,
+    is_image_engine,
+    options_for,
+    run_label,
+    saved_output,
+)
 from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
 from backend.keystore import key_info
 from backend.library import clean_deleted_files, decode_image, file_hash
@@ -58,7 +67,7 @@ from backend.models import (
 from backend.packages import missing_images
 from backend.persistence import writing_session
 from backend.prompting import build_prompt, check_prompt, polish_instruction
-from backend.quality import latest_check
+from backend.quality import latest_check, preset_image_options
 from backend.scene_store import active_job, latest, now
 from backend.workflow import (
     MAX_REFERENCES,
@@ -184,17 +193,45 @@ AnalysisEngine = Literal[
 ]
 
 
+GenerationEngine = Literal["codex_cli", "manual", "gemini_api", "openai_api"]
+
+
+class ImageOptions(BaseModel):
+    """Size and quality for one API image engine (Phase 6C)."""
+
+    model_config = ConfigDict(extra="forbid")
+    size: Literal[SIZES] = "1K"
+    quality: Literal[QUALITIES] | None = None
+
+
 class EngineSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     analysis_engine: AnalysisEngine
-    generation_engine: Literal["codex_cli", "manual"]
+    generation_engine: GenerationEngine
     claude_timeout: int = Field(ge=30, le=1800)
     codex_timeout: int = Field(ge=30, le=1800)
     api_timeout: int = Field(default=180, ge=30, le=1800)
-    # {"gemini_api": {"analysis": "<model>"}, "claude_cli": {"analysis": "opus"}}; empty or
-    # missing means the engine's own default (subscription engines only).
-    models: dict[str, dict[Literal["analysis"], str]] = Field(default_factory=dict)
+    # {"gemini_api": {"analysis": "<model>", "generation": "<image model>"},
+    #  "claude_cli": {"analysis": "opus"}}; empty or missing means the engine's own default
+    # (subscription engines only).
+    models: dict[str, dict[Literal["analysis", "generation"], str]] = Field(
+        default_factory=dict
+    )
+    image_options: dict[str, ImageOptions] = Field(default_factory=dict)
     revision: int = Field(ge=1)
+
+    @field_validator("image_options")
+    @classmethod
+    def known_image_engines(cls, value):
+        for engine, options in value.items():
+            item = IMAGE_ENGINES.get(engine)
+            if item is None:
+                raise ValueError("Unknown image engine.")
+            if options.size not in item.sizes:
+                raise ValueError(f"{item.name} offers the sizes {', '.join(item.sizes)}.")
+            if options.quality is not None and options.quality not in item.qualities:
+                raise ValueError(f"{item.name} has no quality setting.")
+        return value
 
     @field_validator("models")
     @classmethod
@@ -203,6 +240,8 @@ class EngineSettingsUpdate(BaseModel):
         for engine, purposes in value.items():
             if engine not in API_ENGINES and engine not in CLI_MODELS:
                 raise ValueError("Unknown engine.")
+            if "generation" in purposes and engine not in IMAGE_ENGINES:
+                raise ValueError("Only the API image engines take an image model.")
             chosen = {k: check_model_name(v) for k, v in purposes.items() if v.strip()}
             if chosen:
                 cleaned[engine] = chosen
@@ -269,13 +308,20 @@ def job_data(request, job: EngineJob | None):
         "kind": job.kind,
         "scene_id": job.scene_id,
         "engine": job.engine,
-        "engine_name": engine_label(job.engine),
+        "engine_name": run_label(job.engine, job.kind),
         "model": json.loads(job.settings_json or "{}").get("model"),
         "usage": json.loads(job.settings_json or "{}").get("usage"),
         "mode": json.loads(job.settings_json or "{}").get("mode"),
-        # A generation that did not finish may still have saved an image in Codex's folder.
+        # A generation that did not finish may still have saved an image in Codex's folder,
+        # or (API image engines) in its own job folder.
         "recoverable": (
-            job.kind == "generation" and job.status in RECOVERABLE and job.job_folder is not None
+            job.kind == "generation"
+            and job.status in RECOVERABLE
+            and job.job_folder is not None
+            and (
+                not is_image_engine(job.engine)
+                or bool(saved_output(asset_path(request.app.state.settings, job.job_folder)))
+            )
         ),
         "engine_version": job.engine_version,
         "batch": batch_place(job) if job.status in ("not_started", "running") else None,
@@ -518,7 +564,9 @@ def generation_detail(request, session, scene: Scene, current):
         .order_by(EngineJob.created_at.desc())
     )
     return {
-        "generation_timing": generation_timing(session),
+        "generation_timing": generation_timing(
+            session, session.get(EngineSettings, 1).generation_engine
+        ),
         "results": [
             result_data(
                 r,
@@ -1017,6 +1065,28 @@ def api_run_settings(request, settings: EngineSettings, engine: str, confirmed: 
     return {"model": model}
 
 
+def image_run_settings(
+    request, session, settings: EngineSettings, confirmed: bool, preset_id: str | None
+) -> dict:
+    """Checks before queuing an API image run (Phase 6C); returns the model, size and quality.
+
+    What the user confirmed is what runs: the job records these and never re-reads them.
+    """
+    engine = settings.generation_engine
+    if not confirmed:
+        raise HTTPException(409, charge_confirmation(engine))
+    name = IMAGE_ENGINES[engine].name
+    model = chosen_model(settings, engine, "generation")
+    if model is None:
+        raise HTTPException(409, f"Choose an image model for {name} in Studio settings first.")
+    if not key_info(request.app.state.settings, engine)["saved"]:
+        raise HTTPException(
+            409, f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings."
+        )
+    chosen = options_for(settings, engine, preset_image_options(session, preset_id))
+    return {"model": model, **chosen}
+
+
 @router.post("/scenes/{scene_id}/analyse", status_code=202)
 def analyse_scene(request: Request, scene_id: str, body: AnalyseInput | None = None):
     with writing(request) as session:
@@ -1314,6 +1384,7 @@ def settings_data(item: EngineSettings):
         "codex_timeout": item.codex_timeout,
         "api_timeout": item.api_timeout,
         "models": models_of(item),
+        "image_options": image_options_of(item),
         "revision": item.revision,
     }
 
@@ -1337,9 +1408,20 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
                 raise HTTPException(422, f"Choose a model for the {name} before selecting it.")
             if not key_info(request.app.state.settings, engine)["saved"]:
                 raise HTTPException(422, f"Save a {name} key before selecting it.")
-        for key, value in body.model_dump(exclude={"revision", "models"}).items():
+        engine = body.generation_engine
+        if engine in IMAGE_ENGINES:
+            name = IMAGE_ENGINES[engine].name
+            if not (body.models.get(engine) or {}).get("generation"):
+                raise HTTPException(422, f"Choose an image model for {name} before selecting it.")
+            if not key_info(request.app.state.settings, engine)["saved"]:
+                raise HTTPException(422, f"Save a {API_ENGINES[engine].name} key first.")
+        for key, value in body.model_dump(exclude={"revision", "models", "image_options"}).items():
             setattr(item, key, value)
         item.api_models_json = json.dumps(body.models, sort_keys=True)
+        item.image_options_json = json.dumps(
+            {k: v.model_dump(exclude_none=True) for k, v in body.image_options.items()},
+            sort_keys=True,
+        )
         item.revision += 1
         return settings_data(item)
 

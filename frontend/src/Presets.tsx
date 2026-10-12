@@ -9,6 +9,8 @@ import { Glyph, InfoTip } from './Controls'
 export type Preset = {
   id: string; name: string; category: string; builtin: boolean; scene_changes: string; negative_additions: string
   images: number; revision: number; created_at: string | null; updated_at: string | null
+  // Phase 6C: size and quality for the API image engines; null keeps Studio settings.
+  image_size: string | null; image_quality: string | null
 }
 
 export const categories: [string, string][] = [['individual', 'Individual'], ['couple', 'Couple'], ['family', 'Family'], ['friends', 'Friends'], ['other', 'Other']]
@@ -48,6 +50,8 @@ export function PresetDialog({ preset, initial, token, onClose, onSaved }: {
     scene_changes: preset?.scene_changes ?? initial?.scene_changes ?? '',
     negative_additions: preset?.negative_additions ?? initial?.negative_additions ?? '',
     images: preset?.images ?? initial?.images ?? 1,
+    image_size: preset?.image_size ?? initial?.image_size ?? null,
+    image_quality: preset?.image_quality ?? initial?.image_quality ?? null,
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -86,6 +90,14 @@ export function PresetDialog({ preset, initial, token, onClose, onSaved }: {
       <textarea id="preset-negative" rows={3} maxLength={2000} value={form.negative_additions} placeholder={'For example: harsh flash\nlens flare'} onChange={e => setForm({ ...form, negative_additions: e.target.value })} />
       <div className="label-row"><label htmlFor="preset-images">Images per click</label><InfoTip label="Images per click">Sets the − / + count on the Generate step (and in batches, up to 5 per scene) when you choose this preset. Each image is one run.</InfoTip></div>
       <input id="preset-images" type="number" min={1} max={10} required value={form.images} onChange={e => setForm({ ...form, images: Number(e.target.value) })} />
+      <div className="preset-name-row preset-image-row">
+        <div><div className="label-row"><label htmlFor="preset-size">Image size</label><InfoTip label="Image size">For the API image engines (Gemini image, OpenAI Images). Codex ignores it. OpenAI offers 1K and 2K; a 4K preset uses 2K there.</InfoTip></div>
+          <select id="preset-size" value={form.image_size ?? ''} onChange={e => setForm({ ...form, image_size: e.target.value || null })}>
+            <option value="">Studio setting</option>{['1K', '2K', '4K'].map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div><div className="label-row"><label htmlFor="preset-quality">Quality</label><InfoTip label="Quality">For OpenAI Images only. Higher quality costs more.</InfoTip></div>
+          <select id="preset-quality" value={form.image_quality ?? ''} onChange={e => setForm({ ...form, image_quality: e.target.value || null })}>
+            <option value="">Studio setting</option>{[['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+      </div>
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="dialog-actions">
         {preset && !builtin && <button type="button" className="danger secondary" onClick={remove}>Delete</button>}

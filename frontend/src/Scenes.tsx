@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
-import { ChargeDialog, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
+import { ChargeDialog, engineNames, generationNames, isApiEngine, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { BatchDialog, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
 import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
@@ -38,7 +38,9 @@ export type SceneDetail = SceneSummary & {
   approvals: ApprovalRecord[]; pending_polish: PendingPolish | null
   results: Result[]; exports: ExportPackage[]; generation_timing: { runs: number; average_seconds: number | null }
 }
-type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number; models: Record<string, { analysis?: string }>; revision: number }
+type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number
+  models: Record<string, { analysis?: string; generation?: string }>; image_options: Record<string, { size: string; quality?: string }>; revision: number }
+type GenerateAsk = { mode: 'generate' | 'variation'; count: number; presetId: string | null }
 type Step = 'analysis' | 'characters' | 'prompt' | 'review' | 'generate'
 
 type SubjectField = 'position' | 'pose_summary' | 'body_direction' | 'torso_orientation' | 'shoulder_alignment' | 'head_direction' | 'facial_viewing_angle' | 'eye_direction' | 'expression' | 'arms_and_hands' | 'legs_and_feet' | 'outfit' | 'hairstyle' | 'accessories'
@@ -254,7 +256,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
       : { failed: `${job.engine_name} could not finish the analysis`, cancelled: 'Analysis cancelled', interrupted: 'The analysis was interrupted' }
   return <div className={`job-notice ${job.status}`} role="alert">
     <strong>{titles[job.status] ?? 'The run did not finish'}</strong>
-    <p>{job.error_details}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
+    <p>{job.error_details}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' && job.engine === 'codex_cli' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
     {(job.status === 'interrupted' || (generation && job.recoverable)) && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
     <span className="library-status" role="status">{note}</span>
     <div className="notice-actions">
@@ -323,6 +325,8 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const [manual, setManual] = useState(false)
   // API engines: the charge confirmation shown before a run is queued.
   const [chargeAsk, setChargeAsk] = useState<{ note?: string } | null>(null)
+  // API image engines (Phase 6C): every Generate click asks before anything is sent.
+  const [imageAsk, setImageAsk] = useState<GenerateAsk | null>(null)
   const apiEngines = useApiEngines()
   const { presets, reload: reloadPresets } = usePresets()
   const [presetPick, setPresetPick] = useState('')
@@ -527,22 +531,28 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
       setScene(detail); onChanged()
     })
   }
-  const generate = (mode: 'generate' | 'variation', count = 1, presetId: string | null = null) => run(async () => {
+  const generator = engines?.generation_engine ?? 'codex_cli'
+  const generate = (mode: 'generate' | 'variation', count = 1, presetId: string | null = null, confirmed = false) => run(async () => {
     if (lastGenerationJob) setDismissed(d => [...d, lastGenerationJob.id])
-    const preset = presetId ? { preset_id: presetId } : {}
+    const extra = { ...(presetId ? { preset_id: presetId } : {}), ...(confirmed ? { confirm_charges: true } : {}) }
     if (count > 1) {
       // Several images from this one approval: a batch for this scene (Phase 5.5).
-      await send<BatchStart>('/api/batches/generation', 'POST', token, { items: [{ scene_id: scene.id, approval_id: scene.approval.current?.id }], count, mode, ...preset })
+      await send<BatchStart>('/api/batches/generation', 'POST', token, { items: [{ scene_id: scene.id, approval_id: scene.approval.current?.id }], count, mode, ...extra })
       setScene(await request<SceneDetail>(`/api/scenes/${scene.id}`)); onChanged()
       return
     }
-    const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/generate`, 'POST', token, { approval_id: scene.approval.current?.id, mode, ...preset })
+    const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/generate`, 'POST', token, { approval_id: scene.approval.current?.id, mode, ...extra })
     setScene(detail); onChanged()
   }, count > 1 ? `${count} images queued. They run one after another.` : '')
+  /** Codex runs start at once (the panel already confirmed them); API image runs ask about charges first. */
+  const askGenerate = (ask: GenerateAsk) => isImageEngine(generator) ? setImageAsk(ask) : void generate(ask.mode, ask.count, ask.presetId)
+  const askPreset = imageAsk?.presetId ? presets.find(p => p.id === imageAsk.presetId) : undefined
+  const savedOptions = engines?.image_options[generator] ?? (generator === 'openai_api' ? { size: '1K', quality: 'medium' } : { size: '1K' })
+  const askOptions = { size: askPreset?.image_size ?? savedOptions.size, ...(savedOptions.quality || generator === 'openai_api' ? { quality: askPreset?.image_quality ?? savedOptions.quality ?? 'medium' } : {}) }
   const recover = (job: Job) => run(async () => {
     const found = await send<{ found: number; scene: SceneDetail }>(`/api/jobs/${job.id}/recover`, 'POST', token)
     await accept(found.scene, false)
-    if (!found.found) throw new Error('No saved image was found for this run. Codex probably stopped before the image was finished.')
+    if (!found.found) throw new Error(job.engine === 'codex_cli' ? 'No saved image was found for this run. Codex probably stopped before the image was finished.' : 'No saved image was found for this run.')
   }, 'Found the saved image and kept it as a result.')
   const saveBoxes = () => {
     if (!boxes || !current) return
@@ -711,7 +721,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
 
         <section id="step-panel-review" role="tabpanel" aria-labelledby="step-tab-review" hidden={activeStep !== 'review'} className="panel step-panel">
           <div className="step-head"><span className="step-number">04</span><div><h3>Review and approve</h3><p className="hint">Everything the image will be made from. Approval locks these exact inputs; nothing can be generated without it.</p></div></div>
-          <ReviewPanel scene={scene} characters={characters} generationEngine={engines?.generation_engine ?? 'codex_cli'} busy={busy || !!scene.active_job} unsaved={dirty}
+          <ReviewPanel scene={scene} characters={characters} generationEngine={generator} busy={busy || !!scene.active_job} unsaved={dirty}
             onGo={target => setStep(target)}
             onApprove={acceptWarnings => void run(async () => { await accept(await send<SceneDetail>(`/api/scenes/${scene.id}/approve`, 'POST', token, { prompt_id: scene.review.prompt_id, accept_warnings: acceptWarnings }), false) }, 'Approved. These exact inputs are now locked for generation.')}
             onWithdraw={id => void run(async () => { await accept(await send<SceneDetail>(`/api/scenes/${scene.id}/approval/withdraw`, 'POST', token, { approval_id: id }), false) }, 'Approval withdrawn.')} />
@@ -719,14 +729,14 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         </section>
 
         <section id="step-panel-generate" role="tabpanel" aria-labelledby="step-tab-generate" hidden={activeStep !== 'generate'} className="panel step-panel">
-          <div className="step-head"><span className="step-number">05</span><div><h3>Generate and results</h3><p className="hint">Make the image from the approved inputs, with Codex or any app you like. Every result is kept and stays linked to what it was made from.</p></div></div>
-          <GeneratePanel scene={scene} data={data} generationEngine={engines?.generation_engine ?? 'codex_cli'} busy={busy} exportOpen={exportOpen} onExportOpen={setExportOpen}
+          <div className="step-head"><span className="step-number">05</span><div><h3>Generate and results</h3><p className="hint">Make the image from the approved inputs, with the generation engine from Studio settings or any app you like. Every result is kept and stays linked to what it was made from.</p></div></div>
+          <GeneratePanel scene={scene} data={data} generationEngine={generator} generationModel={engines?.models[generator]?.generation ?? null} imageOptions={savedOptions} busy={busy} exportOpen={exportOpen} onExportOpen={setExportOpen}
             runStatus={scene.active_job?.kind === 'generation' || scene.active_job?.kind === 'check' ? <><ProgressCard job={scene.active_job} stopping={stopping === scene.active_job.id} busy={busy} onCancel={cancel} />{scene.active_job.batch && <BatchList token={token} sceneId={scene.id} />}</>
               : showGenerationNotice && lastGenerationJob ? <JobNotice job={lastGenerationJob} busy={busy || !approved || !!scene.active_job}
-                onRetry={() => { if (window.confirm('Generate again? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance.')) void generate('generate') }}
+                onRetry={() => { if (isImageEngine(generator)) setImageAsk({ mode: 'generate', count: 1, presetId: null }); else if (window.confirm('Generate again? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance.')) void generate('generate') }}
                 extra={lastGenerationJob.recoverable ? <button type="button" className="secondary" disabled={busy} onClick={() => void recover(lastGenerationJob)}>Look for a saved image</button> : undefined}
                 manualLabel="Export for manual use" onManual={() => setExportOpen(true)} onDismiss={() => setDismissed(d => [...d, lastGenerationJob.id])} /> : null}
-            onGenerate={(mode, count, presetId) => void generate(mode, count, presetId)} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }}
+            onGenerate={(mode, count, presetId) => askGenerate({ mode, count, presetId })} onChanged={(detail, note) => { void accept(detail, false).then(() => setMessage(note)) }}
             onRefresh={note => { void request<SceneDetail>(`/api/scenes/${scene.id}`).then(detail => accept(detail, false)).then(() => setMessage(note)) }} onGo={() => setStep('review')} />
         </section>
 
@@ -740,6 +750,11 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
       {manual && <ManualAnalysis scene={scene} token={token} onClose={() => setManual(false)} onImported={detail => { setManual(false); if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id]); void accept(detail, !promptDirty).then(() => setMessage(`Analysis version ${detail.analyses[0].version} imported.`)) }} />}
     </dialog>
     {savingPreset && <PresetDialog token={token} initial={{ scene_changes: changes }} onClose={() => setSavingPreset(false)} onSaved={(_p, note) => { setMessage(note); void reloadPresets() }} />}
+    {imageAsk && apiEngines.byId[generator] && <ChargeDialog engine={apiEngines.byId[generator]} model={engines?.models[generator]?.generation ?? null} runs={imageAsk.count}
+      title={`${imageAsk.mode === 'variation' ? 'Make a variation' : 'Generate'} with ${generationNames[generator]}?`} action={imageAsk.count > 1 ? `Generate ${imageAsk.count} images` : 'Generate'}
+      note={imageAsk.count > 1 ? 'They run one after another; each one is a separate request.' : 'Earlier results are kept.'} image={askOptions}
+      what={`the Base Image and ${scene.total_images - 1 === 1 ? '1 approved reference photo' : `${scene.total_images - 1} approved reference photos`} (without location data) with the approved prompt`}
+      onConfirm={() => void generate(imageAsk.mode, imageAsk.count, imageAsk.presetId, true)} onClose={() => setImageAsk(null)} />}
     {chargeAsk && apiEngines.byId[engine] && <ChargeDialog engine={apiEngines.byId[engine]} model={engines?.models[engine]?.analysis ?? null} runs={1} note={chargeAsk.note}
       onConfirm={() => void analyse(true)} onClose={() => setChargeAsk(null)} />}
     {historyOpen && <PromptHistory scene={scene} token={token} editorDirty={promptDirty} onClose={() => setHistoryOpen(false)}
@@ -878,7 +893,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
         }} />}
     </dialog>
     {batching && <BatchDialog kind={batching.kind} scenes={batching.scenes} preselectAll={batching.all} token={token}
-      engine={batching.kind === 'analysis' ? engines?.analysis_engine ?? 'claude_cli' : 'codex_cli'} onClose={() => setBatching(null)} onStarted={started} />}
+      engine={batching.kind === 'analysis' ? engines?.analysis_engine ?? 'claude_cli' : engines?.generation_engine ?? 'codex_cli'} onClose={() => setBatching(null)} onStarted={started} />}
     {suggesting && <GroupDialog scenes={suggesting} token={token} onClose={() => setSuggesting(null)}
       onDone={result => {
         setSuggesting(null); stopSelecting(); void load()

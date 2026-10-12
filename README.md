@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4), **generation & results** (Phase 5), **batch processing** (Phase 5.5) **optional API analysis engines** with your own keys (Phase 6A) and **quality checks, comparison and presets** (Phase 6B) work today. Editing and encrypted backups come next. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4), **generation & results** (Phase 5), **batch processing** (Phase 5.5) **optional API analysis engines** with your own keys (Phase 6A) and **quality checks, comparison and presets** (Phase 6B) and **optional API image engines** (Gemini image, OpenAI Images; Phase 6C-1) work today. Region editing and encrypted backups come next. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -207,7 +207,7 @@ flowchart TB
     classDef later fill:#94A3B8,stroke:#475569,color:#0F172A,stroke-width:2px
 ```
 
-Phase 6 is in progress: optional API engines (6A, done), identity and composition checks with presets and comparison (6B, done), region editing and API image engines (6C) and encrypted backups (6D). The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md).
+Phase 6 is in progress: optional API engines (6A, done), identity and composition checks with presets and comparison (6B, done), API image engines (6C-1, built) and region editing with selective replacement (6C-2), and encrypted backups (6D). The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md).
 
 ## 🛠️ Tech stack
 

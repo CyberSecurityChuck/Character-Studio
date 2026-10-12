@@ -91,6 +91,8 @@ class EngineSettings(Base):
     api_models_json: Mapped[str] = mapped_column(Text)
     # Model lists fetched with the user's API keys (free list calls), kept between visits.
     model_lists_json: Mapped[str] = mapped_column(Text, default="{}")
+    # Size and quality per API image engine (Phase 6C), e.g. {"openai_api": {"size": "1K"}}.
+    image_options_json: Mapped[str] = mapped_column(Text, default="{}")
     revision: Mapped[int] = mapped_column(Integer)
 
 
@@ -296,6 +298,9 @@ class GenerationPreset(Base):
     images: Mapped[int] = mapped_column(Integer, default=1)
     # individual, couple, family, friends or other (built-in presets live in code).
     category: Mapped[str] = mapped_column(String(20), default="other")
+    # Phase 6C: size and quality for the API image engines; None keeps Studio settings.
+    image_size: Mapped[str | None] = mapped_column(String(4))
+    image_quality: Mapped[str | None] = mapped_column(String(10))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[str] = mapped_column(String(40))
