@@ -1418,14 +1418,14 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
             if not (body.models.get(engine) or {}).get("analysis"):
                 raise HTTPException(422, f"Choose a model for the {name} before selecting it.")
             if not key_info(request.app.state.settings, engine)["saved"]:
-                raise HTTPException(422, f"Save a {name} key before selecting it.")
+                raise HTTPException(422, f"Save your {name} key before selecting it.")
         engine = body.generation_engine
         if engine in IMAGE_ENGINES:
             name = IMAGE_ENGINES[engine].name
             if not (body.models.get(engine) or {}).get("generation"):
                 raise HTTPException(422, f"Choose an image model for {name} before selecting it.")
             if not key_info(request.app.state.settings, engine)["saved"]:
-                raise HTTPException(422, f"Save a {API_ENGINES[engine].name} key first.")
+                raise HTTPException(422, f"Save your {API_ENGINES[engine].name} key first.")
         for key, value in body.model_dump(exclude={"revision", "models", "image_options"}).items():
             setattr(item, key, value)
         item.api_models_json = json.dumps(body.models, sort_keys=True)

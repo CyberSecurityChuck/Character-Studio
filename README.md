@@ -206,6 +206,14 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
     <td width="50%"><img src="docs/images/profile.png" alt="Character profile with labelled reference photos"/><br/><sub><b>Character profile</b>: labelled reference photos, primary photo, thumbnail framing</sub></td>
     <td width="50%"><img src="docs/images/groups.png" alt="Group editor showing a four-person family group"/><br/><sub><b>Groups</b>: families, couples and friends, reusable across scenes</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/characters.png" alt="Scene Characters step: a pier scene with two subject boxes, Subject 1 assigned to a saved character with three numbered reference photos"/><br/><sub><b>Characters step</b>: who each person in the scene becomes, with the reference photos that will be sent</sub></td>
+    <td width="50%"><img src="docs/images/compare.png" alt="Result viewer comparing the Base Image and a result with a draggable slider"/><br/><sub><b>Compare results</b>: side by side, slider, overlay or difference against the Base Image</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/edit.png" alt="Edit area dialog replacing one person: the marked area over the result, the person's approved photos and the engine choices"/><br/><sub><b>Edit area</b>: fix one region or replace one person; only the marked area changes</sub></td>
+    <td width="50%"><img src="docs/images/engines.png" alt="Studio settings showing the analysis engine choices: subscriptions, pay-per-use API engines and manual"/><br/><sub><b>Engine settings</b>: your subscriptions first; API engines with your own keys are optional</sub></td>
+  </tr>
 </table>
 
 ## 🗺️ Roadmap

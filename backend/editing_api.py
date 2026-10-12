@@ -59,7 +59,7 @@ def option_state(settings: Settings, row: EngineSettings, option: EditOption) ->
     model, reason = option.model, None
     if option.engine in API_ENGINES:
         if not key_info(settings, option.engine)["saved"]:
-            reason = f"Add a {API_ENGINES[option.engine].name} key in Studio settings first."
+            reason = f"Add your {API_ENGINES[option.engine].name} key in Studio settings first."
         elif option.engine in IMAGE_ENGINES:
             model = chosen_model(row, option.engine, "generation")
             if model is None:

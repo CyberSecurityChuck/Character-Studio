@@ -159,7 +159,7 @@ export default function Engines({ token }: { token: string }) {
   const setModel = (id: string, value: string, purpose: Purpose = 'analysis') => setForm({ ...form, models: { ...form.models, [id]: { ...form.models[id], [purpose]: value } } })
   const inUse = (id: string) => saved.analysis_engine === id || saved.generation_engine === id
   const apiItem: ApiEngine | undefined = isApiEngine(engine) ? api.byId[engine] : undefined
-  const blocked = apiItem && !apiItem.key.saved ? `Add a ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : undefined
+  const blocked = apiItem && !apiItem.key.saved ? `Add your ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : undefined
   const choiceState = (id: string) => isApiEngine(id) ? (api.byId[id]?.key.saved ? 'Key saved' : 'Needs a key') : id === 'manual' ? undefined : statusText(byStatus[id], checking)
   const choiceReady = (id: string) => isApiEngine(id) ? !!api.byId[id]?.key.saved : !!byStatus[id]?.signed_in
 
@@ -201,7 +201,7 @@ export default function Engines({ token }: { token: string }) {
   const imageModel = form.models[generator]?.generation ?? ''
   const options = form.image_options[generator] ?? defaultOptions(generator)
   const setOptions = (change: Partial<ImageOptions>) => setForm({ ...form, image_options: { ...form.image_options, [generator]: { ...options, ...change } } })
-  const generationBlocked = imageItem && !imageItem.key.saved ? `Add a ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : undefined
+  const generationBlocked = imageItem && !imageItem.key.saved ? `Add your ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : undefined
   let generationDetails: ReactNode
   if (generator === 'codex_cli') {
     generationDetails = <>

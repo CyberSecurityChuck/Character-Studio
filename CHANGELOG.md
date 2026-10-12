@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-12 — README screenshots and repository settings
+
+- Four new README screenshots (Characters step, comparison slider, Edit area, engine settings) from a throwaway demo studio with fictional characters and scenes drawn as simple illustrations; no real people and no AI-generated images.
+- Wording: "Add your … key" instead of "Add a OpenAI API key" in engine and edit messages.
+- Repository (with the user's approval): public; secret scanning, push protection, private vulnerability reporting and Dependabot security updates enabled.
+
 ## 2026-10-12 — Phase 6 complete; docs ready for a public repository
 
 - The user's follow-up check passed (`Phase_Checks/Phase6CD_Followup_Report.md`: 16/16 steps, 0 problems, "Phase 6C and 6D look good"). 6C-1, 6C-2 and 6D are accepted, so every phase in PLAN.md is complete. Both success styles (toast and green inline confirmation) stay for now.
