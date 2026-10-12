@@ -20,11 +20,13 @@ Last checkpoint: 2026-10-12 IST (+05:30)
 - Runtime: the user's studio at http://127.0.0.1:8765 still runs Phase 5.5 code until restarted; a restart upgrades the database to `0012_region_edits` (0008, 0011 and 0012 rebuild tables; 0009 and 0010 are additive). Back up first. Data: `%USERPROFILE%\Character-Studio-Data`.
 - Blockers: none.
 - Costs: no paid calls by the assistant. No dependencies added in 6A, 6B or 6C; 6D added the approved `cryptography`.
-- Git: 6A (`88e0690`), 6B (`1f36c1d`), review checkpoint (`2c86cd8`), review fixes (`e42e300`) and the acceptance record (`b7af410`) are pushed to `origin/main` with the user's approval (2026-10-12, CI not run). The 6C-1, 6C-2, 6D, review-fix and acceptance commits are local until the user-approved push (see below). Every later push needs new approval. Remote `origin` = `CyberSecurityChuck/Character-Studio` (**private**).
+- Git: 6A (`88e0690`), 6B (`1f36c1d`), review checkpoint (`2c86cd8`), review fixes (`e42e300`) and the acceptance record (`b7af410`) are pushed to `origin/main` with the user's approval (2026-10-12, CI not run). Everything through `9234b76` is pushed to the **public** `origin/main` (2026-10-12, with approval; CI passed). Every later push needs new approval. Remote `origin` = `CyberSecurityChuck/Character-Studio` (**public** since 2026-10-12).
 
 Earlier history (Phase 2 review, plan v2.1, Phase 2.5 spike, public-release prep, Phases 3–5.5) is in CHANGELOG.md and DECISIONS.md D008–D021; Phase 6 is D022 (6A), D023 (6B), D024 (review fixes), D025 (6C plan), D026 (6C-1), D027 (6C-2), D028 (6D) and D029 (6C + 6D review fixes).
 
 ## Making the GitHub repository public (requested by the user, 2026-10-12)
+
+**Done 2026-10-12:** the repository is **public**; `main` pushed (`b7af410..9234b76`); CI run 38216447118 passed (privacy guard; Windows: 143 tests, lint, build); secret scanning, push protection and private vulnerability reporting enabled (0 secret-scanning and 0 open Dependabot alerts); README diagrams checked with Mermaid 11. CI now runs on every push and pull request. Every later push still needs the user's approval.
 
 On 2026-10-12 the user asked to update all GitHub-facing docs, make the repository public, push and run CI ("we'll have unlimited GitHub action minutes because the repo will be public"). Docs updated for Phases 1–6 (README, USER_GUIDE, SECURITY, RESPONSIBLE_USE, DESIGN, AGENTS, PLAN status header) and CI now runs on every push to `main`, every pull request and by hand. Pre-public check (2026-10-12): `main` and `origin/main` contain only the GitHub no-reply address; a personal address exists only in the local, never-pushed branches `backup/pre-public-rewrite` and `backup/github-web-edits`, so only `main` is ever pushed. Steps:
 

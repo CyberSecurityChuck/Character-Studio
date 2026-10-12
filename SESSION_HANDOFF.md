@@ -41,6 +41,7 @@ Standing rules: no project file changes without the user's approval (describe, t
 ## Runtime and next action
 
 - The user's studio (http://127.0.0.1:8765) still runs Phase 5.5 code until restarted.
-- Git: everything through `b7af410` is pushed to the private `origin/main`. 6C-1 (`0de46f7`), 6C-2 (`d695092`) and 6D are local only. Every push needs new approval; never push `backup/pre-public-rewrite` or `refs/codex/*`.
+- Git: everything through `9234b76` is pushed to the public `origin/main`. Every push needs new approval; never push `backup/pre-public-rewrite` or `refs/codex/*`.
 - Gotchas: generation engine ids stay in sync across `IMAGE_ENGINES`, the CHECK lists (0011/0012), `GenerationEngine`, `imageEngineIds`/`generationNames`; `bfl_api` is in `API_ENGINES` but `analysis=False` and not in `apiEngineIds`; `jobs.py` imports `editing_api.store_edit` lazily and `results.recover_images` imports `recover_edit` lazily (import cycles through `scenes`); edit masks are stored at the result's upright size.
-- Next action: follow PROJECT_STATUS "Making the GitHub repository public": visibility change (confirmed with the user), push `main` only, check CI, then (with the user's OK) enable secret scanning, push protection and private vulnerability reporting. The user kept both success styles (toast + green inline) for now. Nothing beyond PLAN.md Phase 6 is approved.
+- Done 2026-10-12 with the user's approval: repository switched to **public**, `main` pushed (`9234b76`), CI passed (run 38216447118), secret scanning, push protection and private vulnerability reporting enabled. Only `main` is ever pushed; the local `backup/*` branches contain an old personal email and must stay local.
+- Next action: none pending. The user kept both success styles (toast + green inline) for now and may later choose one. Nothing beyond PLAN.md Phase 6 is approved; a Phase 7 needs explicit approval. Every push needs approval.
