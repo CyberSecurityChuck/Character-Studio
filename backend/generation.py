@@ -31,6 +31,7 @@ from backend.models import (
     PendingFileDeletion,
     ReferencePhoto,
     Scene,
+    SceneAnalysis,
 )
 from backend.packages import mapping_text, write_text, write_zip
 from backend.persistence import writing_session
@@ -42,6 +43,7 @@ MAX_GENERATION_INSTRUCTION = 24_000
 # Generated files are read whole before decoding; Codex PNGs are a few megabytes.
 MAX_RESULT_BYTES = 60 * 1024 * 1024
 MODES = ("generate", "variation")
+RESULT_MODES = ("generate", "variation", "import", "edit")
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 _PATHS = re.compile(r"(?:[A-Za-z]:[\\/]|/)[^\s\"'<>|*?`()\[\]]+?\.(?:png|jpe?g|webp)", re.I)
 
@@ -346,12 +348,24 @@ def generation_timing(session, engine: str = "codex_cli") -> dict:
     return {"runs": len(times), "average_seconds": average}
 
 
+def approval_boxes(session, approval: Approval | None) -> dict:
+    """Subject boxes ({label: {x, y, width, height}}) of the analysis an approval covers."""
+    if approval is None:
+        return {}
+    analysis = session.get(SceneAnalysis, snapshot_of(approval)["inputs"]["analysis"]["id"])
+    if analysis is None:
+        return {}
+    subjects = json.loads(analysis.structured_analysis).get("subjects") or []
+    return {s.get("label"): s.get("bounding_box") for s in subjects if isinstance(s, dict)}
+
+
 def result_data(
     result: GenerationResult,
     approval: Approval | None,
     current_id: str | None,
     job: EngineJob | None = None,
     check: dict | None = None,
+    boxes: dict | None = None,
 ):
     snapshot = snapshot_of(approval) if approval is not None else None
     inputs = snapshot["inputs"] if snapshot else None
@@ -373,13 +387,19 @@ def result_data(
         "recovered": result.recovered,
         # Only a normally finished run was timed by the studio.
         "seconds": run_seconds(job)
-        if job is not None and job.kind == "generation" and job.status == "completed"
+        if job is not None and job.kind in ("generation", "edit") and job.status == "completed"
         else None,
         "is_preferred": result.is_preferred,
         # The preset chosen when the run was started (Phase 6B), if any.
         "preset": json.loads(job.settings_json or "{}").get("preset") if job else None,
         # API image runs (Phase 6C): the size, quality and tokens the provider reported.
         "usage": json.loads(job.settings_json or "{}").get("usage") if job else None,
+        # Region edits (Phase 6C-2): the edited result and what the edit asked for.
+        "parent_result_id": result.parent_result_id,
+        "edit": json.loads(result.edit_json) if result.edit_json else None,
+        "mask_url": f"/api/results/{result.id}/mask" if result.edit_json else None,
+        "editable": approval is not None
+        and approval.invalidated_reason != "You withdrew this approval.",
         "check": check,
         "created_at": result.created_at,
         "image_url": f"/api/results/{result.id}/image/original",
@@ -393,6 +413,8 @@ def result_data(
                 "action": m["action"],
                 "character_name": names.get(m["character_id"]) if m["character_id"] else None,
                 "images": [r["image"] for r in m["references"]],
+                # Approved subject boxes, for "Use this person's area" in the edit dialog.
+                "box": (boxes or {}).get(m["subject"]),
             }
             for m in (inputs["mappings"] if inputs else [])
         ],
@@ -412,6 +434,8 @@ def store_result(
     engine_version: str | None = None,
     note: str = "",
     recovered: bool = False,
+    parent_result_id: str | None = None,
+    edit: dict | None = None,
 ) -> str:
     """Save a new result (never replacing one) with the same file journal as uploads.
 
@@ -448,6 +472,8 @@ def store_result(
                     content_hash=hashlib.sha256(payload).hexdigest(),
                     engine_version=engine_version,
                     recovered=recovered,
+                    parent_result_id=parent_result_id,
+                    edit_json=json.dumps(edit) if edit else None,
                     is_preferred=False,
                     created_at=now(),
                 )

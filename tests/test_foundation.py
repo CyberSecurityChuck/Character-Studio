@@ -28,6 +28,8 @@ def test_health_and_provider_registry_are_honest(client):
         "openai_api": "unverified",
         "gemini_image": "unverified",
         "openai_images": "unverified",
+        "flux_fill": "unverified",
+        "flux_3": "unverified",
     }
     # Phase 6C-1: the API image engines generate beside Codex and the manual bridge.
     assert {p["id"] for p in data["providers"] if p["generation"]} == {

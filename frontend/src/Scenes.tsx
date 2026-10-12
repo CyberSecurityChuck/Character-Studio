@@ -48,13 +48,13 @@ type CameraField = 'height' | 'direction' | 'shot_type' | 'framing' | 'perspecti
 const subjectFields: [SubjectField, string][] = [['position', 'Position'], ['pose_summary', 'Pose'], ['body_direction', 'Body direction'], ['torso_orientation', 'Torso'], ['shoulder_alignment', 'Shoulders'], ['head_direction', 'Head direction'], ['facial_viewing_angle', 'Face angle'], ['eye_direction', 'Eyes and gaze'], ['expression', 'Expression'], ['arms_and_hands', 'Arms and hands'], ['legs_and_feet', 'Legs and feet'], ['outfit', 'Outfit'], ['hairstyle', 'Hairstyle'], ['accessories', 'Accessories']]
 const cameraFields: [CameraField, string][] = [['height', 'Height'], ['direction', 'Direction'], ['shot_type', 'Shot type'], ['framing', 'Framing'], ['perspective', 'Perspective']]
 const sceneFields: ['environment' | 'lighting' | 'color_palette' | 'atmosphere', string][] = [['environment', 'Environment'], ['lighting', 'Lighting and shadows'], ['color_palette', 'Colour palette'], ['atmosphere', 'Atmosphere']]
-export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate', checking: 'Checking a result…' }
+export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate', checking: 'Checking a result…', editing: 'Editing a result…' }
 const sourceLabels: Record<string, string> = { ...engineNames, manual_import: 'Manual import', user_edit: 'Your edit' }
 const engineLabels = engineNames
 const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
-const kindLabels: Record<string, string> = { analysis: 'Analysis', polish: 'Polish', generation: 'Generation', export: 'Manual export', check: 'Quality check' }
+const kindLabels: Record<string, string> = { analysis: 'Analysis', polish: 'Polish', generation: 'Generation', export: 'Manual export', check: 'Quality check', edit: 'Region edit' }
 const steps: { id: Step; number: string; label: string }[] = [{ id: 'analysis', number: '01', label: 'Analysis' }, { id: 'characters', number: '02', label: 'Characters' }, { id: 'prompt', number: '03', label: 'Prompt' }, { id: 'review', number: '04', label: 'Review' }, { id: 'generate', number: '05', label: 'Generate' }]
-const stepFor: Record<string, Step> = { needs_analysis: 'analysis', analysing: 'analysis', review_analysis: 'analysis', needs_mapping: 'characters', analysis_ready: 'prompt', polishing: 'prompt', prompt_saved: 'review', approved: 'generate', generating: 'generate', generated: 'generate', waiting_analysis: 'analysis', waiting_generation: 'generate' }
+const stepFor: Record<string, Step> = { needs_analysis: 'analysis', analysing: 'analysis', review_analysis: 'analysis', needs_mapping: 'characters', analysis_ready: 'prompt', polishing: 'prompt', prompt_saved: 'review', approved: 'generate', generating: 'generate', generated: 'generate', waiting_analysis: 'analysis', waiting_generation: 'generate', checking: 'generate', editing: 'generate' }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 const fieldName = (field: string) => field.replace(/_/g, ' ').split(/\s*\.\s*/).map(part => sentence(part.trim())).join(' · ')
@@ -249,9 +249,11 @@ function ManualAnalysis({ scene, token, onImported, onClose }: { scene: SceneSum
 function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra }: { job: Job; onRetry: () => void; onManual: () => void; manualLabel: string; onDismiss: () => void; busy: boolean; extra?: ReactNode }) {
   const [note, setNote] = useState('')
   const polish = job.kind === 'polish'
-  const generation = job.kind === 'generation'
+  const edit = job.kind === 'edit'
+  const generation = job.kind === 'generation' || edit
   const titles: Record<string, string> = polish
     ? { failed: `${job.engine_name} could not polish the prompt`, cancelled: 'Polishing cancelled', interrupted: 'Polishing was interrupted' }
+    : edit ? { failed: `${job.engine_name} could not edit the result`, cancelled: 'Edit cancelled', interrupted: 'The edit was interrupted' }
     : generation ? { failed: `${job.engine_name} could not generate the image`, cancelled: 'Generation cancelled', interrupted: 'The generation was interrupted' }
       : { failed: `${job.engine_name} could not finish the analysis`, cancelled: 'Analysis cancelled', interrupted: 'The analysis was interrupted' }
   return <div className={`job-notice ${job.status}`} role="alert">
@@ -260,16 +262,17 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
     {(job.status === 'interrupted' || (generation && job.recoverable)) && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
     <span className="library-status" role="status">{note}</span>
     <div className="notice-actions">
-      <button type="button" disabled={busy} onClick={onRetry}>{job.status === 'interrupted' ? 'I checked — try again' : 'Try again'}</button>
+      {/* An edit is started again from the result's Edit area, with its marked area. */}
+      {!edit && <button type="button" disabled={busy} onClick={onRetry}>{job.status === 'interrupted' ? 'I checked — try again' : 'Try again'}</button>}
       {extra}
-      <button type="button" className="secondary" onClick={onManual}>{manualLabel}</button>
+      {!edit && <button type="button" className="secondary" onClick={onManual}>{manualLabel}</button>}
       <button type="button" className="link-button" onClick={onDismiss}>Dismiss</button>
     </div>
   </div>
 }
 
 function ProgressCard({ job, stopping, busy, onCancel }: { job: Job; stopping: boolean; busy: boolean; onCancel: () => void }) {
-  const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : job.kind === 'check' ? 'Checking a result' : 'Analysing'
+  const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : job.kind === 'check' ? 'Checking a result' : job.kind === 'edit' ? 'Editing a result' : 'Analysing'
   const batch = job.batch
   const place = batch ? `Item ${batch.position} of ${batch.total} in a batch` : ''
   if (batch && job.status === 'not_started' && !stopping) {
@@ -441,7 +444,8 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   const engine = engines?.analysis_engine ?? 'claude_cli'
   const lastAnalysisJob = scene.jobs.find(j => j.kind === 'analysis')
   const lastPolishJob = scene.jobs.find(j => j.kind === 'polish')
-  const lastGenerationJob = scene.jobs.find(j => j.kind === 'generation')
+  // Image runs: generations and (Phase 6C-2) region edits.
+  const lastGenerationJob = scene.jobs.find(j => j.kind === 'generation' || j.kind === 'edit')
   // Hidden once an image from that run was recovered: the result answers the notice.
   const showGenerationNotice = !scene.active_job && !!lastGenerationJob && lastGenerationJob.status !== 'completed' && !dismissed.includes(lastGenerationJob.id) && !scene.results.some(r => r.job_id === lastGenerationJob.id)
   const showJobNotice = !scene.active_job && !!lastAnalysisJob && lastAnalysisJob.status !== 'completed' && !dismissed.includes(lastAnalysisJob.id) && (!current || lastAnalysisJob.created_at > current.created_at)
@@ -731,7 +735,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         <section id="step-panel-generate" role="tabpanel" aria-labelledby="step-tab-generate" hidden={activeStep !== 'generate'} className="panel step-panel">
           <div className="step-head"><span className="step-number">05</span><div><h3>Generate and results</h3><p className="hint">Make the image from the approved inputs, with the generation engine from Studio settings or any app you like. Every result is kept and stays linked to what it was made from.</p></div></div>
           <GeneratePanel scene={scene} data={data} generationEngine={generator} generationModel={engines?.models[generator]?.generation ?? null} imageOptions={savedOptions} busy={busy} exportOpen={exportOpen} onExportOpen={setExportOpen}
-            runStatus={scene.active_job?.kind === 'generation' || scene.active_job?.kind === 'check' ? <><ProgressCard job={scene.active_job} stopping={stopping === scene.active_job.id} busy={busy} onCancel={cancel} />{scene.active_job.batch && <BatchList token={token} sceneId={scene.id} />}</>
+            runStatus={['generation', 'check', 'edit'].includes(scene.active_job?.kind ?? '') && scene.active_job ? <><ProgressCard job={scene.active_job} stopping={stopping === scene.active_job.id} busy={busy} onCancel={cancel} />{scene.active_job.batch && <BatchList token={token} sceneId={scene.id} />}</>
               : showGenerationNotice && lastGenerationJob ? <JobNotice job={lastGenerationJob} busy={busy || !approved || !!scene.active_job}
                 onRetry={() => { if (isImageEngine(generator)) setImageAsk({ mode: 'generate', count: 1, presetId: null }); else if (window.confirm('Generate again? This sends the approved images to OpenAI via Codex once more and uses your ChatGPT plan’s image allowance.')) void generate('generate') }}
                 extra={lastGenerationJob.recoverable ? <button type="button" className="secondary" disabled={busy} onClick={() => void recover(lastGenerationJob)}>Look for a saved image</button> : undefined}

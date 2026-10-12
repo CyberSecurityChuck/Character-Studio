@@ -137,6 +137,10 @@ const glyphs = {
   import: <><path d="M12 15V4" /><path d="M7.5 8.5L12 4l4.5 4.5" /><path d="M5 14v5h14v-5" /></>,
   edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>,
   bookmark: <path d="M7 4h10v16l-5-3.5L7 20z" />,
+  brush: <><path d="M14.5 4.5l5 5-7.5 7.5-5-5z" /><path d="M7 12c-2.5.5-3.5 2.5-3.5 7.5 3.5 0 6-1 7-3.5" /></>,
+  eraser: <><path d="M4 15.5l8.5-8.5 6 6-5.5 5.5H8z" /><path d="M9.5 10l6 6" /><path d="M13 19h7" /></>,
+  rect: <rect x="4" y="6" width="16" height="12" rx="1.5" strokeDasharray="3 2.2" />,
+  undo: <><path d="M9 7L4.5 11.5 9 16" /><path d="M5 11.5h9.5a5 5 0 0 1 0 10H11" /></>,
   compare: <><rect x="3" y="5" width="7.5" height="14" rx="1.5" /><rect x="13.5" y="5" width="7.5" height="14" rx="1.5" /></>,
 }
 

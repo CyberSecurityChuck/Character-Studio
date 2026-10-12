@@ -15,6 +15,7 @@ from backend.backup import BackupRunner, clean_partial
 from backend.backups_api import router as backups_router
 from backend.batches import router as batches_router
 from backend.configuration import Settings, load_settings
+from backend.editing_api import router as editing_router
 from backend.jobs import JobRunner, reconcile_on_startup
 from backend.keystore import key_info
 from backend.library import backfill_photo_hashes, clean_deleted_files
@@ -157,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(batches_router)
     app.include_router(api_settings_router)
     app.include_router(quality_router)
+    app.include_router(editing_router)
 
     @app.get("/api/{unmatched:path}", include_in_schema=False)
     def missing_api(unmatched: str):

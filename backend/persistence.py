@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0011_image_engines"
+SCHEMA_REVISION = "0012_region_edits"
 
 
 def open_database(settings: Settings) -> Engine:

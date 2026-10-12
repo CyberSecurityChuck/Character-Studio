@@ -29,6 +29,15 @@ from backend.api_engines import (
     run_structured,
 )
 from backend.configuration import Settings, asset_path
+from backend.editing import (
+    EDIT_OPTIONS,
+    edit_instruction,
+    finish_edit,
+    flux3_prompt,
+    prepare_edit_folder,
+    run_api_edit,
+    run_flux,
+)
 from backend.engines import (
     ENGINE_NAMES,
     EngineError,
@@ -281,6 +290,9 @@ class JobRunner:
         try:
             if kind == "check":
                 self._run_check(job_id, engine, timeout, run_settings)
+                return
+            if kind == "edit":
+                self._run_edit(job_id, timeout, run_settings)
                 return
             if kind == "generation" and is_image_engine(engine):
                 self._run_api_generation(job_id, engine, timeout, run_settings, batch_id)
@@ -623,6 +635,121 @@ class JobRunner:
             job = session.get(EngineJob, job_id)
             job.result_id = stored
             self._finish(session, job, "completed")
+
+    def _run_edit(self, job_id: str, timeout: int, run_settings: dict) -> None:
+        """One region edit of a result (Phase 6C-2): one engine run, then only the marked
+        area is pasted back onto the original, so nothing outside it changes."""
+        option = EDIT_OPTIONS[run_settings["option"]]
+        model = run_settings.get("model")
+        if option.charged:
+            if option.engine in ("openai_api", "gemini_api") and not model:
+                raise EngineError(
+                    "model_problem", "No model was recorded for this edit, so nothing was sent."
+                )
+            require_key(self.settings, option.engine)
+            version = model
+        else:
+            version = require_ready("codex_cli", self.settings.engine_commands)
+        if self._cancel_requested(job_id):
+            raise _Stopped()
+        replace = run_settings["kind"] == "replace"
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            parent = session.get(GenerationResult, job.input_id)
+            if parent is None:
+                raise EngineError(
+                    "missing_file", "The result was deleted before the edit started. Nothing "
+                    "was sent."
+                )
+            try:
+                folder, job_dir, files = prepare_edit_folder(
+                    self.settings, session, parent, run_settings["subject"] if replace else None
+                )
+            except PackageError as error:
+                raise EngineError("missing_file", f"{error} Nothing was sent.") from error
+            except ValueError as error:
+                raise EngineError("approval_ended", f"{error} Nothing was sent.") from error
+            parent_path = asset_path(self.settings, parent.original_path)
+            session.expunge(parent)
+        self._update(job_id, job_folder=folder, engine_version=version)
+        mask_path = asset_path(self.settings, run_settings["mask"])
+        with Image.open(mask_path) as source:
+            mask = source.convert("L")
+        mask.save(job_dir / "mask.png", "PNG")
+        box, words = run_settings["box"], run_settings.get("instruction", "")
+        subject, references = run_settings.get("subject"), len(files) - 1
+        if option.id == "flux_3":
+            instruction = flux3_prompt(run_settings["kind"], box, words, references)
+        elif option.id == "flux_fill":
+            instruction = words
+        else:
+            instruction = edit_instruction(
+                run_settings["kind"], box, words, subject, references, codex=not option.charged
+            )
+        (job_dir / "instruction.txt").write_text(instruction, encoding="utf-8")
+        stop = lambda: self._cancel_requested(job_id)  # noqa: E731
+        usage = None
+        try:
+            if not option.charged:
+                payload = self._codex_edit(job_id, job_dir, files, instruction, timeout)
+            elif option.engine == "bfl_api":
+                payload, usage = run_flux(
+                    self.settings, option, files, mask, instruction, run_settings, job_dir,
+                    timeout, stop,
+                )
+            else:
+                payload, usage = run_api_edit(
+                    self.settings, option, model, files, mask, instruction, run_settings,
+                    job_dir, timeout, stop,
+                )
+        except ApiCancelled as error:
+            company = API_ENGINES[option.engine].company
+            raise _Stopped(
+                f"You cancelled this edit. If the request had already reached {company}, it may "
+                "still finish there and be charged; nothing from it is saved."
+            ) from error
+        data, facts = finish_edit(self.settings, job_dir, parent_path, mask_path, payload)
+        from backend.editing_api import store_edit
+
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            if usage is not None:
+                job.settings_json = json.dumps({**run_settings, "usage": usage})
+            session.flush()
+            session.expunge(job)
+        stored = store_edit(self.engine, self.settings, job, parent, data, facts)
+        with writing_session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            job.result_id = stored
+            self._finish(session, job, "completed")
+
+    def _codex_edit(self, job_id, job_dir: Path, files: list[Path], instruction: str, timeout):
+        """Codex edits from the instruction and the attached images (it takes no mask)."""
+        attached = []
+        for path in files:
+            if path.suffix == ".png":
+                copy = path.with_suffix(".jpg")
+                with Image.open(path) as source:
+                    source.convert("RGB").save(copy, "JPEG", quality=95)
+                path = copy
+            attached.append(path)
+        command = resolve_command("codex_cli", self.settings.engine_commands)
+        if command is None:
+            raise EngineError("not_installed", "Codex could not be started.")
+        outcome = run_process(
+            generation_command(command, job_dir, attached, instruction),
+            job_dir,
+            job_dir / "events.jsonl",
+            timeout,
+            should_stop=lambda: self._cancel_requested(job_id),
+        )
+        thread_id = read_run(job_dir).thread_id
+        if thread_id:
+            self._update(job_id, provider_request_id=thread_id)
+        if outcome.cancelled:
+            raise _Stopped()
+        _output, found = interpret_generation(job_dir, outcome)
+        return read_image_file(found[0])
 
     def _run_generation(self, job_id: str, timeout: int) -> None:
         """One Codex image run from the approval recorded with the job (PLAN.md Phase 5)."""

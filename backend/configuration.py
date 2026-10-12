@@ -14,6 +14,8 @@ ASSET_DIRECTORIES = (
     "exports",
     "backups",
     "jobs",
+    # Phase 6C-2: the area marked for each region edit, kept with its result.
+    "masks",
 )
 
 

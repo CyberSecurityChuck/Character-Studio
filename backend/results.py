@@ -27,6 +27,7 @@ from backend.generation import (
     MAX_GENERATION_INSTRUCTION,
     MODES,
     PackageError,
+    approval_boxes,
     generation_instruction,
     known_hashes,
     prepare_export_folder,
@@ -296,10 +297,18 @@ def recover_images(request: Request, job_id: str):
     engine, settings = request.app.state.engine, request.app.state.settings
     with Session(engine) as session:
         job = session.get(EngineJob, job_id)
-        if job is None or job.kind != "generation":
+        if job is None or job.kind not in ("generation", "edit"):
             raise HTTPException(404, "This run no longer exists.")
         if job.status not in RECOVERABLE or not job.job_folder:
             raise HTTPException(409, "Only unfinished generation runs can be checked.")
+        edit = job.kind == "edit"
+    if edit:
+        # Region edits (Phase 6C-2) paste the saved image back onto their result first.
+        from backend.editing_api import recover_edit
+
+        return recover_edit(request, job_id)
+    with Session(engine) as session:
+        job = session.get(EngineJob, job_id)
         folder = asset_path(settings, job.job_folder)
         api = is_image_engine(job.engine)
         thread_id = None if api else job.provider_request_id or read_run(folder).thread_id
@@ -364,12 +373,14 @@ def results(request: Request):
             if result.scene_id not in current:
                 approval = current_approval(session, result.scene_id)
                 current[result.scene_id] = approval.id if approval else None
+            approval = session.get(Approval, result.approval_id)
             data = result_data(
                 result,
-                session.get(Approval, result.approval_id),
+                approval,
                 current[result.scene_id],
                 session.get(EngineJob, result.job_id) if result.job_id else None,
                 latest_check(session, result.id),
+                approval_boxes(session, approval),
             )
             data["scene_title"] = scene.title
             data["scene_image_url"] = f"/api/scenes/{scene.id}/image/original"
@@ -442,14 +453,15 @@ def delete_result(request: Request, result_id: str):
         result = require_result(session, result_id)
         scene_id = result.scene_id
         waiting = session.scalar(
-            select(EngineJob.id).where(
-                EngineJob.kind == "check",
+            select(EngineJob.kind).where(
+                EngineJob.kind.in_(("check", "edit")),
                 EngineJob.input_id == result_id,
                 EngineJob.status.in_(("not_started", "running")),
             )
         )
         if waiting:
-            raise HTTPException(409, "A quality check of this result is running. Cancel it first.")
+            what = "an edit" if waiting == "edit" else "a quality check"
+            raise HTTPException(409, f"This result has {what} running. Cancel it first.")
         session.execute(delete(QualityCheck).where(QualityCheck.result_id == result_id))
         paths = [result.original_path, result.thumbnail_path]
         for path in paths:

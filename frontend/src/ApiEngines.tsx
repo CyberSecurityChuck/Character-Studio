@@ -22,7 +22,7 @@ export const sendsTo: Record<string, string> = { claude_cli: 'Anthropic via Clau
 // Generation engines (Phase 6C): the same keys, shown under their image names.
 export const imageEngineIds = ['gemini_api', 'openai_api']
 export const isImageEngine = (engine: string) => imageEngineIds.includes(engine)
-export const generationNames: Record<string, string> = { codex_cli: 'Codex', manual: 'Manual', gemini_api: 'Gemini image', openai_api: 'OpenAI Images' }
+export const generationNames: Record<string, string> = { codex_cli: 'Codex', manual: 'Manual', gemini_api: 'Gemini image', openai_api: 'OpenAI Images', bfl_api: 'FLUX' }
 
 export function useApiEngines() {
   const [engines, setEngines] = useState<ApiEngine[]>([])
@@ -35,7 +35,7 @@ const thousands = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : Strin
 
 /** What a confirmed API run sends, to whom, and what it may cost.
  *  `image` describes an image run (Phase 6C): its own note, figures and settings. */
-export function ChargeSummary({ engine, model, runs, what, image }: { engine: ApiEngine; model: string | null; runs: number; what?: string; image?: { size: string; quality?: string } }) {
+export function ChargeSummary({ engine, model, runs, what, image, costLine }: { engine: ApiEngine; model: string | null; runs: number; what?: string; image?: { size: string; quality?: string }; costLine?: string }) {
   // Earlier figures come from analyses or image runs; a quality check (`what` given, no image) sends several images.
   const typical = image ? engine.typical_image_usage : what ? null : engine.typical_usage
   const settings = image ? `, ${image.size}${image.quality ? `, ${image.quality} quality` : ''}` : ''
@@ -43,7 +43,7 @@ export function ChargeSummary({ engine, model, runs, what, image }: { engine: Ap
     <strong>{runs === 1 ? 'This run may be charged' : `These ${runs} runs may be charged`} to your {engine.company} account</strong>
     <ul>
       <li>Sends {what ?? 'the Base Image (without location data) and the analysis instruction'} to {engine.company}{model ? `, model ${model}` : ''}{settings}, once per run. Character names are never sent.</li>
-      <li>{typical ? `Earlier runs here used about ${thousands(typical.input_tokens)} input and ${thousands(typical.output_tokens)} output tokens each (${typical.runs} ${typical.runs === 1 ? 'run' : 'runs'}).`
+      <li>{costLine ? costLine : typical ? `Earlier runs here used about ${thousands(typical.input_tokens)} input and ${thousands(typical.output_tokens)} output tokens each (${typical.runs} ${typical.runs === 1 ? 'run' : 'runs'}).`
         : image ? `${engine.company} charges per image; larger sizes${image.quality ? ' and higher quality' : ''} cost more. The studio records the reported figures after each run.`
         : what ? 'Several images use more input tokens than one analysis; the studio records the real figures after the run.'
         : 'A typical analysis is a few thousand tokens in and out; the studio records the real figures after each run.'}{' '}
@@ -55,14 +55,14 @@ export function ChargeSummary({ engine, model, runs, what, image }: { engine: Ap
 }
 
 /** Ask before an API run. Resolves only on the user's explicit choice. */
-export function ChargeDialog({ engine, model, runs, note, title, action = 'Analyse', what, image, onConfirm, onClose }: { engine: ApiEngine; model: string | null; runs: number; note?: string; title?: string; action?: string; what?: string; image?: { size: string; quality?: string }; onConfirm: () => void; onClose: () => void }) {
+export function ChargeDialog({ engine, model, runs, note, title, action = 'Analyse', what, image, costLine, onConfirm, onClose }: { engine: ApiEngine; model: string | null; runs: number; note?: string; title?: string; action?: string; what?: string; image?: { size: string; quality?: string }; costLine?: string; onConfirm: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])
   return <dialog ref={ref} className="image-dialog text-dialog charge-dialog" aria-labelledby="charge-title" onClose={onClose}>
     <div className="text-dialog-form">
       <h2 id="charge-title">{title ?? `Analyse with the ${engine.name}?`}</h2>
       {note && <p className="hint">{note}</p>}
-      <ChargeSummary engine={engine} model={model} runs={runs} what={what} image={image} />
+      <ChargeSummary engine={engine} model={model} runs={runs} what={what} image={image} costLine={costLine} />
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button>
         <button type="button" autoFocus onClick={() => { onConfirm(); onClose() }}>{action} and accept charges</button></div>
     </div>

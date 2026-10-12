@@ -468,9 +468,12 @@ def refresh_workflow(session, scene: Scene) -> None:
         # Waiting for its turn in a batch (which may be paused); nothing has been sent yet.
         state = "waiting_generation" if job.kind == "generation" else "waiting_analysis"
     elif job:
-        state = {"polish": "polishing", "generation": "generating", "check": "checking"}.get(
-            job.kind, "analysing"
-        )
+        state = {
+            "polish": "polishing",
+            "generation": "generating",
+            "check": "checking",
+            "edit": "editing",
+        }.get(job.kind, "analysing")
     elif analysis is None:
         state = "needs_analysis"
     elif (approval := current_approval(session, scene.id)) is not None:

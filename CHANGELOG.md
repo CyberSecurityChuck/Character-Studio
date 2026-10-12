@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-12 — Phase 6C-2: region editing and replacing a person
+
+- From the user's choices (D027): replacement uses only that person's approved photos; results from earlier approvals can be edited unless their approval was withdrawn.
+- **Edit area** in the result viewer: mark an area (brush, eraser, rectangle, a person's approved box, undo, clear), then **Fix an area** (describe the change) or **Replace a person** (their approved photos). Engines: Codex, OpenAI Images, Gemini image, FLUX.1 Fill (fixes, exact mask) and FLUX 3 (new Black Forest Labs key, Studio settings → Region editing with FLUX).
+- Only the marked area is pasted back, with a soft edge inside it; every pixel outside it is exactly the original. Each edit is a new result that links to the result it came from, its marked area and instruction; the viewer compares them.
+- API edits ask to confirm the charge; FLUX status checks are free and never resubmit; **Look for a saved image** works for edits. Schema `0012_region_edits`. New `backend/editing.py`, `backend/editing_api.py`, `frontend/src/Edit.tsx`, `tests/test_region_edits.py` (6 tests). No dependencies added; no real provider was called.
+
 ## 2026-10-12 — Phase 6C-1: API image engines
 
 - Planned with the user (D025, one question at a time): 6C is built as 6C-1 (API image engines) and 6C-2 (region editing and selective replacement with Codex, OpenAI Images, Gemini image, FLUX.1 Fill for fixes and FLUX 3), with one combined review. Provider facts re-checked (docs/PROVIDER_FINDINGS.md). See D026.

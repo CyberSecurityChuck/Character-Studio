@@ -173,7 +173,8 @@ def send_copies(job_dir: Path, files: list[Path]) -> list[bytes]:
     return payloads
 
 
-def _multipart(fields: list[tuple[str, str]], files: list[tuple[str, str, bytes]]) -> RawBody:
+def _multipart(fields: list[tuple[str, str]], files: list[tuple]) -> RawBody:
+    """Form fields and files (name, filename, data[, content type]; JPEG by default)."""
     boundary = uuid4().hex
     chunks = []
     for name, value in fields:
@@ -182,11 +183,12 @@ def _multipart(fields: list[tuple[str, str]], files: list[tuple[str, str, bytes]
             + value.encode("utf-8")
             + b"\r\n"
         )
-    for name, filename, data in files:
+    for name, filename, data, *kind in files:
+        media = kind[0] if kind else "image/jpeg"
         chunks.append(
             (
                 f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
-                f'filename="{filename}"\r\nContent-Type: image/jpeg\r\n\r\n'
+                f'filename="{filename}"\r\nContent-Type: {media}\r\n\r\n'
             ).encode()
             + data
             + b"\r\n"

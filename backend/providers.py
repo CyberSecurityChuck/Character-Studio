@@ -188,4 +188,35 @@ PROVIDERS = (
         pricing="Charged per image token to your OpenAI API account. Each run asks for "
         "confirmation.",
     ),
+    # Phase 6C-2 (D027): FLUX for region edits only, with the user's Black Forest Labs key.
+    ProviderCapabilities(
+        id="flux_fill",
+        name="FLUX.1 Fill",
+        status="unverified",
+        description="Region fixes with your own Black Forest Labs key: the result and the "
+        "marked area go to Black Forest Labs; no reference photos.",
+        editing=True,
+        masks=True,
+        status_lookup=True,
+        sends_images_externally=True,
+        formats=("png",),
+        pricing="Charged per image in Black Forest Labs credits. Each edit asks for "
+        "confirmation.",
+    ),
+    ProviderCapabilities(
+        id="flux_3",
+        name="FLUX 3",
+        status="unverified",
+        description="Region fixes and replacing a person with your own Black Forest Labs key: "
+        "the result, a box around the marked area and (to replace) that person's approved "
+        "reference photos go to Black Forest Labs.",
+        editing=True,
+        multiple_references=True,
+        status_lookup=True,
+        sends_images_externally=True,
+        resolutions=("1K", "2K", "4K"),
+        max_references=10,
+        pricing="Charged per image in Black Forest Labs credits. Each edit asks for "
+        "confirmation.",
+    ),
 )

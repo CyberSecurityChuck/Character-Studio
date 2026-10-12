@@ -53,6 +53,8 @@ class ApiEngine:
     # chooses the model; "Test key" lists what the key can use.
     suggested_model: str | None
     charge_note: str
+    # Phase 6C-2: Black Forest Labs (FLUX) only edits regions; it never analyses.
+    analysis: bool = True
 
 
 API_ENGINES = {
@@ -90,7 +92,23 @@ API_ENGINES = {
         suggested_model=None,
         charge_note="Every run is charged per use to your OpenAI API account.",
     ),
+    "bfl_api": ApiEngine(
+        id="bfl_api",
+        name="FLUX (Black Forest Labs)",
+        company="Black Forest Labs",
+        base_url="https://api.bfl.ai",
+        key_help="Create a key at dashboard.bfl.ai → API keys and add credits there. FLUX is "
+        "used only for region edits.",
+        pricing_url="https://docs.bfl.ai/quick_start/pricing",
+        suggested_model=None,
+        charge_note="Every edit is charged per image in Black Forest Labs credits (FLUX.1 Fill "
+        "about $0.05, FLUX 3 from about $0.05 at 1K, October 2026).",
+        analysis=False,
+    ),
 }
+# FLUX endpoints the studio uses (Phase 6C-2); "Test key" checks the key with the free
+# credits call instead of a model list.
+BFL_MODELS = ("flux-pro-1.0-fill", "flux-3-image")
 
 
 def is_api_engine(engine: str) -> bool:
@@ -177,6 +195,8 @@ def _headers(engine: str, key: str) -> dict[str, str]:
         return {"x-goog-api-key": key}
     if engine == "anthropic_api":
         return {"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION}
+    if engine == "bfl_api":
+        return {"x-key": key}
     return {"Authorization": f"Bearer {key}"}
 
 
@@ -285,7 +305,8 @@ def classify(engine: str, reply: ApiReply, key: str | None) -> EngineError:
             f"{company} did not accept the API key. Check or replace it in Studio settings. "
             f"{company} said: {said}",
         )
-    if status == 429 or "quota" in lowered or "credit balance" in lowered or "billing" in lowered:
+    limit_words = ("quota", "credit balance", "billing", "insufficient credits")
+    if status in (402, 429) or any(word in lowered for word in limit_words):
         return EngineError(
             "usage_limit",
             f"{company} reports a rate, quota or spending limit. Wait, check your "
@@ -370,6 +391,14 @@ def list_models(settings: Settings, engine: str) -> tuple[list[str], list[str]]:
     Returns (analysis models, image models).
     """
     key = require_key(settings, engine)
+    if engine == "bfl_api":
+        reply = _call(
+            f"{_base(settings, engine)}/v1/credits", _headers(engine, key), None, 30,
+            API_ENGINES[engine].company,
+        )
+        if reply.status != 200:
+            raise classify(engine, reply, key)
+        return [], list(BFL_MODELS)
     found, page = [], None
     for _ in range(5):
         items, page = _model_page(settings, engine, key, page)

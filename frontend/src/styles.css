@@ -938,3 +938,35 @@ label.change-files:focus-within { outline: 3px solid var(--accent); outline-offs
   .engine-details .engine-status { flex-wrap: wrap; }
   .preset-name-row { grid-template-columns: 1fr; }
 }
+
+/* Region edits (Phase 6C-2) */
+.edit-dialog { width: min(1180px, 96vw); max-width: min(1180px, 96vw); }
+.edit-head h2 { margin: 4px 0 6px; }
+.edit-head .hint { margin: 0 0 16px; max-width: 760px; }
+.edit-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); gap: 24px; align-items: start; }
+.edit-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+.edit-toolbar .segmented { margin-top: 0; }
+.edit-toolbar .segment { gap: 6px; }
+.brush-size { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.brush-size input { width: 120px; accent-color: var(--accent); }
+.edit-stage { position: relative; margin: 0 auto; border-radius: 8px; overflow: hidden; background: var(--background); border: 1px solid var(--line); }
+.edit-stage img, .edit-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; }
+.edit-stage canvas { opacity: .55; cursor: crosshair; touch-action: none; }
+.edit-rect { position: absolute; border: 2px dashed var(--accent); background: rgb(214 92 50 / 18%); pointer-events: none; }
+.edit-subjects { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.edit-subjects .field-label { margin: 0 4px 0 0; }
+.edit-form .field-label { margin-top: 18px; margin-bottom: 8px; }
+.edit-form .field-label:first-child { margin-top: 0; }
+.edit-form .segmented { margin-top: 0; }
+.edit-form textarea { width: 100%; }
+.edit-form select { width: 100%; }
+.edit-engines { display: grid; gap: 8px; }
+.engine-card.compact { padding: 10px 12px; }
+.engine-card.unavailable { cursor: not-allowed; opacity: .62; }
+.engine-card.unavailable:hover { border-color: var(--line); }
+.segment.disabled { opacity: .5; cursor: not-allowed; }
+.edit-note { margin: 10px 0 0; font-size: 13px; line-height: 1.5; }
+@media (max-width: 860px) {
+  .edit-layout { grid-template-columns: 1fr; }
+}
+.region-key-head { margin: 24px 0 10px; }

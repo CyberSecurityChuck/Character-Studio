@@ -260,6 +260,9 @@ class GenerationResult(Base):
     engine_version: Mapped[str | None] = mapped_column(String(80))
     # Found in the run's own output folder after an interrupted, cancelled or failed run.
     recovered: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Region edits (Phase 6C-2): the result that was edited and what the edit asked for.
+    parent_result_id: Mapped[str | None] = mapped_column(String(32))
+    edit_json: Mapped[str | None] = mapped_column(Text)
     is_preferred: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[str] = mapped_column(String(40))
 

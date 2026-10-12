@@ -4,16 +4,20 @@ import { generationNames, isImageEngine, useApiEngines } from './ApiEngines'
 import { Comparison, type CompareBox, type CompareImage } from './Compare'
 import { CardMenu, Glyph, SelectionBar, type MenuItem } from './Controls'
 import { PresetSelect, usePresets } from './Presets'
+import { EditDialog } from './Edit'
 import { QualityPanel, checkBadge, type QualityCheck } from './Quality'
 import type { SceneDetail } from './Scenes'
 
-export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[] }
+export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[]; box?: { x: number; y: number; width: number; height: number } | null }
+export type EditRecord = { option: string; kind: 'fix' | 'replace'; subject: string | null; instruction: string; box: number[]; parent_version: number; shape_changed?: boolean; engine_size?: string }
 export type Result = {
   id: string; scene_id: string; version: number; approval_id: string; approval_current: boolean; job_id: string | null
-  source: 'codex_cli' | 'manual_import' | 'gemini_api' | 'openai_api'; mode: 'generate' | 'variation' | 'import'; note: string; media_type: string; width: number; height: number
+  source: 'codex_cli' | 'manual_import' | 'gemini_api' | 'openai_api' | 'bfl_api'; mode: 'generate' | 'variation' | 'import' | 'edit'; note: string; media_type: string; width: number; height: number
   engine_version: string | null; recovered: boolean; seconds: number | null; is_preferred: boolean; created_at: string; image_url: string; thumbnail_url: string
   preset: string | null; check: QualityCheck | null
   usage: { size?: string; quality?: string | null; aspect_ratio?: string; image_size?: string; input_tokens?: number | null; output_tokens?: number | null } | null
+  // Region edits (Phase 6C-2)
+  parent_result_id: string | null; edit: EditRecord | null; mask_url: string | null; editable: boolean
   prompt_version: number | null; analysis_version: number | null; is_polished: boolean; mappings: ResultMapping[]
   scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number
 }
@@ -26,8 +30,11 @@ const imageList = (images: number[]) => images.map(n => `Image ${n}`).join(', ')
 /** "48 s" or "1 min 12 s": how long a run took. */
 export const duration = (seconds: number) => seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min${seconds % 60 ? ` ${seconds % 60} s` : ''}`
 
+const editNames: Record<string, string> = { codex_cli: 'Codex', openai_api: 'OpenAI Images', gemini_api: 'Gemini image', flux_fill: 'FLUX.1 Fill', flux_3: 'FLUX 3' }
+
 export function sourceLabel(result: Result) {
   if (result.source === 'manual_import') return result.note ? `Imported · ${result.note}` : 'Imported'
+  if (result.edit) return `${result.edit.kind === 'replace' ? `Replaced ${result.edit.subject}` : 'Edited'} · ${editNames[result.edit.option] ?? result.edit.option}${result.recovered ? ' · recovered' : ''}`
   const name = generationNames[result.source] ?? result.source
   return `${result.mode === 'variation' ? `${name} variation` : name}${result.recovered ? ' · recovered' : ''}`
 }
@@ -36,8 +43,10 @@ export function sourceLabel(result: Result) {
 export function usageLabel(result: Result) {
   const u = result.usage
   if (!u) return ''
-  const size = u.image_size ?? u.size
-  return [size, u.quality ? `${u.quality} quality` : '', u.output_tokens != null ? `${u.output_tokens.toLocaleString()} output tokens` : ''].filter(Boolean).join(' · ')
+  // Edits keep the original's size; FLUX reports its cost in credits.
+  const size = result.edit ? '' : u.image_size ?? u.size
+  const credits = (u as { cost_credits?: number | null }).cost_credits
+  return [size, credits != null ? `${credits} credits` : '', u.quality ? `${u.quality} quality` : '', u.output_tokens != null ? `${u.output_tokens.toLocaleString()} output tokens` : ''].filter(Boolean).join(' · ')
 }
 
 function copyText(text: string, done: (message: string) => void) {
@@ -161,6 +170,8 @@ export function ResultViewer({ result, base, sceneTitle, token, others = [], box
   const ref = useModal()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const parent = result.parent_result_id ? others.find(o => o.id === result.parent_result_id) : undefined
   async function act(action: () => Promise<void>) {
     setBusy(true); setError('')
     try { await action() } catch (e) { setError(e instanceof Error ? e.message : 'That did not work. Try again.') } finally { setBusy(false) }
@@ -184,11 +195,12 @@ export function ResultViewer({ result, base, sceneTitle, token, others = [], box
           <p className="hint">{sceneTitle} · {formatDate(result.created_at)} · {sourceLabel(result)}{result.engine_version ? ` · ${result.engine_version}` : ''}{result.seconds != null ? ` · generated in ${duration(result.seconds)}` : ''}{result.preset ? ` · preset “${result.preset}”` : ''}{usageLabel(result) ? ` · ${usageLabel(result)}` : ''} · {result.width} × {result.height}</p></div>
       </div>
       <Comparison images={[baseImage(base), resultImage(result), ...others.filter(o => o.id !== result.id).sort((a, b) => a.version - b.version).map(resultImage)]} frame={base} boxes={boxes}
-        modes={['single', 'side', 'slider', 'overlay', 'difference']} initialMode="side" initialA={result.id} initialB="base" />
+        modes={['single', 'side', 'slider', 'overlay', 'difference']} initialMode="side" initialA={result.id} initialB={parent ? parent.id : 'base'} />
       <div className="viewer-columns">
       <section className="viewer-inputs" aria-label="Inputs">
         <p><strong>Made from</strong> {result.prompt_version ? `prompt version ${result.prompt_version}${result.is_polished ? ' (polished)' : ''}, analysis version ${result.analysis_version}` : 'an approval that is no longer available'} · {result.approval_current ? 'the current approval' : 'an earlier approval'}</p>
         <ul className="plain-list">{result.mappings.map(m => <li key={m.subject}><strong>{m.subject}</strong>: {m.action === 'replace' ? `${m.character_name ?? 'Deleted character'} (${imageList(m.images)})` : m.action === 'keep' ? 'Kept original' : 'Not assigned'}</li>)}</ul>
+        {result.edit && <p className="edit-note"><strong>Edit of result {result.edit.parent_version}</strong>{parent ? '' : ' (since deleted)'}: {result.edit.kind === 'replace' ? `${result.edit.subject} replaced with the approved photos${result.edit.instruction ? `; “${result.edit.instruction}”` : ''}` : `“${result.edit.instruction}”`}{/[.!?]$/.test(result.edit.instruction) ? '' : '.'} Only the marked area was pasted back{result.mask_url ? <> (<a href={result.mask_url} target="_blank" rel="noreferrer">see the area</a>)</> : ''}; the rest is result {result.edit.parent_version} unchanged.{result.edit.shape_changed ? ` The engine returned a different shape (${result.edit.engine_size}), so its image was stretched to fit before the area was pasted back.` : ''}</p>}
         {result.source === 'manual_import' && <p className="hint">Imported by you{result.note ? ` from ${result.note}` : ''}. The studio did not make this image, so its source is as you described it.</p>}
         {result.recovered && <p className="hint">{result.source === 'codex_cli' ? 'Found in the run’s own Codex folder after the run did not finish normally.' : 'Found in the run’s own job folder after the run did not finish normally.'}</p>}
       </section>
@@ -201,11 +213,13 @@ export function ResultViewer({ result, base, sceneTitle, token, others = [], box
         <button type="button" className="danger secondary" disabled={busy} onClick={remove}>Delete</button>
         <span className="spacer" />
         {onOpenScene && <button type="button" className="secondary" onClick={onOpenScene}>Open scene</button>}
+        <button type="button" className="secondary" disabled={busy || !result.editable} title={result.editable ? 'Mark an area to fix, or replace one person' : 'You withdrew the approval this result was made from'} onClick={() => setEditing(true)}><Glyph name="edit" />Edit area</button>
         <a className="button-link secondary" href={result.image_url} download={`${sceneTitle} - result ${result.version}.${extensions[result.media_type] ?? 'png'}`}>Download</a>
         <button type="button" className="secondary" onClick={onClose}>Close</button>
         <button type="button" className={result.is_preferred ? 'secondary' : ''} disabled={busy} onClick={() => void prefer()}>{result.is_preferred ? 'Remove preferred' : 'Mark as preferred'}</button>
       </div>
     </div>
+    {editing && <EditDialog result={result} token={token} onClose={() => setEditing(false)} onQueued={(detail, message) => { onChanged(detail, message); onClose() }} />}
   </dialog>
 }
 

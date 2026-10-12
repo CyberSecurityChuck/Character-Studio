@@ -409,7 +409,7 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0011_image_engines"
+        assert client.get("/api/health").json()["schema_revision"] == "0012_region_edits"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []

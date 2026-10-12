@@ -34,8 +34,9 @@ from backend.api_engines import (
     models_of,
 )
 from backend.configuration import asset_path
+from backend.editing import edit_label
 from backend.engines import CLI_MODELS, ENGINE_NAMES, engine_status
-from backend.generation import generation_timing, result_data, run_seconds
+from backend.generation import approval_boxes, generation_timing, result_data, run_seconds
 from backend.image_api import (
     IMAGE_ENGINES,
     QUALITIES,
@@ -300,6 +301,21 @@ def batch_place(job: EngineJob):
     }
 
 
+def recoverable(settings, job: EngineJob) -> bool:
+    """An unfinished image run that may have left an image the studio can still keep."""
+    if job.kind not in ("generation", "edit") or job.status not in RECOVERABLE:
+        return False
+    if job.job_folder is None:
+        return False
+    folder = asset_path(settings, job.job_folder)
+    if job.kind == "edit":
+        # Codex keeps its own copy; FLUX can be asked again (free) for a submitted task.
+        return job.engine == "codex_cli" or any(
+            (folder / name).is_file() for name in ("output.png", "submitted.json")
+        )
+    return not is_image_engine(job.engine) or bool(saved_output(folder))
+
+
 def job_data(request, job: EngineJob | None):
     if job is None:
         return None
@@ -308,21 +324,15 @@ def job_data(request, job: EngineJob | None):
         "kind": job.kind,
         "scene_id": job.scene_id,
         "engine": job.engine,
-        "engine_name": run_label(job.engine, job.kind),
+        "engine_name": edit_label(job.settings_json)
+        if job.kind == "edit"
+        else run_label(job.engine, job.kind),
         "model": json.loads(job.settings_json or "{}").get("model"),
         "usage": json.loads(job.settings_json or "{}").get("usage"),
         "mode": json.loads(job.settings_json or "{}").get("mode"),
         # A generation that did not finish may still have saved an image in Codex's folder,
         # or (API image engines) in its own job folder.
-        "recoverable": (
-            job.kind == "generation"
-            and job.status in RECOVERABLE
-            and job.job_folder is not None
-            and (
-                not is_image_engine(job.engine)
-                or bool(saved_output(asset_path(request.app.state.settings, job.job_folder)))
-            )
-        ),
+        "recoverable": recoverable(request.app.state.settings, job),
         "engine_version": job.engine_version,
         "batch": batch_place(job) if job.status in ("not_started", "running") else None,
         "batch_id": job.batch_id,
@@ -574,6 +584,7 @@ def generation_detail(request, session, scene: Scene, current):
                 current_id,
                 session.get(EngineJob, r.job_id) if r.job_id else None,
                 latest_check(session, r.id),
+                approval_boxes(session, session.get(Approval, r.approval_id)),
             )
             for r in results
         ],

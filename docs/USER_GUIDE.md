@@ -193,6 +193,19 @@ Deleting a scene deletes its results and run folders. Deleting a character or ph
 
 **If something goes wrong.** A refused key, an unverified OpenAI organisation, an unavailable model or a rate, quota or spending limit is shown in plain words and pauses a batch. A request the company declines (its content rules) or a reply without an image fails with the company's words; nothing is saved and nothing is retried. Cancelling or the time limit stops the studio waiting, but a request the company already received may still be charged. If the studio stopped after the image arrived but before it was stored, **Look for a saved image** keeps it from the run's own folder.
 
+## Region editing and replacing a person (Phase 6C-2)
+
+**Edit area.** Open a result and click **Edit area**. Mark what to change with the **Brush**, **Eraser** or **Rectangle** (Undo and Clear help), or click **Use a person's area** to mark a subject's approved box. Then choose:
+
+- **Fix an area**: describe the change ("remove the sign on the wall").
+- **Replace a person**: pick a subject that was replaced with approved photos; its area is marked for you. Only that subject's **approved** reference photos are sent. To use someone else, duplicate the scene and approve it.
+
+**Engines.** **Codex** (your ChatGPT plan, no charge; told where the area is), **OpenAI Images** (uses the marked area as a guide), **Gemini image** (told where the area is), **FLUX.1 Fill** (follows the marked area exactly; fixes only, it takes no reference photos) and **FLUX 3** (works on a box around the area; can replace a person). OpenAI and Gemini use the image model, size and quality from the Generation engine panel. FLUX needs a Black Forest Labs key: Studio settings → *Region editing with FLUX*. Every API edit asks you to confirm the possible charge; Codex asks before using your plan's allowance. FLUX 3 and OpenAI Images are *unverified* until you run them.
+
+**What you get.** Whatever the engine returns, the studio pastes back **only the marked area** (with a soft edge inside it), so every pixel outside it is exactly the original. The edit is a new result ("Edited" or "Replaced Subject 1"); the original is kept. The viewer compares it with the result it came from, says what was asked and links the marked area. If the engine returned a different shape, its image was stretched to fit first, and the viewer says so. Results whose approval you withdrew cannot be edited. A result cannot be deleted while it is being edited.
+
+**If something goes wrong.** Failures and refusals are reported in plain words; nothing is retried. If the studio stopped after the image was made, **Look for a saved image** keeps it: from the run's folder, Codex's own folder, or (FLUX) by asking Black Forest Labs once more about the same task, free and without resending.
+
 ## Backups and restore
 
 **Studio settings → Backups → Create backup** saves one file, `backups\character-studio-backup-<date>-<time>.zip`, inside your data folder. It holds the database (copied with SQLite's own backup method), your characters and photos, scenes, results, thumbnails and run folders, plus a manifest with a fingerprint (SHA-256) of every file. While it starts, saving pauses for a moment; the zip itself is written in the background and the studio keeps working. Each backup shows its date, size and what it contains. **Check** re-reads every file against its fingerprint and checks the database; **Download** saves it through your browser; **Delete** removes it from the data folder.

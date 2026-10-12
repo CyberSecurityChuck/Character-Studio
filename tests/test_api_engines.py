@@ -20,7 +20,7 @@ from tests.test_backup import make_backup
 from tests.test_scenes import create_scene
 
 KEY = "test-key-0123456789-abcdefgh"
-ENGINES = ("gemini_api", "anthropic_api", "openai_api")
+ENGINES = ("gemini_api", "anthropic_api", "openai_api", "bfl_api")
 
 
 def reply_for(engine: str, analysis: dict) -> dict:
@@ -88,17 +88,53 @@ class FakeProviders:
         self.requests: list[dict] = []
         self.next: dict[str, tuple[int, dict]] = {}
         self.delay = 0.0
+        # Black Forest Labs (Phase 6C-2): statuses returned by successive polls, then the image.
+        self.bfl_statuses: list[str] = ["Pending", "Ready"]
+        self.bfl_sample: bytes = b""
+        self.bfl_sample_url: str | None = None
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
 
+            def _send_bytes(self, status: int, data: bytes, kind: str):
+                self.send_response(status)
+                self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def _bfl(self, body: dict | None):
+                """FLUX: submit returns a polling URL; polls step through bfl_statuses."""
+                base = fake.urls["bfl_api"]
+                if body is not None:
+                    status, payload = fake.next.get(
+                        "bfl_api",
+                        (200, {"id": "task-1", "polling_url": f"{base}/v1/get_result?id=task-1",
+                               "cost": 5}),
+                    )
+                elif self.path.endswith("/sample.png"):
+                    return self._send_bytes(200, fake.bfl_sample, "image/png")
+                elif "/v1/credits" in self.path:
+                    status, payload = 200, {"credits": 12.5}
+                else:
+                    state = fake.bfl_statuses.pop(0) if len(fake.bfl_statuses) > 1 else (
+                        fake.bfl_statuses[0]
+                    )
+                    sample = fake.bfl_sample_url or f"{base}/sample.png"
+                    payload = {"id": "task-1", "status": state}
+                    if state == "Ready":
+                        payload["result"] = {"sample": sample}
+                    status = 200
+                data = json.dumps(payload).encode()
+                self._send_bytes(status, data, "application/json")
+
             def _answer(self, body: dict | None):
                 prefix = self.path.split("/")[1]
-                engine = {"gemini": "gemini_api", "anthropic": "anthropic_api"}.get(
-                    prefix, "openai_api"
-                )
+                engine = {
+                    "gemini": "gemini_api", "anthropic": "anthropic_api", "bfl": "bfl_api"
+                }.get(prefix, "openai_api")
                 fake.requests.append(
                     {
                         "engine": engine,
@@ -107,6 +143,8 @@ class FakeProviders:
                         "body": body,
                     }
                 )
+                if engine == "bfl_api":
+                    return self._bfl(body)
                 if body is None:
                     status, payload = 200, MODEL_LISTS[prefix]
                 else:
@@ -137,6 +175,7 @@ class FakeProviders:
             "gemini_api": f"http://127.0.0.1:{port}/gemini",
             "anthropic_api": f"http://127.0.0.1:{port}/anthropic",
             "openai_api": f"http://127.0.0.1:{port}/openai",
+            "bfl_api": f"http://127.0.0.1:{port}/bfl",
         }
 
     def posts(self):
@@ -257,6 +296,11 @@ def test_test_key_lists_usable_models_without_generating(api_client, providers):
     assert headers["gemini_api"]["x-goog-api-key"] == KEY
     assert headers["anthropic_api"]["x-api-key"] == KEY
     assert headers["openai_api"]["authorization"] == f"Bearer {KEY}"
+    # FLUX has no model list: saving its key checks it with the free credits call.
+    flux = save_key(client, "bfl_api")
+    assert flux["models"] == [] and flux["image_models"] == ["flux-pro-1.0-fill", "flux-3-image"]
+    assert providers.requests[-1]["path"].endswith("/v1/credits")
+    assert providers.requests[-1]["headers"]["x-key"] == KEY
 
 
 def test_selecting_an_api_engine_needs_a_model_and_a_key(api_client):
@@ -275,7 +319,7 @@ def test_selecting_an_api_engine_needs_a_model_and_a_key(api_client):
     ).status_code == 409
 
 
-@pytest.mark.parametrize("engine", ENGINES)
+@pytest.mark.parametrize("engine", ENGINES[:3])  # FLUX only edits regions
 def test_api_analysis_needs_confirmation_and_records_provenance(
     api_client, api_settings, providers, engine
 ):
