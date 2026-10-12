@@ -181,7 +181,8 @@ def test_presets_are_saved_validated_and_recorded_with_runs(engine_client, fake)
         f"/api/presets/{preset['id']}", headers=headers, json=preset_body(revision=1)
     )
     assert stale.status_code == 409
-    assert [p["name"] for p in client.get("/api/presets").json()] == ["Golden hour soft"]
+    custom = [p["name"] for p in client.get("/api/presets").json() if not p["builtin"]]
+    assert custom == ["Golden hour soft"]
 
     _ada, scene = approved_scene(client)
     reply = client.post(
@@ -205,7 +206,7 @@ def test_presets_are_saved_validated_and_recorded_with_runs(engine_client, fake)
     [item] = batch["items"]
     wait_for_job(client, item["job_id"])
     assert client.delete(f"/api/presets/{preset['id']}", headers=headers).status_code == 200
-    assert client.get("/api/presets").json() == []
+    assert all(p["builtin"] for p in client.get("/api/presets").json())
     # A deleted preset's name stays with the results made with it.
     results = client.get(f"/api/scenes/{scene['id']}").json()["results"]
     assert [r["preset"] for r in results] == ["Golden hour soft", "Golden hour soft"]

@@ -15,7 +15,7 @@ export type QualityCheck = {
   }
 }
 type RunJob = { id: string; status: string; engine_name: string; error_details: string | null }
-type EngineSettings = { analysis_engine: string; api_models: Record<string, { analysis?: string }> }
+type EngineSettings = { analysis_engine: string; models: Record<string, { analysis?: string }> }
 
 export const scoreLabels = ['Could not judge', 'Does not match', 'Clear differences', 'Some differences', 'Close', 'Very close']
 const aspectLabels: Record<string, string> = { camera_and_framing: 'Camera and framing', subject_positions: 'Positions', poses: 'Poses', head_and_gaze: 'Head and gaze', outfits: 'Outfits', environment: 'Environment', lighting: 'Lighting' }
@@ -128,7 +128,7 @@ export function QualityPanel({ resultId, resultVersion, references, token, runni
     {engine === 'manual' ? <p className="hint">Quality checks need an analysis engine; Manual is selected in Studio settings.</p>
       : <div className="quality-actions"><button type="button" className="secondary" disabled={busy || running} onClick={ask}>{shown ? 'Check again' : 'Check quality'}</button>
         {shown && <button type="button" className="link-button" disabled={busy || running} onClick={() => remove(shown)}>Delete this check</button>}</div>}
-    {asking && apiEngine && <ChargeDialog engine={apiEngine} model={settings?.api_models[engine]?.analysis ?? null} runs={1} what={what}
+    {asking && apiEngine && <ChargeDialog engine={apiEngine} model={settings?.models[engine]?.analysis ?? null} runs={1} what={what}
       title={`Check result ${resultVersion} with the ${apiEngine.name}?`} action="Check" onConfirm={() => void start(true)} onClose={() => setAsking(false)} />}
   </section>
 }

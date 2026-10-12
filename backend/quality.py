@@ -253,10 +253,65 @@ def prepare_check_folder(settings: Settings, session, result: GenerationResult):
     return key, names, cli, api
 
 
+# Built-in presets (Phase 6 review): light, colour and mood only, so they never fight the
+# composition lock (poses, framing and setting come from the Base Image). They live in code,
+# are read-only and can be saved as a new custom preset.
+PRESET_CATEGORIES = ("individual", "couple", "family", "friends", "other")
+
+
+def _builtin(slug, category, name, changes, avoid, images=2):
+    return {
+        "id": f"builtin-{slug}",
+        "name": name,
+        "category": category,
+        "scene_changes": changes,
+        "negative_additions": avoid,
+        "images": images,
+        "builtin": True,
+    }
+
+
+BUILTIN_PRESETS = (
+    _builtin("golden-hour", "individual", "Golden hour portrait",
+             "Warm golden-hour sunlight from a low angle, soft long shadows and a gentle warm "
+             "glow on skin.", "harsh midday light\nblown-out highlights"),
+    _builtin("soft-studio", "individual", "Soft studio portrait",
+             "Clean studio look: soft diffused key light, gentle fill and a plain, evenly lit "
+             "background tone.", "harsh flash\nhard shadows on the face"),
+    _builtin("natural-daylight", "individual", "Natural daylight",
+             "Bright natural daylight with true-to-life colours and soft open shade on faces.",
+             "colour cast\noversaturated colours"),
+    _builtin("black-and-white", "individual", "Classic black and white",
+             "Classic black-and-white photograph with a rich tonal range and soft contrast.",
+             "colour tint\nheavy grain", images=1),
+    _builtin("warm-sunset", "couple", "Warm sunset",
+             "Warm sunset light from behind, a gentle rim light around both people and "
+             "romantic warm tones.", "harsh flash\nlens flare over faces"),
+    _builtin("candid-lifestyle", "couple", "Candid lifestyle",
+             "Relaxed candid feel with natural soft light and subtle film-like warmth.",
+             "stiff studio look\nover-retouched skin"),
+    _builtin("bright-home", "family", "Bright and cheerful",
+             "Bright, airy light as if from large windows, clean warm-neutral tones and a "
+             "cheerful mood.", "dim lighting\nmixed colour casts"),
+    _builtin("fresh-outdoor", "family", "Fresh outdoor daylight",
+             "Fresh, bright outdoor daylight with soft dappled light and lively natural colours.",
+             "harsh shadows on faces\noverexposed sky"),
+    _builtin("evening-glow", "friends", "Evening glow",
+             "Evening ambience with warm practical lights and soft background bokeh; faces "
+             "evenly lit.", "underexposed faces\nmotion blur"),
+    _builtin("summer-day", "friends", "Bright summer day",
+             "Bright summer daylight with vivid but natural colours and soft fill light on faces.",
+             "squinting\nblown-out sky"),
+)
+BUILTIN_BY_ID = {p["id"]: p for p in BUILTIN_PRESETS}
+
+
 def preset_name(session, preset_id: str | None) -> str | None:
     """The name of the preset chosen for a run, recorded with it (Phase 6B)."""
     if not preset_id:
         return None
+    if preset_id in BUILTIN_BY_ID:
+        return BUILTIN_BY_ID[preset_id]["name"]
     preset = session.get(GenerationPreset, preset_id)
     if preset is None:
         raise HTTPException(409, "The chosen preset no longer exists. Reload the page.")

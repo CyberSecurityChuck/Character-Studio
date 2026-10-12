@@ -35,7 +35,7 @@ from backend.api_engines import (
     models_of,
 )
 from backend.configuration import asset_path
-from backend.engines import ENGINE_NAMES, engine_status
+from backend.engines import CLI_MODELS, ENGINE_NAMES, engine_status
 from backend.generation import generation_timing, result_data, run_seconds
 from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
 from backend.keystore import key_info
@@ -191,17 +191,18 @@ class EngineSettingsUpdate(BaseModel):
     claude_timeout: int = Field(ge=30, le=1800)
     codex_timeout: int = Field(ge=30, le=1800)
     api_timeout: int = Field(default=180, ge=30, le=1800)
-    # {"gemini_api": {"analysis": "<model>"}}; only known engines and purposes.
-    api_models: dict[str, dict[Literal["analysis"], str]] = Field(default_factory=dict)
+    # {"gemini_api": {"analysis": "<model>"}, "claude_cli": {"analysis": "opus"}}; empty or
+    # missing means the engine's own default (subscription engines only).
+    models: dict[str, dict[Literal["analysis"], str]] = Field(default_factory=dict)
     revision: int = Field(ge=1)
 
-    @field_validator("api_models")
+    @field_validator("models")
     @classmethod
     def known_models(cls, value):
         cleaned = {}
         for engine, purposes in value.items():
-            if engine not in API_ENGINES:
-                raise ValueError("Unknown API engine.")
+            if engine not in API_ENGINES and engine not in CLI_MODELS:
+                raise ValueError("Unknown engine.")
             chosen = {k: check_model_name(v) for k, v in purposes.items() if v.strip()}
             if chosen:
                 cleaned[engine] = chosen
@@ -994,9 +995,14 @@ def save_scene_mappings(request: Request, scene_id: str, body: MappingsInput):
 
 
 def api_run_settings(request, settings: EngineSettings, engine: str, confirmed: bool) -> dict:
-    """Checks before queuing an API analysis; returns the job settings (the model used)."""
+    """Checks before queuing an analysis or check; returns the job settings (the model used).
+
+    Subscription engines record the chosen model if one is set (else the CLI's default);
+    API engines also need a key, a model and the user's charge confirmation.
+    """
     if not is_api_engine(engine):
-        return {}
+        model = chosen_model(settings, engine)
+        return {"model": model} if model else {}
     if not confirmed:
         raise HTTPException(409, charge_confirmation(engine))
     model = chosen_model(settings, engine)
@@ -1138,6 +1144,7 @@ def polish_prompt(request: Request, scene_id: str, body: PolishInput):
                 "This prompt is too long to polish in one run. Shorten it or edit it by hand.",
             )
         settings = session.get(EngineSettings, 1)
+        model = chosen_model(settings, "claude_cli")
         session.add(
             EngineJob(
                 id=uuid4().hex,
@@ -1146,6 +1153,7 @@ def polish_prompt(request: Request, scene_id: str, body: PolishInput):
                 engine="claude_cli",
                 status="not_started",
                 input_id=prompt.id,
+                settings_json=json.dumps({"model": model}) if model else None,
                 timeout_seconds=settings.claude_timeout,
                 created_at=now(),
             )
@@ -1305,7 +1313,7 @@ def settings_data(item: EngineSettings):
         "claude_timeout": item.claude_timeout,
         "codex_timeout": item.codex_timeout,
         "api_timeout": item.api_timeout,
-        "api_models": models_of(item),
+        "models": models_of(item),
         "revision": item.revision,
     }
 
@@ -1325,13 +1333,13 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
         engine = body.analysis_engine
         if is_api_engine(engine):
             name = API_ENGINES[engine].name
-            if not (body.api_models.get(engine) or {}).get("analysis"):
+            if not (body.models.get(engine) or {}).get("analysis"):
                 raise HTTPException(422, f"Choose a model for the {name} before selecting it.")
             if not key_info(request.app.state.settings, engine)["saved"]:
                 raise HTTPException(422, f"Save a {name} key before selecting it.")
-        for key, value in body.model_dump(exclude={"revision", "api_models"}).items():
+        for key, value in body.model_dump(exclude={"revision", "models"}).items():
             setattr(item, key, value)
-        item.api_models_json = json.dumps(body.api_models, sort_keys=True)
+        item.api_models_json = json.dumps(body.models, sort_keys=True)
         item.revision += 1
         return settings_data(item)
 

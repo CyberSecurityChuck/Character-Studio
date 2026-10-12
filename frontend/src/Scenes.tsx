@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import { request, send, type Bootstrap } from './api'
 import { ChargeDialog, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { BatchDialog, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
-import { CardMenu, SelectionBar, TextDialog, sentence } from './Controls'
+import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
@@ -38,7 +38,7 @@ export type SceneDetail = SceneSummary & {
   approvals: ApprovalRecord[]; pending_polish: PendingPolish | null
   results: Result[]; exports: ExportPackage[]; generation_timing: { runs: number; average_seconds: number | null }
 }
-type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number; api_models: Record<string, { analysis?: string }>; revision: number }
+type EngineSettings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number; models: Record<string, { analysis?: string }>; revision: number }
 type Step = 'analysis' | 'characters' | 'prompt' | 'review' | 'generate'
 
 type SubjectField = 'position' | 'pose_summary' | 'body_direction' | 'torso_orientation' | 'shoulder_alignment' | 'head_direction' | 'facial_viewing_angle' | 'eye_direction' | 'expression' | 'arms_and_hands' | 'legs_and_feet' | 'outfit' | 'hairstyle' | 'accessories'
@@ -679,16 +679,18 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
               <div><label htmlFor="negative-prompt">Negative prompt</label><textarea id="negative-prompt" rows={5} maxLength={8000} value={negative} onChange={e => setNegative(e.target.value)} /></div>
               <div><label htmlFor="scene-changes">Scene changes (optional)</label><textarea id="scene-changes" rows={3} maxLength={4000} value={changes} placeholder="For example: make it golden hour" onChange={e => setChanges(e.target.value)} />
                 <button type="button" className="link-button" disabled={busy} onClick={() => { if (!promptDirty || promptText === promptBase.text || window.confirm('Rebuilding replaces your edits to the prompt text. Continue?')) void rebuild(current.id, changes) }}>Rebuild draft with these changes</button>
-                <div className="preset-row">
-                  <PresetSelect id="prompt-preset" presets={presets} value={presetPick} disabled={busy} label="Apply a preset"
-                    onChange={p => {
-                      if (!p) { setPresetPick(''); return }
-                      if (promptDirty && promptText !== promptBase.text && !window.confirm(`Apply “${p.name}”? The draft is rebuilt with its scene changes, which replaces your edits to the prompt text.`)) return
-                      setPresetPick(p.id); setChanges(p.scene_changes)
-                      void rebuild(current.id, p.scene_changes, p.negative_additions)
-                    }} />
-                  <button type="button" className="link-button" disabled={busy} onClick={() => setSavingPreset(true)}>Save as preset</button>
-                </div></div>
+              </div>
+            </div>
+            <div className="preset-bar">
+              <PresetSelect id="prompt-preset" presets={presets} value={presetPick} disabled={busy} label="Apply a preset"
+                onChange={p => {
+                  if (!p) { setPresetPick(''); return }
+                  if (promptDirty && promptText !== promptBase.text && !window.confirm(`Apply “${p.name}”? The draft is rebuilt with its scene changes, which replaces your edits to the prompt text.`)) return
+                  setPresetPick(p.id); setChanges(p.scene_changes)
+                  void rebuild(current.id, p.scene_changes, p.negative_additions)
+                }} />
+              <span className="hint preset-bar-note">Fills Scene changes, rebuilds the draft and adds its lines to the negative prompt.</span>
+              <button type="button" className="secondary compact" disabled={busy} onClick={() => setSavingPreset(true)}><Glyph name="bookmark" />Save as preset</button>
             </div>
             {!promptDirty && promptBase.saved && scene.review.warnings.length > 0 && <div className="check-box warning"><strong>Check the saved prompt</strong><ul>{scene.review.warnings.map(w => <li key={w}>{w}</li>)}</ul></div>}
             <div className="prompt-tools">
@@ -738,7 +740,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
       {manual && <ManualAnalysis scene={scene} token={token} onClose={() => setManual(false)} onImported={detail => { setManual(false); if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id]); void accept(detail, !promptDirty).then(() => setMessage(`Analysis version ${detail.analyses[0].version} imported.`)) }} />}
     </dialog>
     {savingPreset && <PresetDialog token={token} initial={{ scene_changes: changes }} onClose={() => setSavingPreset(false)} onSaved={(_p, note) => { setMessage(note); void reloadPresets() }} />}
-    {chargeAsk && apiEngines.byId[engine] && <ChargeDialog engine={apiEngines.byId[engine]} model={engines?.api_models[engine]?.analysis ?? null} runs={1} note={chargeAsk.note}
+    {chargeAsk && apiEngines.byId[engine] && <ChargeDialog engine={apiEngines.byId[engine]} model={engines?.models[engine]?.analysis ?? null} runs={1} note={chargeAsk.note}
       onConfirm={() => void analyse(true)} onClose={() => setChargeAsk(null)} />}
     {historyOpen && <PromptHistory scene={scene} token={token} editorDirty={promptDirty} onClose={() => setHistoryOpen(false)}
       onLoad={prompt => { if (restorePrompt(prompt)) setHistoryOpen(false) }}

@@ -151,7 +151,7 @@ def select_api(client, engine, model="test-model", **changes):
     body = {
         **current,
         "analysis_engine": engine,
-        "api_models": {engine: {"analysis": model}},
+        "models": {engine: {"analysis": model}},
         **changes,
     }
     return client.put("/api/engines/settings", headers=authorization(client), json=body)
@@ -213,10 +213,16 @@ def test_test_key_lists_usable_models_without_generating(api_client, providers):
         ("anthropic_api", ["claude-test-1"]),
         ("openai_api", ["gpt-test-vision"]),
     ):
-        save_key(client, engine)
+        # Saving a key fetches its model list once, and the list stays saved.
+        saved = save_key(client, engine)
+        assert saved["models"] == expected and saved["models_error"] is None
+        listed = {e["id"]: e for e in client.get("/api/api-engines").json()}
+        assert listed[engine]["models"] == expected and listed[engine]["models_checked_at"]
         result = client.post(f"/api/api-engines/{engine}/models", headers=authorization(client))
-        assert result.json() == {"models": expected}
+        assert result.json()["models"] == expected
     assert providers.posts() == []
+    removed = client.delete("/api/api-engines/openai_api/key", headers=authorization(client))
+    assert removed.json()["models"] == []
     headers = {r["engine"]: r["headers"] for r in providers.requests}
     assert headers["gemini_api"]["x-goog-api-key"] == KEY
     assert headers["anthropic_api"]["x-api-key"] == KEY
@@ -231,7 +237,7 @@ def test_selecting_an_api_engine_needs_a_model_and_a_key(api_client):
     assert select_api(client, "gemini_api", model="bad model!").status_code == 422
     result = select_api(client, "gemini_api", model="gemini-2.5-flash", api_timeout=240)
     assert result.status_code == 200, result.text
-    assert result.json()["api_models"] == {"gemini_api": {"analysis": "gemini-2.5-flash"}}
+    assert result.json()["models"] == {"gemini_api": {"analysis": "gemini-2.5-flash"}}
     assert result.json()["api_timeout"] == 240
     # The selected engine's key cannot be removed until another engine is chosen.
     assert client.delete(

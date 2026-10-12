@@ -303,10 +303,15 @@ class JobRunner:
                 raise EngineError("not_installed", f"{ENGINE_NAMES[engine]} could not be started.")
             if kind == "polish":
                 schema = json.dumps(POLISH_SCHEMA, separators=(",", ":"))
-                argv, output_name = polish_command(command, instruction, schema), "output.json"
+                argv = polish_command(command, instruction, schema, run_settings.get("model"))
+                output_name = "output.json"
             else:
                 argv, output_name = analysis_command(
-                    engine, command, job_dir, json.dumps(JSON_SCHEMA, separators=(",", ":"))
+                    engine,
+                    command,
+                    job_dir,
+                    json.dumps(JSON_SCHEMA, separators=(",", ":")),
+                    model=run_settings.get("model"),
                 )
             outcome = run_process(
                 argv,
@@ -490,6 +495,7 @@ class JobRunner:
                 json.dumps(CHECK_SCHEMA, separators=(",", ":")),
                 instruction=cli_text,
                 images=names,
+                model=run_settings.get("model"),
             )
             outcome = run_process(argv, job_dir, job_dir / output_name, timeout, should_stop=stop)
             if outcome.cancelled:

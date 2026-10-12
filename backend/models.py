@@ -89,6 +89,8 @@ class EngineSettings(Base):
     # e.g. {"gemini_api": {"analysis": "gemini-2.5-flash"}}. Keys live in backend.keystore.
     api_timeout: Mapped[int] = mapped_column(Integer)
     api_models_json: Mapped[str] = mapped_column(Text)
+    # Model lists fetched with the user's API keys (free list calls), kept between visits.
+    model_lists_json: Mapped[str] = mapped_column(Text, default="{}")
     revision: Mapped[int] = mapped_column(Integer)
 
 
@@ -292,6 +294,8 @@ class GenerationPreset(Base):
     scene_changes: Mapped[str] = mapped_column(Text, default="")
     negative_additions: Mapped[str] = mapped_column(Text, default="")
     images: Mapped[int] = mapped_column(Integer, default=1)
+    # individual, couple, family, friends or other (built-in presets live in code).
+    category: Mapped[str] = mapped_column(String(20), default="other")
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[str] = mapped_column(String(40))

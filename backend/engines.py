@@ -32,6 +32,10 @@ NPM_LAUNCHERS = {
     "claude_cli": ("@anthropic-ai", "claude-code", "cli.js"),
     "codex_cli": ("@openai", "codex", "bin", "codex.js"),
 }
+# Model choices for the subscription CLIs (Phase 6 review): `claude --model` takes an alias
+# for the latest model ("fable", "opus", "sonnet") or a full name; `codex exec -m` takes a
+# model name. Empty means the CLI's own default for the user's plan.
+CLI_MODELS = {"claude_cli": ("opus", "sonnet", "fable"), "codex_cli": ()}
 SIGN_IN_HELP = {
     "claude_cli": "Open a terminal, run claude and sign in with your Claude account",
     "codex_cli": "Open a terminal, run codex login and sign in with your ChatGPT account",
@@ -246,6 +250,7 @@ def analysis_command(
     schema_json: str,
     instruction: str = ENGINE_INSTRUCTION,
     images: tuple[str, ...] = ("base.jpg",),
+    model: str | None = None,
 ):
     """Return (argv, stdout file name). Flags exactly as confirmed in Phase 2.5.
 
@@ -256,6 +261,7 @@ def analysis_command(
         # --restricted confines file tools to the job folder and removes command/web tools.
         return [
             *command,
+            *(("--model", model) if model else ()),
             "-p",
             instruction,
             "--tools",
@@ -277,6 +283,7 @@ def analysis_command(
         "--skip-git-repo-check",
         "--ephemeral",
         "--ignore-user-config",
+        *(("-m", model) if model else ()),
         "-s",
         "read-only",
         "--disable",
@@ -294,10 +301,13 @@ def analysis_command(
     ], "events.jsonl"
 
 
-def polish_command(command: list[str], instruction: str, schema_json: str) -> list[str]:
+def polish_command(
+    command: list[str], instruction: str, schema_json: str, model: str | None = None
+) -> list[str]:
     """Claude, text only: no tools at all (`--tools ""`), confined and without settings."""
     return [
         *command,
+        *(("--model", model) if model else ()),
         "-p",
         instruction,
         "--tools",

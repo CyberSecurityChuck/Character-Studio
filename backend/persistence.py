@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0009_quality"
+SCHEMA_REVISION = "0010_model_lists"
 
 
 def open_database(settings: Settings) -> Engine:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { request, send } from './api'
 
 /** Optional API engines (Phase 6A): keys, model lists and the charge confirmation. */
@@ -7,6 +7,7 @@ export type ApiEngine = {
   suggested_model: string | null; charge_note: string
   key: { saved: boolean; saved_at: string | null }
   typical_usage: { runs: number; input_tokens: number; output_tokens: number } | null
+  models: string[]; models_checked_at: string | null; models_error: string | null
 }
 
 export const apiEngineIds = ['gemini_api', 'anthropic_api', 'openai_api']
@@ -57,7 +58,9 @@ export function ChargeDialog({ engine, model, runs, note, title, action = 'Analy
   </dialog>
 }
 
-function KeyRow({ engine, token, selected, onChanged, onModels }: { engine: ApiEngine; token: string; selected: boolean; onChanged: () => void; onModels: (models: string[]) => void }) {
+/** The selected API engine's key: saved, replaced, tested or removed here, never shown again.
+ *  Saving a key also fetches its model list once; the list is kept for later visits. */
+export function ApiKeyBox({ engine, token, selected, onChanged }: { engine: ApiEngine; token: string; selected: boolean; onChanged: () => void }) {
   const [key, setKey] = useState('')
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState('')
@@ -67,47 +70,42 @@ function KeyRow({ engine, token, selected, onChanged, onModels }: { engine: ApiE
     setBusy(label); setError(''); setMessage('')
     try { await work() } catch (e) { setError(e instanceof Error ? e.message : 'That did not work. Try again.') } finally { setBusy('') }
   }
-  const save = (e: FormEvent) => {
-    e.preventDefault()
-    void act('save', async () => { await send(`/api/api-engines/${engine.id}/key`, 'PUT', token, { key }); setKey(''); setEditing(false); setMessage('Key saved, protected for your Windows account.'); onChanged() })
-  }
+  const listed = (item: ApiEngine) => item.models.length ? `${item.models.length} ${item.models.length === 1 ? 'model' : 'models'} available.` : 'No suitable models were listed.'
+  const save = () => void act('save', async () => {
+    const saved = await send<ApiEngine>(`/api/api-engines/${engine.id}/key`, 'PUT', token, { key })
+    setKey(''); setEditing(false); onChanged()
+    if (saved.models_error) setError(`Key saved, but checking it failed: ${saved.models_error}`)
+    else setMessage(`Key saved and working. ${listed(saved)}`)
+  })
   const test = () => void act('test', async () => {
-    const result = await send<{ models: string[] }>(`/api/api-engines/${engine.id}/models`, 'POST', token)
-    onModels(result.models)
-    setMessage(result.models.length ? `Key works. ${result.models.length} models available; choose one above.` : 'Key works, but no suitable models were listed.')
+    const result = await send<ApiEngine>(`/api/api-engines/${engine.id}/models`, 'POST', token)
+    onChanged(); setMessage(`Key works. ${listed(result)}`)
   })
   const remove = () => {
     if (!window.confirm(`Remove the saved ${engine.name} key from this computer? The key stays valid at ${engine.company}; revoke it there if you no longer need it.`)) return
     void act('remove', async () => { await send(`/api/api-engines/${engine.id}/key`, 'DELETE', token); setMessage('Key removed.'); onChanged() })
   }
   const showForm = editing || !engine.key.saved
-  return <li className="api-key-row">
+  return <div className="api-key-box">
     <div className="api-key-head">
       <span className={`status-dot ${engine.key.saved ? 'ready' : ''}`} aria-hidden="true" />
-      <div><strong>{engine.name}</strong><span className="engine-state">{engine.key.saved ? 'Key saved' : 'No key'}</span>
+      <div><strong>API key</strong><span className="engine-state">{engine.key.saved ? 'Saved on this computer' : 'Not added yet'}</span>
         <p className="hint">{engine.key_help}</p></div>
       {engine.key.saved && !editing && <div className="api-key-actions">
         <button type="button" className="secondary compact" disabled={!!busy} onClick={test}>{busy === 'test' ? 'Testing…' : 'Test key'}</button>
         <button type="button" className="secondary compact" disabled={!!busy} onClick={() => setEditing(true)}>Replace</button>
-        <button type="button" className="danger secondary compact" disabled={!!busy || selected} title={selected ? 'Choose another analysis engine first' : undefined} onClick={remove}>Remove</button>
+        <button type="button" className="danger secondary compact" disabled={!!busy || selected} title={selected ? 'Choose and save another analysis engine first' : undefined} onClick={remove}>Remove</button>
       </div>}
     </div>
-    {showForm && <form className="api-key-form" onSubmit={save}>
+    {showForm && <div className="api-key-form">
       <label htmlFor={`key-${engine.id}`} className="visually-hidden">{engine.name} key</label>
-      <input id={`key-${engine.id}`} type="password" autoComplete="off" spellCheck={false} placeholder={`Paste your ${engine.company} API key`} value={key} disabled={!!busy} onChange={e => setKey(e.target.value)} />
+      <input id={`key-${engine.id}`} type="password" autoComplete="off" spellCheck={false} placeholder={`Paste your ${engine.company} API key`} value={key} disabled={!!busy}
+        onChange={e => setKey(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && key.trim()) { e.preventDefault(); save() } }} />
       {editing && <button type="button" className="secondary" onClick={() => { setEditing(false); setKey('') }}>Cancel</button>}
-      <button disabled={!!busy || !key.trim()}>{busy === 'save' ? 'Saving…' : 'Save key'}</button>
-    </form>}
+      <button type="button" disabled={!!busy || !key.trim()} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save key'}</button>
+    </div>}
     {message && <p className="hint" role="status">{message}</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
-  </li>
-}
-
-/** Keys are write-only: saved, replaced or removed here, never shown again. */
-export function ApiKeysPanel({ engines, token, selectedEngine, onChanged, onModels }: { engines: ApiEngine[]; token: string; selectedEngine: string; onChanged: () => void; onModels: (engine: string, models: string[]) => void }) {
-  return <section className="panel provider-panel api-keys-panel" aria-labelledby="api-keys-title">
-    <div className="panel-head"><div><span className="tiny-label">OPTIONAL · YOUR KEYS, YOUR BILLING</span><h2 id="api-keys-title">API keys</h2></div></div>
-    <p>API engines call Google, Anthropic or OpenAI directly with your own key. They are billed by that company, separately from your Claude and ChatGPT plans, and every run asks you first. Keys are stored only on this computer, protected for your Windows account, never shown again, never included in backups and only sent to their own company.</p>
-    <ul className="api-key-list">{engines.map(e => <KeyRow key={e.id} engine={e} token={token} selected={selectedEngine === e.id} onChanged={onChanged} onModels={models => onModels(e.id, models)} />)}</ul>
-  </section>
+    <p className="hint">Billed by {engine.company}, separately from your plans; every run asks you first. The key stays on this computer, protected for your Windows account, is never shown again or included in backups, and is only sent to {engine.company}.</p>
+  </div>
 }

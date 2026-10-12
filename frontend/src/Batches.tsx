@@ -185,7 +185,7 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
   const [model, setModel] = useState<string | null>(null)
   const charged = isApiEngine(engine)
   useEffect(() => {
-    if (charged) request<{ api_models: Record<string, { analysis?: string }> }>('/api/engines/settings').then(s => setModel(s.api_models[engine]?.analysis ?? null), () => undefined)
+    if (charged) request<{ models: Record<string, { analysis?: string }> }>('/api/engines/settings').then(s => setModel(s.models[engine]?.analysis ?? null), () => undefined)
   }, [charged, engine])
   useEffect(() => {
     request<{ analysis: Record<string, number | null>; generation: number | null }>('/api/batches/timing')

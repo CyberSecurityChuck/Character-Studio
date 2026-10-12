@@ -126,3 +126,7 @@ Sources read 2026-10-11: https://ai.google.dev/gemini-api/docs/pricing (page "La
 - Usage recorded: Gemini `promptTokenCount` and `candidatesTokenCount + thoughtsTokenCount`; Anthropic `input_tokens`/`output_tokens`; OpenAI `prompt_tokens`/`completion_tokens`.
 - Error mapping and blocked/cut-off replies are described in DECISIONS.md D022. Gemini reports an invalid key as HTTP 400 "API key not valid", which is matched by text.
 - All of this is tested only against a local fake server. The first real run is the user's, during the Phase 6A review; until then the engines are `unverified` in the provider registry.
+
+## Phase 6 review: CLI model flags (2026-10-12)
+
+Read from the installed CLIs' help (no runs): `claude --help` — `--model <model>`: "an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name". `codex exec --help` — `-m, --model <MODEL>`: "Model the agent should use". `codex` has no model-list command. The studio passes the flag only when the user chose a model; for Codex generation it is not offered, because built-in image generation uses its own image model (`gpt-image-2`, Phase 2.5 row d). Real runs with a chosen model are the user's.

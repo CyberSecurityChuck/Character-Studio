@@ -12,10 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from backend.api_engines import API_ENGINES, list_models
+from backend.api_engines import API_ENGINES, list_models, model_lists_of
 from backend.engines import EngineError
 from backend.keystore import KeyStoreError, delete_key, key_info, save_key
 from backend.models import EngineJob, EngineSettings
+from backend.persistence import writing_session
+from backend.scene_store import now
 
 router = APIRouter(prefix="/api")
 
@@ -54,10 +56,11 @@ def typical_usage(session, engine: str) -> dict | None:
     }
 
 
-def engine_data(request: Request, engine: str) -> dict:
+def engine_data(request: Request, engine: str, models_error: str | None = None) -> dict:
     item = API_ENGINES[engine]
     with Session(request.app.state.engine) as session:
         typical = typical_usage(session, engine)
+        saved = model_lists_of(session.get(EngineSettings, 1)).get(engine) or {}
     return {
         "id": item.id,
         "name": item.name,
@@ -68,7 +71,32 @@ def engine_data(request: Request, engine: str) -> dict:
         "charge_note": item.charge_note,
         "key": key_info(request.app.state.settings, engine),
         "typical_usage": typical,
+        # The last list the key returned, kept so the model picker is filled on every visit.
+        "models": saved.get("models", []),
+        "models_checked_at": saved.get("checked_at"),
+        "models_error": models_error,
     }
+
+
+def _store_list(request: Request, engine: str, models: list[str] | None) -> None:
+    with writing_session(request.app.state.engine) as session:
+        row = session.get(EngineSettings, 1)
+        lists = model_lists_of(row)
+        if models is None:
+            lists.pop(engine, None)
+        else:
+            lists[engine] = {"models": models, "checked_at": now()}
+        row.model_lists_json = json.dumps(lists, sort_keys=True)
+
+
+async def _refresh(request: Request, engine: str) -> str | None:
+    """Fetch the model list with the saved key (a free call). Returns an error message."""
+    try:
+        models = await run_in_threadpool(list_models, request.app.state.settings, engine)
+    except EngineError as error:
+        return error.message
+    _store_list(request, engine, models)
+    return None
 
 
 @router.get("/api-engines")
@@ -77,13 +105,15 @@ def api_engines(request: Request):
 
 
 @router.put("/api-engines/{engine}/key")
-def store_key(request: Request, engine: str, body: KeyInput):
+async def store_key(request: Request, engine: str, body: KeyInput):
+    """Save the key, then fetch its model list once so the picker is ready."""
     require_engine(engine)
     try:
         save_key(request.app.state.settings, engine, body.key)
     except KeyStoreError as error:
         raise HTTPException(422, str(error)) from error
-    return engine_data(request, engine)
+    _store_list(request, engine, None)
+    return engine_data(request, engine, await _refresh(request, engine))
 
 
 @router.delete("/api-engines/{engine}/key")
@@ -95,15 +125,15 @@ def remove_key(request: Request, engine: str):
                 409, f"The {item.name} is the selected analysis engine. Choose another first."
             )
     delete_key(request.app.state.settings, engine)
+    _store_list(request, engine, None)
     return engine_data(request, engine)
 
 
 @router.post("/api-engines/{engine}/models")
 async def test_key(request: Request, engine: str):
-    """Check the saved key with the provider's free model list; nothing is generated."""
+    """Check the saved key and refresh its model list (free); nothing is generated."""
     require_engine(engine)
-    try:
-        models = await run_in_threadpool(list_models, request.app.state.settings, engine)
-    except EngineError as error:
-        raise HTTPException(409, error.message) from error
-    return {"models": models}
+    error = await _refresh(request, engine)
+    if error:
+        raise HTTPException(409, error)
+    return engine_data(request, engine)

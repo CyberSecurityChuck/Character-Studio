@@ -1,6 +1,7 @@
 """Quality checks and saved generation presets (Phase 6B, DECISIONS.md D023)."""
 
 import json
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.api_engines import engine_timeout
 from backend.models import EngineJob, EngineSettings, GenerationPreset, QualityCheck
-from backend.quality import check_data
+from backend.quality import BUILTIN_BY_ID, BUILTIN_PRESETS, check_data
 from backend.results import require_result
 from backend.scene_store import now
 from backend.scenes import (
@@ -91,6 +92,7 @@ class PresetInput(BaseModel):
     scene_changes: str = Field(default="", max_length=4000)
     negative_additions: str = Field(default="", max_length=2000)
     images: int = Field(default=1, ge=1, le=10)
+    category: Literal["individual", "couple", "family", "friends", "other"] = "other"
     revision: int | None = Field(default=None, ge=1)
 
     @field_validator("name")
@@ -108,6 +110,8 @@ def preset_data(preset: GenerationPreset) -> dict:
         "scene_changes": preset.scene_changes,
         "negative_additions": preset.negative_additions,
         "images": preset.images,
+        "category": preset.category,
+        "builtin": False,
         "revision": preset.revision,
         "created_at": preset.created_at,
         "updated_at": preset.updated_at,
@@ -115,6 +119,8 @@ def preset_data(preset: GenerationPreset) -> dict:
 
 
 def _name_taken(session, name: str, own_id: str | None = None) -> bool:
+    if any(p["name"].lower() == name.lower() for p in BUILTIN_PRESETS):
+        return True
     found = session.scalar(
         select(GenerationPreset.id).where(func.lower(GenerationPreset.name) == name.lower())
     )
@@ -126,7 +132,9 @@ def presets(request: Request):
     with Session(request.app.state.engine) as session:
         order = func.lower(GenerationPreset.name)
         items = session.scalars(select(GenerationPreset).order_by(order))
-        return [preset_data(p) for p in items]
+        builtins = [{**p, "revision": 0, "created_at": None, "updated_at": None}
+                    for p in BUILTIN_PRESETS]
+        return builtins + [preset_data(p) for p in items]
 
 
 @router.post("/presets", status_code=201)
@@ -150,6 +158,10 @@ def create_preset(request: Request, body: PresetInput):
 
 
 def require_preset(session, preset_id: str) -> GenerationPreset:
+    if preset_id in BUILTIN_BY_ID:
+        raise HTTPException(
+            409, "Built-in presets can't be changed. Save your changes as a new preset instead."
+        )
     preset = session.get(GenerationPreset, preset_id)
     if preset is None:
         raise HTTPException(404, "This preset no longer exists. Reload the page.")
@@ -175,5 +187,7 @@ def update_preset(request: Request, preset_id: str, body: PresetInput):
 def delete_preset(request: Request, preset_id: str):
     """Results keep the preset name recorded with their run; nothing else changes."""
     with writing(request) as session:
+        if preset_id in BUILTIN_BY_ID:
+            require_preset(session, preset_id)
         session.execute(delete(GenerationPreset).where(GenerationPreset.id == preset_id))
     return {"deleted": True}

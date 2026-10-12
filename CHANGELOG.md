@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-12 — Phase 6A + 6B review fixes
+
+- From the user's combined review (D024). Studio settings: separate **Analysis engine** and **Generation engine** panels; engines grouped as subscriptions, pay per use and Manual (last), with Subscription / API key tags and live state; only the selected engine's settings (status or API key, model, time limit) show below. The API keys panel is folded into the selected engine.
+- Model choice for Claude Code (Default, Opus, Sonnet, Fable) and Codex (Default or a typed name), passed with `--model` / `-m`; used for analysis, Polish prompt and quality checks.
+- New searchable model picker with a Recommended tag. A key's model list is fetched when the key is saved and kept; Test key refreshes it.
+- Result viewer: "Made from" and "Quality check" stacked full width.
+- 10 built-in presets (Individual, Couple, Family, Friends) that can be customised into your own; custom presets get a category and "Save as new preset". The Prompt step's preset controls moved into their own bar with a proper Save as preset button.
+- Schema `0010_model_lists` (additive). New `frontend/src/ModelPicker.tsx`, `tests/test_engine_models.py` (2 tests; 129 total).
+
 ## 2026-10-12 — Phase 6B: quality checks, presets and comparison
 
 - Started at the user's request; 6A and 6B will be reviewed together with one checklist. See D023.

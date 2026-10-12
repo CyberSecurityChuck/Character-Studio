@@ -409,13 +409,13 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0009_quality"
+        assert client.get("/api/health").json()["schema_revision"] == "0010_model_lists"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []
         # The rebuilt tables accept the API engines and still refuse unknown ones.
         settings_now = client.get("/api/engines/settings").json()
-        assert settings_now["api_timeout"] == 180 and settings_now["api_models"] == {}
+        assert settings_now["api_timeout"] == 180 and settings_now["models"] == {}
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
         db.execute("UPDATE engine_settings SET analysis_engine = 'gemini_api'")
         db.execute("UPDATE scene_analyses SET source = 'openai_api'")

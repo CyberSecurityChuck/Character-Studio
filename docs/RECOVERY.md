@@ -75,3 +75,7 @@ Schema `0008_api_engines` rebuilds `engine_settings` and `scene_analyses` with t
 ## Phase 6B quality checks and presets
 
 A quality check is an engine job of kind `check` (result id in `input_id`) with its own job folder (`jobs/<scene>/check-<n>/`: numbered images from the approval, the result, `instruction.txt`, `schema.json`, and for API engines `request.json`/`response.json`). It follows the same restart rules as every run: running → Interrupted, waiting → cancelled; nothing is resent. A completed check is a `quality_checks` row; the job's `result_id` points at it. If the result was deleted before the check started, or an approved file is missing or changed, the check fails with "Nothing was sent". Presets are rows in `generation_presets`; generation jobs record a preset by name, so deleting a preset changes no history. Schema `0009_quality` is additive.
+
+## Phase 6 review fixes
+
+Schema `0010_model_lists` adds `engine_settings.model_lists_json` (each API engine's last model list and when it was fetched) and `generation_presets.category`; both have defaults. Built-in presets are not stored: they live in code, so a restore or upgrade always has the current set. Engine runs record the model they used (`settings_json`), including subscription CLI runs with a chosen model.

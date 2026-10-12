@@ -111,8 +111,18 @@ def engine_timeout(row, engine: str) -> int:
 
 
 def models_of(row) -> dict:
+    """The chosen model per engine and purpose, for API and subscription engines alike."""
     try:
         value = json.loads(row.api_models_json or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def model_lists_of(row) -> dict:
+    """Model lists saved after a key was saved or tested: {engine: {"models", "checked_at"}}."""
+    try:
+        value = json.loads(row.model_lists_json or "{}")
     except json.JSONDecodeError:
         return {}
     return value if isinstance(value, dict) else {}
