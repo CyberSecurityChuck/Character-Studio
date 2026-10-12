@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4), **generation & results** (Phase 5), **batch processing** (Phase 5.5) **optional API analysis engines** with your own keys (Phase 6A) and **quality checks, comparison and presets** (Phase 6B) **optional API image engines** (Gemini image, OpenAI Images; Phase 6C-1) and **region editing and replacing one person** (Phase 6C-2) work today. Encrypted backups come next. See the [roadmap](#-roadmap).
+> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4), **generation & results** (Phase 5), **batch processing** (Phase 5.5) **optional API analysis engines** with your own keys (Phase 6A) and **quality checks, comparison and presets** (Phase 6B) **optional API image engines** (Gemini image, OpenAI Images; Phase 6C-1) and **region editing and replacing one person** (Phase 6C-2) and **password-protected backups** (Phase 6D) work today. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -51,7 +51,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🎯 | Adjustable round thumbnails (drag and zoom; originals never altered) | ✅ Available |
 | 👨‍👩‍👧 | Reusable groups: couples, families, friends | ✅ Available |
 | ♻️ | Crash-safe storage: stale-edit protection, upload/delete recovery | ✅ Available |
-| 💾 | Consistent backups with per-file checks; restore that never overwrites your data | ✅ Available |
+| 💾 | Consistent backups with per-file checks, optionally password-protected (AES-256); restore that never overwrites your data | ✅ Available |
 | 🔍 | Scene upload and AI scene analysis (Claude or Codex, or manual), editable prompt | ✅ Available |
 | 🧑‍🤝‍🧑 | Map people in the scene to saved characters, pick reference photos; optional "Polish prompt" | ✅ Available |
 | ✅ | Review screen and approval snapshots that cancel themselves when any input changes | ✅ Available |
@@ -207,7 +207,7 @@ flowchart TB
     classDef later fill:#94A3B8,stroke:#475569,color:#0F172A,stroke-width:2px
 ```
 
-Phase 6 is in progress: optional API engines (6A, done), identity and composition checks with presets and comparison (6B, done), API image engines (6C-1, built) and region editing with selective replacement (6C-2, built), and encrypted backups (6D). The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md).
+Phase 6 is built: optional API engines (6A, done), identity and composition checks with presets and comparison (6B, done), API image engines (6C-1) and region editing with selective replacement (6C-2), and password-protected backups (6D); 6C and 6D are awaiting review. The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md).
 
 ## 🛠️ Tech stack
 

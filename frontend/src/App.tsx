@@ -20,9 +20,8 @@ const titles: Record<Page, [string, string]> = {
   settings: ['Studio settings', 'Make this space yours. Keep your work close.'],
 }
 
-const upcoming = [
-  { name: 'Encrypted backups', phase: '6D', text: 'Private, even as a file.', detail: 'Password-protected backups that restore the same way.' },
-]
+// Phase 6 is the last planned phase; later ideas appear here once they are planned.
+const upcoming: { name: string; phase: string; text: string; detail: string }[] = []
 
 export default function App() {
   const [libraryBusy, setLibraryBusy] = useState(false)
@@ -128,7 +127,7 @@ export default function App() {
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7h18M3 17h18" /><circle cx="8" cy="7" r="3" fill="var(--surface)" /><circle cx="16" cy="17" r="3" fill="var(--surface)" /></svg> Studio settings
           </button>
         </nav>
-        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Region editing · Phase 6C</span></div>
+        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Encrypted backups · Phase 6D</span></div>
       </aside>
 
       <div className="workspace">
@@ -179,12 +178,12 @@ export default function App() {
               {latest.length > 0 && <><div className="section-title"><h2>Latest results</h2><button className="link-button" onClick={() => navigate('results')}>All results</button></div>
                 <section className="result-grid recent-results" aria-label="Latest results">{latest.map(r => <ResultCard key={r.id} result={r} title={r.scene_title} onOpen={() => navigate('scenes', `scenes/${r.scene_id}/generate`)} />)}</section></>}
 
-              <div className="section-title"><h2>What’s taking shape</h2><span>WHAT COMES NEXT</span></div>
+              {upcoming.length > 0 && <><div className="section-title"><h2>What’s taking shape</h2><span>WHAT COMES NEXT</span></div>
               <section className="roadmap" aria-label="Upcoming phases">{upcoming.map((item, index) => (
                 <article key={item.name} className="roadmap-card"><div className="card-top"><span className="step-number">0{index + 1}</span><span>Phase {item.phase}</span></div>
                   <h3>{item.name}</h3><p className="card-lead">{item.text}</p><p>{item.detail}</p><span className="planned">Coming in a later phase</span>
                 </article>
-              ))}</section>
+              ))}</section></>}
               <p className="footnote">Start small. Save often. Keep every step connected.</p>
             </> : <div className="settings-grid">
               <section className="panel" aria-labelledby="preferences-title"><span className="tiny-label">YOUR SPACE</span><h2 id="preferences-title">A name for your studio</h2><p>This preference is saved locally and stays after you restart.</p>

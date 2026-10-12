@@ -970,3 +970,12 @@ label.change-files:focus-within { outline: 3px solid var(--accent); outline-offs
   .edit-layout { grid-template-columns: 1fr; }
 }
 .region-key-head { margin: 24px 0 10px; }
+
+/* Password-protected backups (Phase 6D) */
+.backup-dialog { width: min(560px, 94vw); }
+.backup-kinds { grid-template-columns: 1fr; margin: 4px 0 6px; }
+.backup-dialog input[type="password"], .backup-dialog input[type="text"] { width: 100%; }
+.backup-dialog .checkbox-label { margin-top: 10px; }
+.backup-dialog .check-box { margin-top: 12px; }
+.lock-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: middle; color: var(--accent); background: var(--accent-soft); }
+.lock-chip .inline-icon { width: 13px; height: 13px; }

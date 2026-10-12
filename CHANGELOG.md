@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-12 — Phase 6D: password-protected backups
+
+- From the user's choices (D028): **Create backup** now asks **Protect with a password** (first) or **Plain backup**. Protected backups are one `.csbackup` file encrypted with AES-256-GCM, the key made from your password with scrypt; the password is never saved.
+- Protected backups are tagged in the list; **Check** asks for the password and then checks every file; a wrong password or a changed file is reported. **Restore-Studio.cmd** accepts `.csbackup` files and asks for the password. Download gives the protected file as is.
+- New `backend/backup_crypto.py`, `tests/test_encrypted_backups.py` (2 tests). Dependency `cryptography` (approved in D022). 6C and 6D are reviewed together.
+
 ## 2026-10-12 — Phase 6C-2: region editing and replacing a person
 
 - From the user's choices (D027): replacement uses only that person's approved photos; results from earlier approvals can be edited unless their approval was withdrawn.

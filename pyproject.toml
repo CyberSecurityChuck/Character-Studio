@@ -10,6 +10,7 @@ dependencies = [
     "sqlalchemy>=2.0,<3",
     "alembic>=1.14,<2",
     "pillow>=12,<13",
+    "cryptography>=45",
 ]
 
 [dependency-groups]

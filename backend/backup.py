@@ -7,6 +7,10 @@ hard-linked (or, where links are not possible, copied) into a snapshot folder. T
 is then written from that snapshot, so files deleted afterwards are still in it and
 the backup matches its database exactly. Nothing else has to wait for the zip.
 
+A backup can also be protected with a password (Phase 6D, `backend.backup_crypto`): the
+same zip is then encrypted into a `.csbackup` file and the plain zip is removed. The
+password is never stored; checking or restoring such a backup asks for it again.
+
 Restore runs only while the studio is stopped (`Restore-Studio.cmd`). It verifies the
 whole backup into a new folder first, then renames the current data folder to
 `<name>.before-restore-<time>` and puts the restored folder in its place. Nothing is
@@ -15,6 +19,7 @@ deleted or overwritten.
 Usage: python -m backend.backup list | verify <zip> | restore [<zip>]
 """
 
+import getpass
 import hashlib
 import json
 import os
@@ -32,13 +37,21 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import func, select
 
+from backend.backup_crypto import (
+    NotEncrypted,
+    WrongPassword,
+    decrypt_file,
+    encrypt_file,
+    is_encrypted,
+)
 from backend.configuration import ASSET_DIRECTORIES, Settings, asset_path
 from backend.keystore import KEY_DIRECTORY
 from backend.models import Character, GenerationResult, ReferencePhoto, Scene
 from backend.persistence import writing_session
 
 FORMAT = 1
-NAME = re.compile(r"^character-studio-backup-\d{8}-\d{6}(-\d+)?\.zip$")
+NAME = re.compile(r"^character-studio-backup-\d{8}-\d{6}(-\d+)?\.(zip|csbackup)$")
+STAMP = re.compile(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})")
 BACKED_UP = tuple(d for d in ASSET_DIRECTORIES if d != "backups")
 # Already compressed; storing them avoids wasted work.
 STORED = {".jpg", ".jpeg", ".png", ".webp", ".zip"}
@@ -119,15 +132,17 @@ def _list_assets(settings: Settings) -> list[str]:
     return files
 
 
-def create_backup(engine, settings: Settings) -> Path:
-    """Write one backup zip and return its path."""
+def create_backup(engine, settings: Settings, password: str | None = None) -> Path:
+    """Write one backup and return its path: a zip, or (with a password) a `.csbackup`."""
     folder = backups_dir(settings)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    name, n = f"character-studio-backup-{stamp}.zip", 1
-    while (folder / name).exists():
+    base, n = f"character-studio-backup-{stamp}", 1
+    while any((folder / f"{base}{ext}").exists() for ext in (".zip", ".csbackup")):
         n += 1
-        name = f"character-studio-backup-{stamp}-{n}.zip"
+        base = f"character-studio-backup-{stamp}-{n}"
+    name = f"{base}.zip"
     partial = folder / f"{name}.partial"
+    sealed = folder / f"{base}.csbackup.partial"
     snapshot = folder / f"{name}.files.partial"
     try:
         # One moment for the database and its files; writes wait only for this part.
@@ -163,9 +178,18 @@ def create_backup(engine, settings: Settings) -> Path:
             for key in ["studio.db", *files]:
                 manifest["files"][key] = _add(archive, snapshot.joinpath(*key.split("/")), key)
             archive.writestr("manifest.json", json.dumps(manifest, indent=2))
-        partial.replace(folder / name)
+        if password is not None:
+            # The plain zip exists only as a `.partial` inside the data folder, which holds
+            # the same data unencrypted anyway, and is removed as soon as it is sealed.
+            encrypt_file(partial, sealed, password)
+            partial.unlink()
+            name = f"{base}.csbackup"
+            sealed.replace(folder / name)
+        else:
+            partial.replace(folder / name)
     except BaseException:
         partial.unlink(missing_ok=True)
+        sealed.unlink(missing_ok=True)
         raise
     finally:
         shutil.rmtree(snapshot, ignore_errors=True)
@@ -183,8 +207,21 @@ def read_manifest(path: Path) -> dict:
     return manifest
 
 
+def _stamp_time(name: str) -> str | None:
+    match = STAMP.search(name)
+    if not match:
+        return None
+    y, mo, d, h, mi, s = (int(v) for v in match.groups())
+    return datetime(y, mo, d, h, mi, s, tzinfo=UTC).isoformat()
+
+
 def backup_info(path: Path) -> dict:
-    info = {"name": path.name, "size": path.stat().st_size, "created_at": None, "counts": None}
+    info = {"name": path.name, "size": path.stat().st_size, "created_at": None, "counts": None,
+            "encrypted": False}
+    if is_encrypted(path):
+        # Its contents (and counts) can only be read with the password.
+        info.update(encrypted=True, created_at=_stamp_time(path.name))
+        return info
     try:
         manifest = read_manifest(path)
     except BackupError as error:
@@ -257,11 +294,31 @@ def extract_verified(path: Path, target: Path) -> dict:
     return manifest
 
 
-def verify_backup(path: Path) -> dict:
+def open_backup(path: Path, password: str | None, scratch: Path) -> Path:
+    """The plain zip of a backup: the file itself, or a decrypted copy inside `scratch`."""
+    if not is_encrypted(path):
+        return path
+    if not password:
+        raise BackupError("This backup is protected with a password. Enter it to continue.")
+    plain = scratch / "decrypted.zip"
+    try:
+        decrypt_file(path, plain, password)
+    except (WrongPassword, NotEncrypted) as error:
+        raise BackupError(str(error)) from error
+    return plain
+
+
+def verify_backup(path: Path, password: str | None = None) -> dict:
     """Full check without touching the data folder: every hash, plus the database."""
     with tempfile.TemporaryDirectory(prefix="studio-verify-") as scratch:
-        manifest = extract_verified(path, Path(scratch) / "check")
-    return {"ok": True, "files": len(manifest["files"]), "counts": manifest["counts"]}
+        plain = open_backup(path, password, Path(scratch))
+        manifest = extract_verified(plain, Path(scratch) / "check")
+    return {
+        "ok": True,
+        "files": len(manifest["files"]),
+        "counts": manifest["counts"],
+        "encrypted": plain != path,
+    }
 
 
 def restore_backup(path: Path, data_dir: Path) -> tuple[Path, Path | None]:
@@ -311,17 +368,18 @@ class BackupRunner:
         self.error: str | None = None
         self.last: str | None = None
 
-    def start(self) -> bool:
+    def start(self, password: str | None = None) -> bool:
         with self._lock:
             if self.running:
                 return False
             self.running, self.error = True, None
-        threading.Thread(target=self._run, name="backup", daemon=True).start()
+        # The password lives only in this thread's arguments and is never stored.
+        threading.Thread(target=self._run, args=(password,), name="backup", daemon=True).start()
         return True
 
-    def _run(self) -> None:
+    def _run(self, password: str | None) -> None:
         try:
-            self.last = create_backup(self.engine, self.settings).name
+            self.last = create_backup(self.engine, self.settings, password).name
         except BackupError as error:
             self.error = str(error)
         except OSError:
@@ -340,10 +398,12 @@ def _choose(settings: Settings) -> Path:
     print("Backups in your data folder (newest first):")
     for number, item in enumerate(items, start=1):
         counts = item["counts"] or {}
-        print(
-            f"  {number}. {item['name']}  ({item['size'] // 1024} KB, "
-            f"{counts.get('characters', '?')} characters, {counts.get('scenes', '?')} scenes)"
+        what = (
+            "password protected"
+            if item["encrypted"]
+            else f"{counts.get('characters', '?')} characters, {counts.get('scenes', '?')} scenes"
         )
+        print(f"  {number}. {item['name']}  ({item['size'] // 1024} KB, {what})")
     answer = input("Number to restore [1]: ").strip() or "1"
     if not answer.isdigit() or not 1 <= int(answer) <= len(items):
         raise BackupError("No backup chosen. Nothing was changed.")
@@ -367,7 +427,11 @@ def main(argv: list[str]) -> int:
             source = Path(argv[1]).resolve() if len(argv) > 1 else _choose(settings)
             # Copy a backup that lives inside the data folder out of it before renaming.
             with tempfile.TemporaryDirectory(prefix="studio-restore-") as scratch:
-                if source.is_relative_to(settings.data_dir):
+                if is_encrypted(source):
+                    # Typed here, never shown, stored or logged (Phase 6D).
+                    password = getpass.getpass("This backup is protected. Password: ")
+                    source = open_backup(source, password, Path(scratch))
+                elif source.is_relative_to(settings.data_dir):
                     copy = Path(scratch) / source.name
                     shutil.copy2(source, copy)
                     source = copy
