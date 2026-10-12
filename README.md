@@ -8,7 +8,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 
 [![CI](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A0442A.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Early%20Development-F59E0B.svg)](#-roadmap)
+[![Status](https://img.shields.io/badge/Status-Phases%201--6%20complete-2E7D32.svg)](#-roadmap)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-quick-start)
 <br/>
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -17,7 +17,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![Local-first](https://img.shields.io/badge/Local--first-No%20Cloud%20Backend-2E7D32.svg)](#-privacy-by-design)
-[![No API keys](https://img.shields.io/badge/AI-No%20API%20Keys-7C3AED.svg)](#-how-the-ai-part-works)
+[![AI](https://img.shields.io/badge/AI-Your%20subscriptions%20first-7C3AED.svg)](#-how-the-ai-part-works)
 
 <br/>
 
@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **Early development.** The **Character Library** (Phases 1–2), **Scenes & AI analysis** (Phase 3) and **character mapping, prompt polishing and approval** (Phase 4), **generation & results** (Phase 5), **batch processing** (Phase 5.5) **optional API analysis engines** with your own keys (Phase 6A) and **quality checks, comparison and presets** (Phase 6B) **optional API image engines** (Gemini image, OpenAI Images; Phase 6C-1) and **region editing and replacing one person** (Phase 6C-2) and **password-protected backups** (Phase 6D) work today. See the [roadmap](#-roadmap).
+> **All six planned phases are built and reviewed.** The Character Library, scene analysis, character mapping and approval, generation and results, batch processing, and Phase 6: optional API engines with your own keys, quality checks, comparison and presets, region editing and replacing one person, and password-protected backups. It is a personal project for Windows, developed in small reviewed phases. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -40,7 +40,7 @@ Recreating a photo with different people usually means re-uploading the same ref
 - 🧭 **Composition and identity stay separate.** The scene decides *how and where*; your character photos decide *who*.
 - ✅ **Nothing generates without your approval** of the exact prompt, photos and person-to-subject mapping.
 - 🔒 **Everything stays on your computer.** Data leaves only when you click an AI action.
-- 💸 **No API keys, no per-image billing.** It drives the official `claude` and `codex` command-line tools under your own subscriptions.
+- 💸 **Your subscriptions first.** By default it drives the official `claude` and `codex` command-line tools under your own plans: no API keys, no per-image billing. Paid API engines are optional, off by default, and ask before every run.
 
 ## 🧩 Features
 
@@ -57,6 +57,9 @@ Recreating a photo with different people usually means re-uploading the same ref
 | ✅ | Review screen and approval snapshots that cancel themselves when any input changes | ✅ Available |
 | 🎨 | One-click generation via Codex CLI from an approval, manual export/import, results gallery with Base Image comparison | ✅ Available |
 | 📦 | Several scenes at once: upload, analyse and generate approved scenes in a queue that pauses at plan limits; several images per click; group suggestions | ✅ Available |
+| 🔑 | Optional API engines with your own keys: analysis (Gemini, Anthropic, OpenAI) and image generation (Gemini image, OpenAI Images); keys encrypted for your Windows account, every paid run confirmed | ✅ Available |
+| 🔎 | Quality checks (composition and identity scores), comparison view (side by side, slider, overlay, difference) and generation presets | ✅ Available |
+| ✂️ | Edit area: fix one region or replace one person with their approved photos; only the marked area changes (Codex, OpenAI, Gemini, FLUX) | ✅ Available |
 
 ## 🔄 How it works
 
@@ -76,7 +79,10 @@ flowchart TB
         F --> G{"✅ You<br/>approve"}:::approve
         G --> H{"🎨 Generate"}:::done
         H -->|Codex CLI| I["🖼️ Results gallery<br/>never overwritten"]:::done
+        H -->|Optional API engine| I
         H -->|Manual export / import| I
+        I --> J["🔎 Check & compare<br/>✂️ Edit one area"]:::done
+        J -->|new version| I
     end
     PREP ==> CREATE
     style PREP fill:transparent,stroke:#F59E0B,stroke-width:2px
@@ -94,19 +100,32 @@ flowchart TB
 
 ## 🤖 How the AI part works
 
-*Analysis, prompt polishing and generation all work today.* Character Studio does **not** call paid AI APIs. When you click an AI action, it runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder:
+By default Character Studio runs the **official command-line tools** you installed and signed into yourself, one job at a time, in a private job folder. No API keys and no per-image billing:
 
 | Step | Default engine | Alternatives | Uses |
 |---|---|---|---|
-| 🔍 Scene analysis | **Claude Code** (`claude -p`) | Codex · Manual | Claude Pro plan |
-| ✍️ Polish prompt (optional) | **Claude Code** (`claude -p`) | Keep template prompt | Claude Pro plan |
-| 🎨 Image generation | **Codex CLI** (`codex exec`) | Manual export / import | ChatGPT plan with image generation |
+| 🔍 Scene analysis | **Claude Code** (`claude -p`) | Codex · Manual · optional API | Claude plan |
+| ✍️ Polish prompt (optional) | **Claude Code** (`claude -p`) | Keep template prompt | Claude plan |
+| 🎨 Image generation | **Codex CLI** (`codex exec`) | Manual export / import · optional API | ChatGPT plan with image generation |
+| 🔎 Quality check | Your analysis engine | — | That engine's plan or key |
+| ✂️ Edit area | **Codex CLI** | OpenAI Images · Gemini image · FLUX | ChatGPT plan, or that API |
 
-- The studio **never reads, stores or forwards** your CLI logins, never scrapes websites and never uses unofficial endpoints or gateways.
+**Optional API engines** (Phase 6) use your own keys and are billed by that company, separately from your plans. They are off until you save a key and select them, and the studio asks you to confirm the possible charge before every run or batch:
+
+| Company | Analysis | Images | Edit area |
+|---|---|---|---|
+| Google (Gemini API) | ✅ tested with a free key | Gemini image ¹ | ✅ ¹ |
+| Anthropic API | ✅ ¹ | — | — |
+| OpenAI API | ✅ ¹ | OpenAI Images ¹ | ✅ ¹ |
+| Black Forest Labs | — | — | FLUX.1 Fill, FLUX 3 ¹ |
+
+<sub>¹ Built and tested against a local stand-in; marked *unverified* in the studio until a real run has been observed.</sub>
+
+- The studio **never reads, stores or forwards** your CLI logins, never scrapes websites and never uses unofficial endpoints or gateways. API keys are encrypted for your Windows account, never shown again, never backed up and only sent to their own company.
 - Every run has a **timeout and a Cancel button** and is **never retried automatically**.
 - The **manual bridge** (copy the instruction, export a package, import the result) stays available as a fallback.
 
-These choices were checked in a hands-on [engine verification spike](docs/PROVIDER_FINDINGS.md): real CLI flags, output locations, failure modes and folder confinement. The design rationale is in [DECISIONS.md](DECISIONS.md) (D009).
+These choices were checked in a hands-on [engine verification spike](docs/PROVIDER_FINDINGS.md): real CLI flags, output locations, failure modes and folder confinement; the API facts were re-checked against each provider's documentation before building. The design rationale is in [DECISIONS.md](DECISIONS.md) (D009, D022–D028).
 
 ## 🏗️ Architecture
 
@@ -119,17 +138,19 @@ flowchart TB
         DB[("🗄️ SQLite<br/>versioned migrations")]:::store
         FS[("📁 Private data folder<br/>photos · thumbnails · results")]:::store
         Q["🧵 Job runner<br/>one job at a time"]:::core
-        CL["claude CLI"]:::cli
-        CX["codex CLI"]:::cli
-        UI <-->|"token-protected local API"| API
+        CL["Claude CLI"]:::cli
+        CX["Codex CLI"]:::cli
+        UI <-->|"Token-protected local API"| API
         API --> DB
         API --> FS
         API --> Q
         Q --> CL
         Q --> CX
+        Q --> AK["🔑 Optional API engines<br/>your keys, off by default"]:::cli
     end
-    CL -. "your Claude Pro login" .-> AN(["☁️ Anthropic"]):::cloud
-    CX -. "your ChatGPT login" .-> OA(["☁️ OpenAI"]):::cloud
+    CL -. "Your Claude Pro/Max login" .-> AN(["☁️ Anthropic"]):::cloud
+    CX -. "Your ChatGPT Plus/Pro login" .-> OA(["☁️ OpenAI"]):::cloud
+    AK -. "Only after you confirm the charge" .-> PR(["☁️ Google · Anthropic · OpenAI · Black Forest Labs"]):::cloud
 
     classDef ui fill:#0EA5E9,stroke:#0369A1,color:#ffffff,stroke-width:2px
     classDef core fill:#A0442A,stroke:#6B2A18,color:#ffffff,stroke-width:2px
@@ -139,7 +160,7 @@ flowchart TB
     style PC fill:transparent,stroke:#A0442A,stroke-width:2px
 ```
 
-<sub>The CLIs run on your computer under your own sign-ins. The app itself has no cloud backend.</sub>
+<sub>The CLIs run on your computer under your own sign-ins; API engines are used only with your own keys. The app itself has no cloud backend.</sub>
 
 ## 🔒 Privacy by design
 
@@ -147,15 +168,17 @@ flowchart TB
 |---|---|
 | ✅ Character profiles, reference photos, thumbnails | 🔍 **Analyse** sends the scene image to Anthropic (or OpenAI if you pick Codex) |
 | ✅ Scenes, prompts, approvals, results, history | ✍️ **Polish prompt** sends prompt text (no images) to Anthropic |
-| ✅ The database and all logs | 🎨 **Generate** sends the scene and the chosen reference photos to OpenAI |
+| ✅ The database and all logs | 🎨 **Generate** sends the scene and the chosen reference photos to OpenAI (or to your chosen API engine's company) |
+| ✅ Backups (optionally password-protected) and API keys | 🔎 **Check quality** and ✂️ **Edit area** send the result (and its approved photos) to the engine you chose |
 
-Only **Analyse** (the Base Image, with location data removed), **Polish prompt** (prompt and analysis text) and **Generate** (the Base Image and the approved reference photos, with location data removed) send anything, and only when you click them. Character names never go into the prompt or into the files Codex receives.
+Only these actions send anything, always with location data removed, and only when you click them. API engines first show what is sent, to which company, and ask you to confirm the possible charge. Character names never go into the prompt or into the files an engine receives.
 
 - 🏠 The server only listens on `127.0.0.1`, with host/origin checks and a per-session request token.
 - 📂 Your data lives in a separate folder (default `%USERPROFILE%\Character-Studio-Data`), never inside the source code.
 - 🧹 Thumbnails are stored without photo metadata. Location (GPS) data is stripped from every image before it is sent to an AI tool.
 - 🙅 No analytics, no remote fonts, no telemetry.
-- ⚠️ Local files are not encrypted, so anyone with access to your Windows account can read them.
+- 🔐 Backups can be protected with a password (AES-256-GCM; the password is never saved). API keys are encrypted with Windows DPAPI for your account.
+- ⚠️ The live data folder itself is not encrypted, so anyone with access to your Windows account can read it.
 - 🛡️ Git ignores photos, databases and logs, and CI runs a [privacy guard](.github/workflows/ci.yml) on every push.
 
 ## 🚀 Quick start
@@ -164,7 +187,7 @@ Only **Analyse** (the Base Image, with location data removed), **Polish prompt**
 > Character Studio currently targets **Windows 10/11**.
 
 **You need:** [Node.js 24 LTS](https://nodejs.org/) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.12 for you.
-For AI scene analysis and generation you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude Pro plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. The Character Library, manual analysis and manual export/import work without them.
+For AI scene analysis and generation you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. The Character Library, manual analysis and manual export/import work without them. API keys are optional and can be added later in Studio settings.
 
 ```powershell
 git clone https://github.com/CyberSecurityChuck/Character-Studio.git
@@ -189,17 +212,17 @@ Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:
 
 ```mermaid
 flowchart TB
-    subgraph NOW["✅ Done"]
+    subgraph CORE["✅ Core studio"]
         direction LR
         P1["1 · Foundation<br/>& continuity"]:::done --> P2["2 · Character<br/>Library"]:::done --> P25["2.5 · Engine<br/>verification"]:::done --> P3["3 · Scenes<br/>& analysis"]:::done --> P4["4 · Mapping<br/>& approval"]:::done --> P5["5 · Generation<br/>& results"]:::done --> P55["5.5 · Batch<br/>processing"]:::done
     end
-    subgraph LATER["🔜 Next → 🗓️ Planned"]
+    subgraph SIX["✅ Phase 6 · Quality and advanced features"]
         direction LR
-        P6["6 · Quality<br/>& extras"]:::next
+        P6A["6A · API<br/>engines"]:::done --> P6B["6B · Checks, presets<br/>& comparison"]:::done --> P6C["6C · API images<br/>& region editing"]:::done --> P6D["6D · Encrypted<br/>backups"]:::done
     end
-    NOW ==> LATER
-    style NOW fill:transparent,stroke:#2E7D32,stroke-width:2px
-    style LATER fill:transparent,stroke:#5C6BC0,stroke-width:2px
+    CORE ==> SIX
+    style CORE fill:transparent,stroke:#2E7D32,stroke-width:2px
+    style SIX fill:transparent,stroke:#2E7D32,stroke-width:2px
 
     classDef done fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
     classDef next fill:#F59E0B,stroke:#B45309,color:#1F1300,stroke-width:3px
@@ -207,7 +230,7 @@ flowchart TB
     classDef later fill:#94A3B8,stroke:#475569,color:#0F172A,stroke-width:2px
 ```
 
-Phase 6 is built: optional API engines (6A, done), identity and composition checks with presets and comparison (6B, done), API image engines (6C-1) and region editing with selective replacement (6C-2), and password-protected backups (6D); 6C and 6D are awaiting review. The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md).
+Every planned phase is built and was accepted after a hands-on review. New work beyond PLAN.md needs a new, explicitly approved phase. The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md); what changed and why is in the [CHANGELOG](CHANGELOG.md) and [DECISIONS.md](DECISIONS.md).
 
 ## 🛠️ Tech stack
 
@@ -217,7 +240,8 @@ Phase 6 is built: optional API engines (6A, done), identity and composition chec
 | Backend | Python 3.12 · FastAPI · Pydantic |
 | Storage | SQLite (SQLAlchemy + Alembic migrations) · local filesystem |
 | Images | Pillow |
-| AI engines | Claude Code CLI · Codex CLI (official, subscription-based) |
+| Security | Windows DPAPI (API keys) · `cryptography` (AES-256-GCM + scrypt for protected backups) |
+| AI engines | Claude Code CLI · Codex CLI (official, subscription-based) · optional Gemini, Anthropic, OpenAI and Black Forest Labs APIs (your keys) |
 | Tooling | uv · npm · pytest · Ruff · GitHub Actions |
 
 ## 📁 Project layout
@@ -239,6 +263,8 @@ uv run --locked pytest              # tests
 uv run --locked ruff check .        # lint
 npm --prefix frontend run build     # type-check + production build
 ```
+
+The same checks run in [GitHub Actions](.github/workflows/ci.yml) on every push and pull request, on Windows, together with the privacy guard. Tests never call a real AI service: the CLIs and provider APIs are replaced by local stand-ins.
 
 The project is built in small, approved phases and keeps continuity records ([PROJECT_STATUS](PROJECT_STATUS.md), [SESSION_HANDOFF](SESSION_HANDOFF.md), [CHANGELOG](CHANGELOG.md)), so any work session can be paused and resumed safely. It is developed with the help of AI coding assistants.
 

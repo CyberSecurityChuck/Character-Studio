@@ -26,12 +26,14 @@ If you share a generated image, make clear that it is AI-generated wherever that
 
 ## Provider rules still apply
 
-When you use the optional AI features, your images and prompts are processed by the provider you choose (Anthropic through Claude Code, or OpenAI through Codex) under **your own account and their terms and usage policies**. Character Studio does not bypass provider safety systems, and you must not try to.
+When you use the optional AI features, your images and prompts are processed by the provider you choose (Anthropic through Claude Code or the Anthropic API, OpenAI through Codex or the OpenAI API, Google through the Gemini API, or Black Forest Labs through FLUX) under **your own account and their terms and usage policies**. Character Studio does not bypass provider safety systems, and you must not try to. Some providers mark their images (for example, Google adds an invisible SynthID watermark).
 
 ## How the app helps
 
 - Everything stays on your computer by default. Nothing is sent anywhere until you click an AI action.
 - Every generation needs your explicit approval of the exact prompt, photos and mappings.
+- **Replace a person** (region editing) only uses the reference photos you approved for that person; replacing someone with a different person needs a new approval.
+- Edits never overwrite the original: each one is a new result that records what was changed.
 - The app never identifies unknown people. You name your characters yourself.
 - You can delete characters, photos and results at any time.
 

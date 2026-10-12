@@ -1,9 +1,12 @@
 name: CI
 
-# Runs only when started by hand (Actions tab → CI → "Run workflow", or
-# `gh workflow run CI`), typically at phase checkpoints, to save Actions minutes
-# while the repository is private. The same checks run locally before every commit.
+# Runs on every push to main and every pull request (the repository is public, so
+# Actions minutes are free), and by hand from the Actions tab or `gh workflow run CI`.
+# The same checks run locally before every commit.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:

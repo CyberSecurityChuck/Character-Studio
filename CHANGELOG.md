@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-12 — Phase 6 complete; docs ready for a public repository
+
+- The user's follow-up check passed (`Phase_Checks/Phase6CD_Followup_Report.md`: 16/16 steps, 0 problems, "Phase 6C and 6D look good"). 6C-1, 6C-2 and 6D are accepted, so every phase in PLAN.md is complete. Both success styles (toast and green inline confirmation) stay for now.
+- GitHub-facing docs updated for Phases 1–6: README (status, features, how the AI part works with the optional API engines, architecture, privacy, roadmap, tech stack, CI), USER_GUIDE (scope, keys and masks folders, AI capabilities, confirmations), SECURITY (API keys, protected backups, new scope items), RESPONSIBLE_USE (all providers, Replace a person), DESIGN (Phases 5–6), AGENTS and the PLAN.md status header (requirements unchanged).
+- CI now runs on every push to `main` and every pull request (and by hand), since the repository is becoming public.
+
 ## 2026-10-12 — Phase 6C + 6D review fixes
 
 - From the user's combined review (D029). **Edit area** stays off for results whose approval you withdrew, but the viewer now says so plainly and how to get an editable result (a result from the current approval, or a free **Import result**).

@@ -2,19 +2,21 @@
 
 A local-first home for reusable characters, reference scenes and approved image workflows. For the project overview, see the [README](../README.md). Commands below run from the project root folder.
 
-**Current scope: Phase 6B quality checks, presets and comparison**, on top of Phase 6A API engines (optional analysis with your own Google, Anthropic or OpenAI API key), Phase 5.5 Batch Processing, Phase 5 Generation and Results, Phase 4 Character Mapping and Approval, Phase 3 Scene Analysis and the Phase 2 Character Library. Add scenes, analyse them, assign saved characters to the people in them, choose reference photos, edit or polish the prompt, approve the exact inputs, then generate with Codex or export the package for any app and import the result. Several scenes can be added, analysed and generated as one batch. Do not upload personal photographs into the source folder.
+**Current scope: Phases 1–6 complete.** Save characters and reference photos (Phase 2), add scenes and analyse them (Phase 3), assign saved characters to the people in them, choose reference photos, edit or polish the prompt and approve the exact inputs (Phase 4), then generate with Codex or export the package for any app and import the result (Phase 5). Several scenes can be added, analysed and generated as one batch (Phase 5.5). Phase 6 adds optional API engines with your own keys (6A), quality checks, a comparison view and presets (6B), API image engines and region editing, including replacing one person with their approved photos (6C), and password-protected backups (6D). Do not upload personal photographs into the source folder.
 
-**How it works (D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. No API keys and no per-use billing; the studio never reads or stores either tool's login.
+**How it works (D009).** The studio stays the only screen you use. When you ask it to, it runs the official command-line tools on this PC in the background: **Claude Code** (`claude -p`, your Claude Pro subscription) analyses a scene and can optionally polish the prompt (you can pick Codex for analysis instead in Settings), and **Codex CLI** (`codex exec` with built-in image generation, your ChatGPT plan) generates the image from an approved prompt. The manual bridge (copy the instruction, export the package, import the result) remains as the fallback. This default path needs no API keys and has no per-use billing; the studio never reads or stores either tool's login. Optional API engines (Phase 6) use your own keys, are off by default and ask you to confirm every possibly charged run.
 
 ## Start and stop
 
 After setup, double-click **Start-Studio.cmd**. It starts the local service in the background and opens **http://127.0.0.1:8765**. Double-click **Stop-Studio.cmd** to stop the launcher-managed service. Closing the browser does not stop the service. Save changes before closing; only changes acknowledged as saved are durable.
 
+**Confirmations.** When something succeeds (a save, Test key, a backup check, a rename), a short notification appears in the top-right corner for a few seconds and the page shows a green confirmation. Problems are shown in red next to what caused them.
+
 The launcher refuses to stop a process whose executable/start time no longer matches its record. For terminal development, use `uv run --locked python -m backend` and Ctrl+C instead.
 
 ## First setup / clean checkout
 
-Prerequisites: Windows, Node.js 24 LTS with npm, and uv. Python 3.12 is managed by uv; dependencies live in the project's `.venv`. No OpenAI account credentials or API key are required by this application.
+Prerequisites: Windows, Node.js 24 LTS with npm, and uv. Python 3.12 is managed by uv; dependencies live in the project's `.venv`. No API key is required; API keys for the optional engines can be added later in Studio settings.
 
 For scene analysis (Phase 3) and later AI features: install and sign in to **Claude Code** (`claude`) with a **Claude Pro** subscription, and **Codex CLI** (`codex`) with a **ChatGPT plan that includes image generation (Plus or above)**. Sign in through each tool yourself; the studio only launches them. Without them, the manual bridge still works.
 
@@ -47,7 +49,7 @@ $env:STUDIO_MAX_UPLOAD_BYTES = '20971520' # 20 MiB per photo
 
 `STUDIO_DATA_DIR` must be absolute and outside (and not a parent of) the source repository. Changing it opens a different data directory; it does not move existing work. Stop the running service before changing configuration. Use the same environment configuration when stopping it. Do not put the live SQLite database in a shared/network/cloud-sync folder.
 
-The backend always binds to `127.0.0.1`. Host/origin checks, a per-process request token, CSP and no-store responses restrict browser-based misuse. This is a single-user local tool, not a public authenticated service. Local files are not encrypted; anyone with filesystem access can read them. No analytics, remote fonts or AI network clients are included.
+The backend always binds to `127.0.0.1`. Host/origin checks, a per-process request token, CSP and no-store responses restrict browser-based misuse. This is a single-user local tool, not a public authenticated service. The live data folder is not encrypted; anyone with access to your Windows account can read it. Two exceptions: API keys are stored in `keys\` encrypted with Windows DPAPI for your account (and never included in backups), and backups can be protected with a password. Edit masks are kept in `masks\`. No analytics or remote fonts are included; network requests go only to the AI provider you chose, when you start a run.
 
 ## Development
 
@@ -67,7 +69,7 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 ## AI capabilities and costs
 
-Scene analysis, prompt polishing and image generation run through the official CLIs (Phases 3–5) by default, with no automatic retry. Since Phase 6A, scene analysis can optionally use an **API engine** with your own key (see *API engines* below). Those runs are billed by that company, separately from your plans, and the studio asks before every run or batch. API image generation follows in Phase 6C.
+Scene analysis, prompt polishing and image generation run through the official CLIs (Phases 3–5) by default, with no automatic retry. Optionally, analysis, quality checks, image generation and region edits can use an **API engine** with your own key: Gemini, Anthropic or OpenAI for analysis; Gemini image or OpenAI Images for images; OpenAI Images, Gemini image or FLUX (Black Forest Labs) for edits (see the Phase 6 sections below). Those runs are billed by that company, separately from your plans, and the studio asks before every run or batch. Engines marked *unverified* have been tested only against a local stand-in.
 
 How it works (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. The Phase 2.5 spike verified both CLIs' flags, output locations and failure modes; the studio uses only those flags.
 
@@ -78,7 +80,7 @@ Each run uses your plan's allowance and sends data to that provider: **Analyse**
 - Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
 - Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
 - Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Approval covers Phases 1, 2, 2.5, 3, 4, 5 and 5.5. Phase 6 requires explicit approval.
+- Phases 1–6 are approved and accepted. Anything beyond PLAN.md needs a new, explicitly approved phase.
 
 For data recovery see **Backups and restore** below and `docs/RECOVERY.md`. Git backs up source history, not private application data.
 

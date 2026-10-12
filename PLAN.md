@@ -5,8 +5,8 @@
 **Revision 2.1 (2026-10-10):** CLI bridge first, manual bridge as
 fallback (DECISIONS.md D009). Adds Phase 2.5 and updates
 §8.3, §12, §20, §22 and Phases 3–5.
-**Project Status:** Planning
-**Implementation Status:** Not Started
+**Project Status:** Planning document (requirements unchanged since v2.1)
+**Implementation Status:** Phases 1–6 complete and accepted (2026-10-12); see PROJECT_STATUS.md
 **Development Environment:** Codex
 **Application Type:** Local-First AI Image Generation Studio
 
