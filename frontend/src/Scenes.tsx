@@ -6,6 +6,7 @@ import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
+import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
 import { replaceRoute, routeParts } from './route'
 
@@ -240,7 +241,7 @@ function ManualAnalysis({ scene, token, onImported, onClose }: { scene: SceneSum
         <label htmlFor="manual-reply" className="visually-hidden">Analysis reply</label>
         <textarea id="manual-reply" rows={8} value={text} placeholder='{ "schema_version": 1, … }' onChange={e => setText(e.target.value)} /></li>
     </ol>
-    <p className="library-status" role="status">{note}</p>
+    <StatusNote text={note} />
     {error && <p className="frame-error" role="alert">{error}</p>}
     <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="button" disabled={!text.trim() || busy} onClick={() => void submit()}>{busy ? 'Checking…' : 'Import analysis'}</button></div>
   </div>
@@ -260,7 +261,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
     <strong>{titles[job.status] ?? 'The run did not finish'}</strong>
     <p>{job.error_details}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' && job.engine === 'codex_cli' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
     {(job.status === 'interrupted' || (generation && job.recoverable)) && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
-    <span className="library-status" role="status">{note}</span>
+    <StatusNote text={note} />
     <div className="notice-actions">
       {/* An edit is started again from the result's Edit area, with its marked area. */}
       {!edit && <button type="button" disabled={busy} onClick={onRetry}>{job.status === 'interrupted' ? 'I checked — try again' : 'Try again'}</button>}
@@ -594,7 +595,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   return <div className="scene-workspace">
     {header}
     {error && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{error}</p></div>}
-    <p className="library-status" role="status">{busy ? 'Working…' : message}</p>
+    <StatusNote text={busy ? 'Working…' : message} />
     <div className="workspace-columns">
       <aside className="image-column">
         <div className="panel image-panel">
@@ -866,7 +867,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     </SelectionBar>}
     {error && <div className="error" role="alert"><strong>Your scenes could not be loaded.</strong><p>{error}</p><button className="secondary" onClick={() => void load()}>Try again</button></div>}
     {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
-    <p className="library-status" role="status">{busy ? 'Working…' : notice}</p>
+    <StatusNote text={busy ? 'Working…' : notice} />
     <BatchList token={token} refreshKey={batchKey} onOpenScene={openAt} onProgress={() => void load()} />
     {loading ? <p role="status">Loading your scenes…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">A REFERENCE. A NEW POSSIBILITY.</span><h2>{query ? 'No matching scenes' : 'Your first scene starts here'}</h2><p>{query ? 'Try another title.' : 'Add a Base Image whose pose, framing and light you want to recreate. The studio analyses it, you choose who appears, then review and approve the prompt.'}</p></div>
       : <div className="scene-grid">{filtered.map(s => {

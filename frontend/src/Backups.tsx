@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { request, send } from './api'
 import { Glyph } from './Controls'
+import { StatusNote, notify } from './Toast'
 
 type Counts = { characters: number; photos: number; scenes: number; results: number }
 type Item = { name: string; size: number; created_at: string | null; counts: Counts | null; encrypted?: boolean; problem?: string }
@@ -98,7 +99,11 @@ export default function Backups({ token }: { token: string }) {
   }
   async function check(name: string, password?: string) {
     setChecks(c => ({ ...c, [name]: 'checking' }))
-    try { const result = await send<Check>(`/api/backups/${name}/verify`, 'POST', token, password ? { password } : undefined); setChecks(c => ({ ...c, [name]: result })) }
+    try {
+      const result = await send<Check>(`/api/backups/${name}/verify`, 'POST', token, password ? { password } : undefined)
+      setChecks(c => ({ ...c, [name]: result }))
+      if (result.ok) notify(`Backup checked. All ${result.files} files match.`)
+    }
     catch (e) { setChecks(c => ({ ...c, [name]: { ok: false, problem: e instanceof Error ? e.message : 'The check could not be finished.' } })) }
   }
   async function remove(item: Item) {
@@ -113,7 +118,7 @@ export default function Backups({ token }: { token: string }) {
     <p>One file with your database, characters and photos, scenes, results and run folders, with a fingerprint of every file so it can be checked. You can protect it with a password. The studio keeps working while it is made.</p>
     {state?.error && <p className="frame-error" role="alert">The last backup failed: {state.error}</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
-    <p className="library-status" role="status">{note}</p>
+    <StatusNote text={note} />
     {state && (!state.items.length ? <p className="hint">No backups yet.</p> : <ul className="backup-list">{state.items.map(item => {
       const result = checks[item.name]
       const counts = item.counts ?? (result && result !== 'checking' && result.ok ? result.counts ?? null : null)

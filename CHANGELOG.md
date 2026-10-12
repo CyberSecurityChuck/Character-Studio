@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-12 — Phase 6C + 6D review fixes
+
+- From the user's combined review (D029). **Edit area** stays off for results whose approval you withdrew, but the viewer now says so plainly and how to get an editable result (a result from the current approval, or a free **Import result**).
+- **Success messages** are now easy to see everywhere: a toast in the top-right corner (green check, title, detail, closes itself after about 5 seconds) plus a green confirmation in the panel (green banner, or a green "Saved to this computer" badge next to Save). Test key, key saved, engine and studio-name saves, presets, backups, scene and library actions all use it. New `frontend/src/Toast.tsx`. No backend changes.
+
 ## 2026-10-12 — Phase 6D: password-protected backups
 
 - From the user's choices (D028): **Create backup** now asks **Protect with a password** (first) or **Plain backup**. Protected backups are one `.csbackup` file encrypted with AES-256-GCM, the key made from your password with scrypt; the password is never saved.

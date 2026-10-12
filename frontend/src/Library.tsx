@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type P
 import { getBootstrap, request, type Bootstrap } from './api'
 import { CardMenu, CopiesDialog, SelectionBar, TextDialog, type CopyChoice, type CopySummary } from './Controls'
 import { replaceRoute, routeParts } from './route'
+import { StatusNote } from './Toast'
 
 type Frame = { x: number; y: number; zoom: number }
 export type Photo = { id: string; label: string; width: number; height: number; frame?: Frame; thumbnail_url: string; original_url: string }
@@ -344,7 +345,7 @@ export default function Library({ data, onDirty, onBusy, onSession }: { data: Bo
       <button className="secondary" disabled={busy} onClick={() => void reload()}>Reload library</button>
     </div>
     {error && <div className="error" role="alert" tabIndex={-1} ref={errorRef}><strong>Could not finish that action.</strong><p>{error}</p><p>Your unsaved edits remain. Reloading discards them.</p></div>}
-    <p className="library-status" role="status">{busy ? message || 'Saving…' : message}</p>
+    <StatusNote text={busy ? message || 'Saving…' : message} />
     {loading ? <p role="status">Loading your library…</p> : tab === 'characters' ? <>
       <div className="library-toolbar filters">
         <div><label htmlFor="character-search">Search characters</label><input id="character-search" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name" /></div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, request, send } from './api'
 import { Glyph, InfoTip } from './Controls'
+import { StatusNote } from './Toast'
 
 /** Generation presets (Phase 6B, review fixes): scene changes and negative additions for the
  *  prompt, and how many images one click makes. Built-in presets are read-only; any preset can
@@ -127,7 +128,7 @@ export function PresetsPanel({ token }: { token: string }) {
         <button type="button" className="secondary compact" onClick={() => setEditing(p)}><Glyph name="edit" />{p.builtin ? 'Customise' : 'Edit'}</button>
       </li>)}</ul>
     </div>)}</div>
-    <p className="library-status" role="status">{message}</p>
+    <StatusNote text={message} />
     {editing && <PresetDialog preset={editing === 'new' ? undefined : editing} token={token} onClose={() => setEditing(null)} onSaved={(_p, note) => { setMessage(note); void reload() }} />}
   </section>
 }

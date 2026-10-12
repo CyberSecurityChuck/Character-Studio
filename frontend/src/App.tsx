@@ -9,6 +9,7 @@ import Library from './Library'
 import { replaceRoute, routeParts } from './route'
 import ResultsGallery, { ResultCard, type Result } from './Results'
 import Scenes, { StageChip, type SceneSummary } from './Scenes'
+import { Toaster, notify } from './Toast'
 
 type Page = 'overview' | 'settings' | 'characters' | 'scenes' | 'results'
 const pageRoutes: Record<string, Page> = { characters: 'characters', groups: 'characters', settings: 'settings', scenes: 'scenes', results: 'results' }
@@ -90,6 +91,7 @@ export default function App() {
       setData({ ...data, preferences })
       setName(preferences.studio_name)
       setSaved(true)
+      notify('Studio name saved. It is stored on this computer.')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Your change could not be saved.')
       setConflict(error instanceof ApiError && [403, 409].includes(error.status))
@@ -104,6 +106,7 @@ export default function App() {
   return (
     <div className="studio-layout">
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus() }}>Skip to content</a>
+      <Toaster />
       <aside className="sidebar">
         <a href="#" className="brand" onClick={(e) => { e.preventDefault(); navigate('overview') }} aria-label="Character Studio overview">
           <span className="brand-mark" aria-hidden="true">cs<span>.</span></span>
@@ -192,7 +195,7 @@ export default function App() {
                   <input id="studio-name" name="studio-name" value={name} maxLength={60} required disabled={saving} aria-describedby="name-hint save-status" onChange={(e) => { setName(e.target.value); setSaved(false) }} />
                   <p className="hint" id="name-hint">Up to 60 characters. Use a nickname if you prefer.</p>
                   <div className="save-row"><button disabled={!dirty || !name.trim() || saving || conflict}>{saving ? 'Saving…' : 'Save changes'}</button>
-                    <span id="save-status" role="status">{saving ? 'Saving to this computer…' : saved ? 'Saved to this computer' : dirty ? 'Unsaved changes' : 'All changes saved'}</span></div>
+                    <span id="save-status" role="status">{saving ? 'Saving to this computer…' : saved ? <span className="saved-flag"><svg className="status-check" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 12.5l4.2 4.2 8.8-9.4" /></svg>Saved to this computer</span> : dirty ? 'Unsaved changes' : 'All changes saved'}</span></div>
                 </form>
               </section>
               <section className="panel storage-panel" aria-labelledby="storage-title"><span className="tiny-label">LOCAL BY DEFAULT</span><h2 id="storage-title">Your files stay with you</h2><p>Application data lives separately from the source code.</p><label>Data folder</label><code>{data.data_directory}</code><p className="hint">Changing this location is a setup task: see the User Guide. Backups below cover everything in this folder that the studio manages.</p></section>

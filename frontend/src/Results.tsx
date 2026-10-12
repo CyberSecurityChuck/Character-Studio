@@ -6,6 +6,7 @@ import { CardMenu, Glyph, SelectionBar, type MenuItem } from './Controls'
 import { PresetSelect, usePresets } from './Presets'
 import { EditDialog } from './Edit'
 import { QualityPanel, checkBadge, type QualityCheck } from './Quality'
+import { StatusNote } from './Toast'
 import type { SceneDetail } from './Scenes'
 
 export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[]; box?: { x: number; y: number; width: number; height: number } | null }
@@ -209,6 +210,9 @@ export function ResultViewer({ result, base, sceneTitle, token, others = [], box
         onStarted={detail => onChanged(detail, `Checking result ${result.version}…`)} onDone={onCheckDone} />
       </div>
       {error && <p className="frame-error" role="alert">{error}</p>}
+      {!result.editable && <p className="notice-line edit-off"><strong>Edit area is off for this result.</strong> {result.approval_id && result.prompt_version
+        ? 'You withdrew the approval it was made from, and the studio only edits results whose approved inputs you still stand by.'
+        : 'The approval it was made from no longer exists.'} Results made from your current approval can be edited. To try editing without using your plan, choose <b>Import result</b> on the scene’s Generate step and edit that image.</p>}
       <div className="dialog-actions viewer-actions">
         <button type="button" className="danger secondary" disabled={busy} onClick={remove}>Delete</button>
         <span className="spacer" />
@@ -257,7 +261,7 @@ export function ExportDialog({ scene, token, onClose, onChanged, onImport }: {
         <li><strong>Import the image you made</strong> so it is saved with this scene and linked to the package.
           <div className="step-actions"><button type="button" className="secondary" onClick={() => onImport(packaged?.id ?? null)}>Import result</button></div></li>
       </ol>}
-      <p className="library-status" role="status">{note}</p>
+      <StatusNote text={note} />
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Close</button></div>
     </div>
@@ -336,17 +340,18 @@ export function GeneratePanel({ scene, data, generationEngine, generationModel, 
   async function removePackage(e: ExportPackage) {
     const imported = e.result_count ? ` The ${plural(e.result_count, 'result')} you imported from it ${e.result_count === 1 ? 'is' : 'are'} kept and stay${e.result_count === 1 ? 's' : ''} linked to ${e.result_count === 1 ? 'its' : 'their'} approval.` : ''
     if (!window.confirm(`Delete package ${e.number}? Its folder is removed from this computer: the copies of the approved photos, the prompt files and the zip.${imported} Packages you already downloaded are not affected.`)) return
-    setDeleting(e.id)
+    setDeleting(e.id); setProblem('')
     try {
       const done = await send<{ scene: SceneDetail; cleanup_pending: boolean }>(`/api/exports/${e.id}`, 'DELETE', token)
       onChanged(done.scene, done.cleanup_pending ? `Package ${e.number} removed from the list. Some files are locked and will be deleted after a restart.` : `Package ${e.number} deleted.`)
-    } catch (err) { setNote(err instanceof Error ? err.message : 'The package could not be deleted.') }
+    } catch (err) { setProblem(err instanceof Error ? err.message : 'The package could not be deleted.') }
     finally { setDeleting(null) }
   }
   const token = data.session_token
   const [viewing, setViewing] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null | false>(false)
   const [note, setNote] = useState('')
+  const [problem, setProblem] = useState('')
   const approval = scene.approval.state === 'approved' ? scene.approval.current : null
   // Codex and the API image engines generate from here; Manual only exports and imports.
   const api = isImageEngine(generationEngine)
@@ -424,7 +429,8 @@ export function GeneratePanel({ scene, data, generationEngine, generationModel, 
           {e.job_folder && <button type="button" className="secondary compact" onClick={() => copyText(e.job_folder!, setNote)}><Glyph name="folder" />Copy folder path</button>}
           <button type="button" className="danger secondary compact" disabled={busy || deleting === e.id} onClick={() => void removePackage(e)}><Glyph name="trash" />{deleting === e.id ? 'Deleting…' : 'Delete'}</button></span>
       </li>)}</ul></details>}
-    <p className="library-status" role="status">{note}</p>
+    <StatusNote text={note} />
+    {problem && <p className="frame-error" role="alert">{problem}</p>}
 
     {shown && <ResultViewer key={shown.id} result={shown} base={base} sceneTitle={scene.title} token={token} others={scene.results} boxes={boxes}
       runningCheck={scene.active_job?.kind === 'check' && scene.active_job.input_id === shown.id ? scene.active_job.id : null}
@@ -460,7 +466,7 @@ export default function ResultsGallery({ data, onOpenScene }: { data: Bootstrap;
       {!selecting && filtered.length > 0 && <button type="button" className="secondary" onClick={() => setSelecting(true)}>Select</button>}
     </div>
     {error && <div className="error" role="alert"><strong>Your results could not be loaded.</strong><p>{error}</p><button className="secondary" onClick={() => void load()}>Try again</button></div>}
-    <p className="library-status" role="status">{message}</p>
+    <StatusNote text={message} />
     {loading ? <p role="status">Loading your results…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">EVERY VERSION HAS A HOME.</span>
       <h2>{results.length ? 'No matching results' : 'Your results will appear here'}</h2>
       <p>{results.length ? 'Try another title or show all results.' : 'Approve a scene, then generate it with your generation engine or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p></div>

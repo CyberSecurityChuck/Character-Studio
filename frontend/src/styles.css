@@ -979,3 +979,26 @@ label.change-files:focus-within { outline: 3px solid var(--accent); outline-offs
 .backup-dialog .check-box { margin-top: 12px; }
 .lock-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: middle; color: var(--accent); background: var(--accent-soft); }
 .lock-chip .inline-icon { width: 13px; height: 13px; }
+
+/* Success messages (Phase 6C/6D review): toasts plus green inline confirmation */
+.toast-stack { position: fixed; top: 76px; right: 24px; z-index: 50; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 14px 16px; border: 1px solid #cfe3d4; border-left: 4px solid var(--success); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgb(41 46 41 / 18%); animation: toast-in .22s ease-out; }
+.toast.info { border-color: var(--line); border-left-color: var(--muted); }
+.toast-icon { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--success); color: #fff; }
+.toast.info .toast-icon { background: var(--muted); }
+.toast-icon svg { width: 16px; height: 16px; }
+.toast-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.toast-copy strong { font-size: 14px; }
+.toast-copy span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.toast-close { flex: none; min-height: 0; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; box-shadow: none; }
+.toast-close:hover { background: var(--background); color: var(--text); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+@media (max-width: 700px) { .toast-stack { top: 12px; right: 16px; left: 16px; width: auto; } }
+.status-note { min-height: 24px; margin: 0 0 12px; color: var(--muted); }
+.status-note.success { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border: 1px solid #cfe3d4; border-radius: 8px; background: #edf6ef; color: #24563a; font-weight: 600; }
+.status-note.success span { line-height: 1.45; }
+.status-check { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--success); }
+.saved-flag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: #edf6ef; border: 1px solid #cfe3d4; color: #24563a; font-weight: 600; }
+.saved-flag .status-check { width: 16px; height: 16px; margin: 0; }
+.notice-line.edit-off { margin: 12px 0 0; border: 1px solid var(--line); font-size: 13px; color: var(--text); line-height: 1.5; }

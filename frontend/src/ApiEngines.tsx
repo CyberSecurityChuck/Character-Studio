@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { request, send } from './api'
+import { StatusNote } from './Toast'
 
 /** Optional API engines (Phase 6A): keys, model lists and the charge confirmation. */
 export type ApiEngine = {
@@ -115,7 +116,7 @@ export function ApiKeyBox({ engine, token, selected, onChanged }: { engine: ApiE
       {editing && <button type="button" className="secondary" onClick={() => { setEditing(false); setKey('') }}>Cancel</button>}
       <button type="button" disabled={!!busy || !key.trim()} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save key'}</button>
     </div>}
-    {message && <p className="hint" role="status">{message}</p>}
+    <StatusNote text={message} />
     {error && <p className="frame-error" role="alert">{error}</p>}
     <p className="hint">Billed by {engine.company}, separately from your plans; every run asks you first. The key stays on this computer, protected for your Windows account, is never shown again or included in backups, and is only sent to {engine.company}.</p>
   </div>

@@ -3,6 +3,7 @@ import { ApiError, request, send } from './api'
 import { ApiKeyBox, isApiEngine, isImageEngine, useApiEngines, type ApiEngine } from './ApiEngines'
 import { InfoTip } from './Controls'
 import { ModelPicker } from './ModelPicker'
+import { notify } from './Toast'
 
 type Status = { engine: string; name: string; installed: boolean; version: string | null; signed_in: boolean; plan: string | null; message: string }
 type Purpose = 'analysis' | 'generation'
@@ -108,7 +109,8 @@ function CliStatus({ name, status, checking, onCheck }: { name: string; status?:
 function PanelFooter({ dirty, busy, message, error, blocked, label, onCancel, onSave }: { dirty: boolean; busy: boolean; message: string; error: string; blocked?: string; label: string; onCancel: () => void; onSave: () => void }) {
   return <>
     {error && <p className="frame-error" role="alert">{error}</p>}
-    <div className="panel-actions"><span className="spacer" role="status">{busy ? 'Saving…' : blocked && dirty ? blocked : dirty ? 'Unsaved changes' : message || 'All changes saved'}</span>
+    <div className="panel-actions"><span className="spacer" role="status">{busy ? 'Saving…' : blocked && dirty ? blocked : dirty ? 'Unsaved changes'
+      : message ? <span className="saved-flag"><svg className="status-check" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 12.5l4.2 4.2 8.8-9.4" /></svg>{message}</span> : 'All changes saved'}</span>
       <button type="button" className="secondary" disabled={!dirty || busy} onClick={onCancel}>Cancel</button>
       <button type="button" disabled={!dirty || busy || !!blocked} onClick={onSave}>{label}</button></div>
   </>
@@ -143,6 +145,7 @@ export default function Engines({ token }: { token: string }) {
       // Keep the other panel's unsaved edits.
       setForm(f => f && { ...applyPanel(f, next, panel), revision: next.revision })
       setMessages(m => ({ ...m, [panel]: 'Saved to this computer' }))
+      notify(`${panel === 'analysis' ? 'Analysis' : 'Generation'} engine saved. Your choice is saved on this computer.`)
     } catch (e) {
       const text = e instanceof Error ? e.message : 'Settings could not be saved.'
       setErrors(er => ({ ...er, [panel]: e instanceof ApiError && e.status === 409 ? `${text} Reload the page to see the latest settings.` : text }))
