@@ -117,11 +117,12 @@ PROVIDERS = (
         multiple_references=True,
         pricing="No calls from Character Studio. The other app's usage limits apply.",
     ),
-    # Not yet run against the real services by the studio, hence "unverified".
+    # Gemini was verified by the user's real analyses (Phase 6A + 6B review, 2026-10-12);
+    # the Anthropic and OpenAI APIs stay "unverified" until a real run is observed.
     ProviderCapabilities(
         id="gemini_api",
         name="Gemini API",
-        status="unverified",
+        status="available",
         description="Scene analysis with your own Google AI Studio key. Analyse sends the "
         "Base Image, without location data, to Google.",
         analysis=True,

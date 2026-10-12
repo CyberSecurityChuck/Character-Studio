@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-12 — Phase 6A + 6B accepted
+
+- The user's follow-up check passed (`Phase_Checks/Phase6AB_Followup_Report.md`: 14/14 steps, 0 problems, "Phase 6A and 6B look good"), after the combined review (`Phase6AB_Review_Report.md`) whose findings were fixed in D024. The reviews included real Gemini API analyses with the user's free key and a real Claude Code analysis with a chosen model. The Gemini API engine is now `available` in the provider registry; the Anthropic and OpenAI APIs stay `unverified`. Status and handoff updated; `main` pushed to the private GitHub repository with the user's approval (CI not run). 6C and 6D follow in a new chat.
+
 ## 2026-10-12 — Phase 6A + 6B review fixes
 
 - From the user's combined review (D024). Studio settings: separate **Analysis engine** and **Generation engine** panels; engines grouped as subscriptions, pay per use and Manual (last), with Subscription / API key tags and live state; only the selected engine's settings (status or API key, model, time limit) show below. The API keys panel is folded into the selected engine.

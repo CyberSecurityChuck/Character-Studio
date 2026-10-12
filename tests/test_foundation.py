@@ -23,7 +23,7 @@ def test_health_and_provider_registry_are_honest(client):
         "claude_cli": "available",
         "codex_cli": "available",
         "manual_bridge": "available",
-        "gemini_api": "unverified",
+        "gemini_api": "available",
         "anthropic_api": "unverified",
         "openai_api": "unverified",
     }
