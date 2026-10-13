@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-14 — Install instructions for a new computer
+
+- USER_GUIDE "First setup" now lists what you need (with what each tool is for and whether it is required), a copy-paste PowerShell block that installs Git, Node.js 24 LTS, uv, Claude Code and Codex CLI with winget and npm, clones the project, runs setup and starts the studio, the one-at-a-time `claude` / `codex login` sign-ins, notes (Node version, no winget, restart after installing the AI tools, other folders) and how to update to a newer version.
+- README Quick start: short install steps (winget, then npm, clone and setup in a new window, then sign in) with a link to the User Guide's **Install everything**. Docs only; no code changes.
+
 ## 2026-10-12 — README screenshots and repository settings
 
 - Four new README screenshots (Characters step, comparison slider, Edit area, engine settings) from a throwaway demo studio with fictional characters and scenes drawn as simple illustrations; no real people and no AI-generated images.

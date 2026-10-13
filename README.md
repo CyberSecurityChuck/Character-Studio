@@ -186,14 +186,29 @@ Only these actions send anything, always with location data removed, and only wh
 > [!IMPORTANT]
 > Character Studio currently targets **Windows 10/11**.
 
-**You need:** [Node.js 24 LTS](https://nodejs.org/) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.12 for you.
+**You need:** [Git](https://git-scm.com/), [Node.js 24 LTS](https://nodejs.org/) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.12 for you.
 For AI scene analysis and generation you will also need [Claude Code](https://docs.claude.com/en/docs/claude-code) with a Claude plan and [Codex CLI](https://developers.openai.com/codex/cli) with a ChatGPT plan that includes image generation. The Character Library, manual analysis and manual export/import work without them. API keys are optional and can be added later in Studio settings.
 
+**1. Install the tools** (once per computer):
+
 ```powershell
+winget install --id Git.Git -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id astral-sh.uv -e
+```
+
+**2. Open a new PowerShell window** (so it finds the new tools), then:
+
+```powershell
+npm install -g @anthropic-ai/claude-code @openai/codex   # optional, for one-click AI
 git clone https://github.com/CyberSecurityChuck/Character-Studio.git
 cd Character-Studio
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
 ```
+
+**3. Sign in once** with `claude` (your Claude account) and `codex login` (your ChatGPT account), one at a time.
+
+Step-by-step version with checks, notes and updating: **[User Guide → Install everything](docs/USER_GUIDE.md#install-everything)**.
 
 Then double-click **`Start-Studio.cmd`**. The studio opens at <http://127.0.0.1:8765>. Use **`Stop-Studio.cmd`** to stop it, and **`Restore-Studio.cmd`** (while stopped) to restore a backup made in Studio settings.
 

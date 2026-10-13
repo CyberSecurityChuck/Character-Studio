@@ -16,9 +16,90 @@ The launcher refuses to stop a process whose executable/start time no longer mat
 
 ## First setup / clean checkout
 
-Prerequisites: Windows, Node.js 24 LTS with npm, and uv. Python 3.12 is managed by uv; dependencies live in the project's `.venv`. No API key is required; API keys for the optional engines can be added later in Studio settings.
+### What you need
 
-For scene analysis (Phase 3) and later AI features: install and sign in to **Claude Code** (`claude`) with a **Claude Pro** subscription, and **Codex CLI** (`codex`) with a **ChatGPT plan that includes image generation (Plus or above)**. Sign in through each tool yourself; the studio only launches them. Without them, the manual bridge still works.
+| Requirement | Used for | Required? |
+| --- | --- | --- |
+| Windows 10 or 11 | Everything | Yes |
+| Git | Downloading the code (or use **Code → Download ZIP** on GitHub) | Yes |
+| Node.js 24 LTS (includes npm) | Building the interface; also runs Claude Code and Codex CLI | Yes |
+| uv | Installs Python 3.12 and the backend packages into the project's `.venv` (no separate Python install) | Yes |
+| Internet connection | Downloading packages during setup (normal startup needs none) | During setup |
+| **Claude Code**, signed in with a **Claude Pro or Max** plan | Analyse and Polish prompt with one click | For one-click AI |
+| **Codex CLI**, signed in with a **ChatGPT plan that includes image generation (Plus or above)** | Generate and Edit area with one click | For one-click AI |
+| API keys (Gemini, Anthropic, OpenAI, Black Forest Labs) | Optional pay-per-use engines | No, add them later in Studio settings |
+
+Without Claude Code and Codex CLI, the Character Library, manual analysis and manual export/import still work. Sign in to each tool yourself; the studio only launches them and never reads or stores their logins.
+
+### Install everything
+
+Open a **new PowerShell window** and paste the whole block. It installs the tools, downloads the project into your user folder, runs setup and starts the studio. The two `--accept` options agree to the winget source and package terms for you; leave them out to read and accept them yourself.
+
+```powershell
+# 1. Install Git, Node.js LTS and uv
+winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
+winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
+winget install --id astral-sh.uv -e --accept-source-agreements --accept-package-agreements
+
+# 2. Reload PATH so this window finds the new programs (no need to reopen PowerShell)
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
+
+# 3. Check the installs (Node should be v24.x)
+git --version
+node --version
+uv --version
+
+# 4. Install Claude Code and Codex CLI (skip if you will only use the manual bridge)
+npm install -g @anthropic-ai/claude-code
+npm install -g @openai/codex
+
+# 5. Download the project into your user folder and set it up
+Set-Location $HOME
+git clone https://github.com/CyberSecurityChuck/Character-Studio.git
+Set-Location .\Character-Studio
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
+
+# 6. Start the studio (the same as double-clicking Start-Studio.cmd)
+.\Start-Studio.cmd
+```
+
+Then sign in to the two AI tools. Run these **one at a time**, because each waits for you:
+
+```powershell
+claude
+```
+
+Sign in with your Claude account (type `/login` if it does not ask), then type `/exit`.
+
+```powershell
+codex login
+```
+
+Sign in with your ChatGPT account. Use your subscription logins, not API keys: the studio hides `ANTHROPIC_*`, `CLAUDE*`, `OPENAI_API_KEY` and `CODEX_API_KEY` from both tools, so they can only use their own sign-in.
+
+Finally, open **Studio settings → Analysis and generation engines** and click **Check again**. Both tools should show as installed and signed in.
+
+Notes:
+
+- **Node version.** The project is built and tested with Node.js 24 LTS. If `node --version` shows a newer major version, install Node.js 24 LTS from <https://nodejs.org/> and run steps 4–6 again.
+- **No winget?** Install the same tools from their websites: <https://git-scm.com/>, <https://nodejs.org/> and <https://docs.astral.sh/uv/>, then reopen PowerShell and continue from step 3.
+- **Installed the AI tools while the studio was running?** Stop it with **Stop-Studio.cmd** and start it again. The studio only finds programs that were installed when it started.
+- **Another project folder.** Change `Set-Location $HOME` in step 5 to the folder you want.
+- **Another data folder.** Your data goes to `%USERPROFILE%\Character-Studio-Data` automatically. To use a different folder with the double-click launcher, set it permanently before the first start, for example `setx STUDIO_DATA_DIR "D:\Character-Studio-Data"`, then reopen Explorer. See [Storage and configuration](#storage-and-configuration) for the rules.
+- **Next time** you only need to double-click **Start-Studio.cmd**.
+
+### Updating to a newer version
+
+Create a backup first (**Studio settings → Backups**), because a restart can upgrade the database. Then stop the studio with **Stop-Studio.cmd** and run, in the project folder:
+
+```powershell
+git pull
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
+```
+
+Start the studio again with **Start-Studio.cmd**.
+
+### What setup does
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
