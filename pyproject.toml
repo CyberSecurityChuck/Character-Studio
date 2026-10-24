@@ -9,7 +9,7 @@ dependencies = [
     "pydantic>=2.10,<3",
     "sqlalchemy>=2.0,<3",
     "alembic>=1.14,<2",
-    "pillow>=12,<13",
+    "pillow>=12,<14",
     "cryptography>=45",
 ]
 
