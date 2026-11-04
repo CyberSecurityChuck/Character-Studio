@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-05 — Pillow 13 security upgrade
+
+- Pillow 12.3.0 → **13.0.0** (D034), closing 72 Dependabot alerts (8 critical). `pyproject.toml` allows `pillow>=13,<14`; no code changes. 149 tests pass with no deprecation warnings; uploads, copy checks and duplicates checked on a real server.
+
 ## 2026-11-05 — Phase 7A and the UI refresh accepted
 
 - The user's last check passed (`Phase_Checks/Phase7A_Status_Check_Report.md`: 4/4, 0 problems, "Looks good"). Phase 7A (stage filters, folder import with copy checks, scene sets, Find duplicates) and the theme switch with the premium UI refresh are accepted. Docs only.
