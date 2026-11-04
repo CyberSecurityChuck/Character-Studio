@@ -2,7 +2,11 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: theme switch and premium UI refresh (2026-11-05)
+## Latest: copy status icons (2026-11-05)
+
+- UI review report (`Phase_Checks/Phase7A_UI_Review_Report.md`): 15/15, only step 3 flagged: show a symbol after the title box with the message on hover instead of the subtitle. Built in `SceneSets.tsx` (`copyInfo`, `CopyStatus` with a fixed-position `copy-pop` card that opens on hover, focus or click and closes on scroll or Escape; `NO_PREVIEW` placeholder) and `styles.css` (row grid `thumb title status actions`, fixed 176 px actions column, `is-*` kind classes). Verification: pytest 149 passed, ruff and build passed; browser QA in light and dark: clear, copy and error rows with identical height, title width and icon position, hover cards for copy and error. Short check: `Phase_Checks/Phase7A_Status_Check.html` (report `Phase7A_Status_Check_Report.md`).
+- Next action: on "looks good", record 7A and the theme and UI refresh as accepted (PROJECT_STATUS, D031/D033, CHANGELOG), then wait for the go-ahead on 7B. Nothing is pushed.
+
 
 - Choices (one at a time): do it next, before 7B; Warm darkroom dark theme; Light · Dark · System switch in the top bar; bundle Inter + Fraunces. Recorded in D033, a dated note in PLAN.md's Phase 7 section, CHANGELOG and USER_GUIDE ("Theme").
 - Code: `tokens.css` (light and dark tokens, about 30), `styles.css` (all colours on tokens; premium pass block at the end, incl. `.theme-switch`, segmented `.library-tabs`, phone nav scrolling), new `Theme.tsx` (`storedTheme`, `applyTheme`, `ThemeSwitch`; localStorage key `character-studio.theme`), `main.tsx` (font imports, theme applied before render), `App.tsx` (switch in `.topbar-tools`). Dependencies `@fontsource-variable/inter` and `@fontsource-variable/fraunces` 5.3.0 (exact).

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { ApiError, request, send, type Bootstrap } from './api'
 import { Dialog, plural } from './Batches'
 import { CardMenu, Glyph } from './Controls'
@@ -68,22 +68,63 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const isImage = (file: File) => IMAGE_TYPES.includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
 const titleFrom = (file: File) => file.name.replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Untitled scene'
 const bits = (a: string, b: string) => { let x = BigInt(`0x${a}`) ^ BigInt(`0x${b}`), n = 0; while (x) { n += Number(x & 1n); x >>= 1n } return n }
+// Shown instead of the browser's broken-image icon when a file cannot be previewed.
+const NO_PREVIEW = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 42"><rect width="64" height="42" fill="#8f8a8233"/><path d="M24 27l5-6 4 4 3-3 4 5z M27 17a2 2 0 1 0 0.1 0" fill="none" stroke="#8f8a82" stroke-width="1.5" stroke-linejoin="round"/></svg>')}`
 const flagged = (e: Entry) => !!(e.check?.exact.length || e.check?.near.length || e.twin)
 
+type CopyInfo = { kind: 'error' | 'checking' | 'clear' | 'copy'; text: string; picture?: { src: string; alt: string } }
+
 /** Why a file is unticked: an exact or near copy in the studio or earlier in this selection. */
-// Every row gets this one-line note under its title, so all rows keep the same shape.
-function CopyNote({ entry, entries }: { entry: Entry; entries: Entry[] }) {
-  if (entry.error) return <span className="copy-note error"><small>{entry.error}</small></span>
-  if (!entry.check) return <span className="copy-note checking"><small>Checking for copies…</small></span>
+function copyInfo(entry: Entry, entries: Entry[]): CopyInfo {
+  if (entry.error) return { kind: 'error', text: entry.error }
+  if (!entry.check) return { kind: 'checking', text: 'Checking for copies…' }
   const { exact, near } = entry.check
   const twin = entry.twin ? entries[entry.twin.index] : null
-  if (!exact.length && !near.length && !twin) return <span className="copy-note clear"><small>No copies found</small></span>
+  if (!exact.length && !near.length && !twin) return { kind: 'clear', text: 'No copies found' }
   const match = exact[0] ?? near[0]
   // A scene already in the studio is named first; the picture always shows what the text names.
   const text = exact.length ? `Exact copy of “${exact[0].title}”${exact.length > 1 ? ` and ${plural(exact.length - 1, 'other scene')}` : ''}`
     : near.length ? `Looks like “${near[0].title}” (re-saved, resized or another format)`
       : `${entry.twin!.exact ? 'Exact copy' : 'Looks like a copy'} of “${twin!.title || titleFrom(twin!.file)}” in this selection`
-  return <span className="copy-note copy"><img src={match ? match.thumbnail_url : twin!.preview} alt={`Matching image: ${match ? match.title : twin!.file.name}`} /><small title={text}>{text}</small></span>
+  return { kind: 'copy', text, picture: match ? { src: match.thumbnail_url, alt: `Matching image: ${match.title}` } : { src: twin!.preview, alt: `Matching image: ${twin!.file.name}` } }
+}
+
+/** The single-image layout has room to show the note in full. */
+function CopyNote({ entry, entries }: { entry: Entry; entries: Entry[] }) {
+  const info = copyInfo(entry, entries)
+  return <span className={`copy-note is-${info.kind}`}>{info.picture && <img src={info.picture.src} alt={info.picture.alt} />}<small>{info.text}</small></span>
+}
+
+const statusIcons: Record<CopyInfo['kind'], React.ReactNode> = {
+  copy: <><path d="M12 4.2 2.8 19.5h18.4z" /><path d="M12 10v4.4M12 17.2v.1" /></>,
+  clear: <><circle cx="12" cy="12" r="8.6" /><path d="m8.2 12.2 2.6 2.6 5-5.4" /></>,
+  error: <><circle cx="12" cy="12" r="8.6" /><path d="m9 9 6 6M15 9l-6 6" /></>,
+  checking: <path d="M12 3.4a8.6 8.6 0 1 1-8.6 8.6" />,
+}
+
+/** A list row's copy result as one icon after the title; the message opens on hover, focus or a click. */
+function CopyStatus({ entry, entries }: { entry: Entry; entries: Entry[] }) {
+  const info = copyInfo(entry, entries)
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const id = useId()
+  // Fixed position, so the scrolling list never clips the card; it closes when anything scrolls.
+  const show = () => { const r = button.current?.getBoundingClientRect(); if (r) setAt({ top: r.top + r.height / 2, left: r.left - 10 }) }
+  const hide = () => setAt(null)
+  useEffect(() => {
+    if (!at) return
+    const key = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') hide() }
+    window.addEventListener('scroll', hide, true); window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('keydown', key) }
+  }, [at])
+  return <span className={`copy-status is-${info.kind}`} onMouseEnter={show} onMouseLeave={hide}>
+    <button ref={button} type="button" className="status-icon" aria-label={info.text} aria-describedby={at ? id : undefined} onClick={() => at ? hide() : show()} onFocus={show} onBlur={hide}>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{statusIcons[info.kind]}</svg>
+    </button>
+    {at && <span role="tooltip" id={id} className={`copy-pop is-${info.kind}`} style={{ top: at.top, left: at.left }}>
+      {info.picture && <img src={info.picture.src} alt="" />}<span>{info.text}</span>
+    </span>}
+  </span>
 }
 
 /** Files dragged in from the computer; a dropped folder is read with its subfolders, like Choose a folder. */
@@ -243,16 +284,16 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
           {nearCount > 0 && <span className="tag warn">{nearCount} near {nearCount === 1 ? 'copy' : 'copies'}</span>}
           {failedCount > 0 && <span className="tag bad">{failedCount} cannot be imported</span>}
           {ignored > 0 && <span className="tag">{ignored} other {ignored === 1 ? 'file' : 'files'} ignored</span>}</p>
-        {(exactCount > 0 || nearCount > 0) && <p className="hint">Copies are unticked. Tick <b>Import anyway</b> to add one regardless. Heavily cropped or mirrored copies may not be found.</p>}
+        {(exactCount > 0 || nearCount > 0) && <p className="hint">Copies are unticked and marked with <b className="hint-warn">⚠</b>; point at the mark to see what it matches. Tick <b>Import anyway</b> to add one regardless. Heavily cropped or mirrored copies may not be found.</p>}
         <ol className="new-scene-list">{entries.map((entry, index) => <li key={`${entry.file.webkitRelativePath || entry.file.name}-${index}`} className={entry.error ? 'too-large' : flagged(entry) ? 'flagged' : ''}>
-          {/* Thumbnail, title and tick share the first line; the note has its own line under the title. */}
-          <img className="row-thumb" src={entry.preview} alt="" loading="lazy" />
+          {/* One line per image: thumbnail, title, copy status (message on hover), tick. */}
+          <img className="row-thumb" src={entry.preview} alt="" loading="lazy" onError={e => { e.currentTarget.src = NO_PREVIEW }} />
           <div className="row-title"><label htmlFor={`new-title-${index}`} className="visually-hidden">Title for {entry.file.name}</label>
             <input id={`new-title-${index}`} maxLength={120} value={entry.title} placeholder={titleFrom(entry.file)} onChange={e => update(index, { title: e.target.value })} /></div>
+          <CopyStatus entry={entry} entries={entries} />
           <span className="row-actions">
             {!entry.error && <label className="checkbox-label"><input type="checkbox" checked={entry.include} disabled={!entry.check} onChange={e => update(index, { include: e.target.checked })} /><span>{flagged(entry) ? 'Import anyway' : 'Import'}</span></label>}
             <button type="button" className="secondary compact icon-only" aria-label={`Remove ${entry.file.name}`} onClick={() => remove(index)}>×</button></span>
-          <div className="row-note"><CopyNote entry={entry} entries={entries} /></div>
         </li>)}</ol>
         {pickers}
       </div>}

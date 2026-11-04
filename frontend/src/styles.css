@@ -747,12 +747,31 @@ button.icon-only { min-width: 34px; justify-content: center; padding-inline: 8px
 .image-count button.compact { min-height: 32px; }
 .new-scenes { margin-top: 16px; display: grid; gap: 10px; }
 .new-scene-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: min(52vh, 420px); overflow-y: auto; }
-.new-scene-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-areas: 'thumb title actions' '. note note'; align-items: center; column-gap: 12px; padding: 8px 8px 7px; border: 1px solid var(--line); border-radius: 8px; }
+.new-scene-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) 32px auto; grid-template-areas: 'thumb title status actions'; align-items: center; column-gap: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
 .new-scene-list li.too-large { border-color: var(--danger-line); background: var(--danger-bg); }
 .new-scene-list .row-thumb { grid-area: thumb; width: 64px; height: 42px; object-fit: cover; border-radius: 5px; background: var(--welcome); }
 .new-scene-list .row-title { grid-area: title; min-width: 0; }
-.new-scene-list .row-actions { grid-area: actions; }
-.new-scene-list .row-note { grid-area: note; min-width: 0; }
+.new-scene-list .row-actions { grid-area: actions; min-width: 176px; justify-content: flex-end; }
+.new-scene-list .copy-status { grid-area: status; }
+/* Copy status: one icon per row; its message opens in a small card on hover, focus or a click. */
+.copy-status { display: grid; place-items: center; }
+.status-icon { width: 32px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--muted); box-shadow: none; cursor: help; }
+.status-icon svg { width: 20px; height: 20px; }
+.status-icon:hover, .status-icon:focus-visible { background: var(--welcome); }
+.status-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.copy-status.is-copy .status-icon { color: var(--warn-strong); }
+.copy-status.is-clear .status-icon { color: var(--success); }
+.copy-status.is-error .status-icon { color: var(--danger-strong); }
+.copy-status.is-checking svg { animation: status-spin 900ms linear infinite; }
+@keyframes status-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .copy-status.is-checking svg { animation: none; } }
+.copy-pop { position: fixed; z-index: 60; transform: translate(-100%, -50%); display: flex; align-items: center; gap: 10px; width: max-content; max-width: min(320px, 70vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-lg); font-size: 12px; font-weight: 600; line-height: 1.4; pointer-events: none; }
+.copy-pop img { flex: none; width: 64px; height: 44px; object-fit: cover; border-radius: 6px; outline: 1.5px solid var(--warn-line); }
+.copy-pop.is-copy { border-color: var(--warn-line); }
+.copy-pop.is-copy span { color: var(--warn-text); }
+.copy-pop.is-error { border-color: var(--danger-line); color: var(--danger-text); }
+.copy-pop.is-clear { color: var(--success-text); }
+.hint-warn { color: var(--warn-strong); }
 .new-scene-list input { width: 100%; }
 .new-scene-list .frame-error { display: block; margin-top: 4px; font-size: 12px; }
 label.change-files { display: inline-flex; align-items: center; justify-self: start; margin: 0; cursor: pointer; font-weight: 600; }
@@ -1069,10 +1088,10 @@ label.picker-button:focus-within { outline: 3px solid var(--accent); outline-off
 .copy-note { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 20px; margin-top: 5px; }
 .copy-note small { min-width: 0; font-size: 12px; font-weight: 600; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .copy-note img, .new-scene-list .copy-note img { flex: none; width: 26px; height: 20px; object-fit: cover; border-radius: 3px; outline: 1.5px solid var(--warn-line); }
-.copy-note.copy small { color: var(--warn-text); }
-.copy-note.clear small { color: var(--success); }
-.copy-note.checking small { color: var(--muted); font-weight: 500; }
-.copy-note.error small { color: var(--danger-text); }
+.copy-note.is-copy small { color: var(--warn-text); }
+.copy-note.is-clear small { color: var(--success); }
+.copy-note.is-checking small { color: var(--muted); font-weight: 500; }
+.copy-note.is-error small { color: var(--danger-text); }
 .new-scene-list .row-title input { height: 42px; padding: 0 12px; }
 .import-check { margin-top: 12px; }
 .import-check.flagged { padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: 8px; background: var(--warn-bg); }
@@ -1099,9 +1118,9 @@ label.picker-button:focus-within { outline: 3px solid var(--accent); outline-off
   .duplicate-group li { grid-template-columns: 48px minmax(0, 1fr); }
   .duplicate-group img { width: 48px; height: 36px; }
   .duplicate-group .row-actions { grid-column: 2; justify-content: space-between; }
-  .new-scene-list li { grid-template-columns: 48px minmax(0, 1fr); grid-template-areas: 'thumb title' '. note' '. actions'; }
+  .new-scene-list li { grid-template-columns: 48px minmax(0, 1fr) 32px; grid-template-areas: 'thumb title status' '. actions actions'; }
   .new-scene-list .row-thumb { width: 48px; height: 42px; }
-  .new-scene-list .row-actions { justify-content: space-between; margin-top: 4px; }
+  .new-scene-list .row-actions { min-width: 0; justify-content: space-between; margin-top: 4px; }
   .copy-note small { white-space: normal; line-height: 1.35; }
 }
 

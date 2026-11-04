@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-05 — Copy status icons in the import list
+
+- From the user's theme and UI review: each import row now shows one status icon after its title (amber warning for a copy, green check for none, red when a file cannot be imported); point at it, tab to it or tap it to see the message and a picture of the match. Rows are one line again. Files that cannot be previewed show a neutral placeholder.
+
 ## 2026-11-05 — Theme switch and premium UI refresh
 
 - At the user's request (D033): a **Light · Dark · System** switch in the top bar (System follows Windows; the choice is remembered in this browser). The new **Warm darkroom** dark theme: deep warm charcoal, warm off-white text and a brighter copper accent with a soft glow.
