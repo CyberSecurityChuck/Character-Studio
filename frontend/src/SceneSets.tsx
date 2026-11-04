@@ -19,7 +19,7 @@ export const inStage = (scene: SceneSummary, stage: StageFilter) => stage === 'a
 const kindWords: Record<string, string> = { analysis: 'analysis', polish: 'polish', generation: 'generation', export: 'manual export', check: 'quality check', edit: 'region edit' }
 export const problemLabel = (problem: NonNullable<SceneSummary['problem']>) => `Last ${kindWords[problem.kind] ?? 'run'} ${problem.status === 'interrupted' ? 'was interrupted' : 'failed'}`
 
-/** The stages in workflow order as one strip of counts (the set's dashboard); Problems sits apart. */
+/** The stages in workflow order as separate count cards (the set's dashboard); Problems comes last. */
 export function StageFilters({ scenes, value, onChange }: { scenes: SceneSummary[]; value: StageFilter; onChange: (stage: StageFilter) => void }) {
   const tile = (f: (typeof stageFilters)[number]) => {
     const count = scenes.filter(s => inStage(s, f.id)).length
@@ -28,8 +28,7 @@ export function StageFilters({ scenes, value, onChange }: { scenes: SceneSummary
     </button>
   }
   return <div className="stage-pipeline" role="group" aria-label="Filter by stage">
-    <div className="pipeline-strip">{stageFilters.filter(f => f.id !== 'problems').map(tile)}</div>
-    {tile(stageFilters.find(f => f.id === 'problems')!)}
+    {stageFilters.map(tile)}
   </div>
 }
 
@@ -246,13 +245,14 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
           {ignored > 0 && <span className="tag">{ignored} other {ignored === 1 ? 'file' : 'files'} ignored</span>}</p>
         {(exactCount > 0 || nearCount > 0) && <p className="hint">Copies are unticked. Tick <b>Import anyway</b> to add one regardless. Heavily cropped or mirrored copies may not be found.</p>}
         <ol className="new-scene-list">{entries.map((entry, index) => <li key={`${entry.file.webkitRelativePath || entry.file.name}-${index}`} className={entry.error ? 'too-large' : flagged(entry) ? 'flagged' : ''}>
-          <img src={entry.preview} alt="" loading="lazy" />
-          <div><label htmlFor={`new-title-${index}`} className="visually-hidden">Title for {entry.file.name}</label>
-            <input id={`new-title-${index}`} maxLength={120} value={entry.title} placeholder={titleFrom(entry.file)} onChange={e => update(index, { title: e.target.value })} />
-            <CopyNote entry={entry} entries={entries} /></div>
+          {/* Thumbnail, title and tick share the first line; the note has its own line under the title. */}
+          <img className="row-thumb" src={entry.preview} alt="" loading="lazy" />
+          <div className="row-title"><label htmlFor={`new-title-${index}`} className="visually-hidden">Title for {entry.file.name}</label>
+            <input id={`new-title-${index}`} maxLength={120} value={entry.title} placeholder={titleFrom(entry.file)} onChange={e => update(index, { title: e.target.value })} /></div>
           <span className="row-actions">
             {!entry.error && <label className="checkbox-label"><input type="checkbox" checked={entry.include} disabled={!entry.check} onChange={e => update(index, { include: e.target.checked })} /><span>{flagged(entry) ? 'Import anyway' : 'Import'}</span></label>}
             <button type="button" className="secondary compact icon-only" aria-label={`Remove ${entry.file.name}`} onClick={() => remove(index)}>×</button></span>
+          <div className="row-note"><CopyNote entry={entry} entries={entries} /></div>
         </li>)}</ol>
         {pickers}
       </div>}

@@ -2,7 +2,11 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: Phase 7A review fixes (2026-11-05)
+## Latest: Phase 7A follow-up fixes (2026-11-05)
+
+- Follow-up report (`Phase_Checks/Phase7A_Followup_Report.md`): 12/12, problems at steps 2 (make the strip separate cards with gaps, centred text) and 8 (title box sat higher than the thumbnail when copies were found; user's screenshot), "Needs fixes first". Both fixed (frontend only; D032 follow-up note, CHANGELOG). Verification: pytest 149 passed, ruff and build passed; browser QA at 1440 px (all eight counts on one line, chosen card), 960 px (4 + 4) and import rows (thumbnail, title and tick centres identical).
+- The user's overall notes ask for a **theme toggle with a dark theme** (inspiration: https://framebite.com/blog/dark-mode-website-design-inspiration, choice left to the assistant) and a **more premium, professional look everywhere** ("other decisions to make the UI better" allowed). Not started: plan it with the user one question at a time, as its own step before 7B.
+
 
 - The user's 7A review (`Phase_Checks/Phase7A_Review_Report.md`): 20/20 steps, problems at steps 2, 6, 8, 10, verdict "Needs fixes first". Choices (one at a time): **pipeline strip** for the stage filters and a **set header card** with a ⋯ menu. Assistant fixes from the notes: drag and drop of images and folders onto Add scenes; one fixed note line under every import row's title. Recorded in D032 and CHANGELOG; USER_GUIDE updated.
 - Code (frontend only): `SceneSets.tsx` `StageFilters` (tiles, `live-dot`), new `SetHeader`, `droppedFiles` (webkitGetAsEntry, recursive readEntries, path order), window drag listeners in `ImportForm` with a `drop-overlay`, `CopyNote` with states checking / clear / copy / error; `Scenes.tsx` uses `SetHeader`; styles replace `.stage-filter*` and `.set-bar` with `.stage-pipeline` / `.stage-tile` / `.set-header`.

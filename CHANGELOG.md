@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-05 — Phase 7A follow-up fixes
+
+- Stage filters are separate cards with gaps, count and label centred, in balanced rows (8, or 4 + 4, or 2 per row on a phone).
+- Import rows: thumbnail, title box and tick share one line; the copy note sits on its own line under the title.
+
 ## 2026-11-05 — Phase 7A review fixes
 
 - From the user's 7A review (D032). **Stage filters** are now a pipeline strip: one panel with a tile per stage in workflow order (large count, label, orange underline for the chosen one), **Problems** as its own tile that turns red when any scene has a problem, and a pulsing dot while something runs. A chosen **scene set** shows a header card (icon, name, scene count and date) with **Rename set** and **Delete set** in a ⋯ menu.

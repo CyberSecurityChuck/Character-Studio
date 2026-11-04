@@ -747,9 +747,12 @@ button.icon-only { min-width: 34px; justify-content: center; padding-inline: 8px
 .image-count button.compact { min-height: 32px; }
 .new-scenes { margin-top: 16px; display: grid; gap: 10px; }
 .new-scene-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: min(52vh, 420px); overflow-y: auto; }
-.new-scene-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; }
+.new-scene-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-areas: 'thumb title actions' '. note note'; align-items: center; column-gap: 12px; padding: 8px 8px 7px; border: 1px solid var(--line); border-radius: 8px; }
 .new-scene-list li.too-large { border-color: #e3b4a8; background: #fff1ed; }
-.new-scene-list img { width: 64px; height: 48px; object-fit: cover; border-radius: 4px; background: var(--welcome); }
+.new-scene-list .row-thumb { grid-area: thumb; width: 64px; height: 42px; object-fit: cover; border-radius: 5px; background: var(--welcome); }
+.new-scene-list .row-title { grid-area: title; min-width: 0; }
+.new-scene-list .row-actions { grid-area: actions; }
+.new-scene-list .row-note { grid-area: note; min-width: 0; }
 .new-scene-list input { width: 100%; }
 .new-scene-list .frame-error { display: block; margin-top: 4px; font-size: 12px; }
 label.change-files { display: inline-flex; align-items: center; justify-self: start; margin: 0; cursor: pointer; font-weight: 600; }
@@ -1006,29 +1009,28 @@ label.change-files:focus-within { outline: 3px solid var(--accent); outline-offs
 .library-toolbar .narrow-filter { flex: 0 1 200px; min-width: 150px; }
 .library-toolbar .narrow-filter select { min-height: 48px; }
 .toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-left: auto; }
-/* Stage filters as one pipeline strip: the scenes' (or set's) dashboard, Problems apart. */
-.stage-pipeline { display: flex; align-items: stretch; gap: 12px; margin: 0 0 22px; }
-.pipeline-strip { flex: 1; display: flex; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 1px 2px rgb(41 46 41 / 6%); scrollbar-width: thin; }
-.stage-tile { position: relative; flex: 1 1 0; min-width: 108px; min-height: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 6px; padding: 14px 16px 13px; border: 0; border-radius: 0; background: transparent; color: var(--text); text-align: left; transition: background 150ms; }
-.stage-tile:hover { background: var(--background); }
-.stage-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
-.pipeline-strip .stage-tile + .stage-tile { border-left: 1px solid var(--line); }
-.stage-tile strong { display: flex; align-items: center; gap: 7px; font-size: 26px; line-height: 1; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-.stage-tile > span { color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1.3; }
-.stage-tile.empty strong { color: #bdb8ae; }
-.stage-tile::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: transparent; }
-.stage-tile[aria-pressed=true] { background: var(--accent-soft); }
+/* Stage filters: one card per stage in workflow order, count and label centred; Problems last. */
+.stage-pipeline { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; margin: 0 0 24px; }
+/* Balanced rows: eight cards, then four and four, then two per row on a phone. */
+@media (max-width: 1280px) { .stage-pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.stage-tile { position: relative; min-height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 16px 10px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); text-align: center; box-shadow: 0 1px 2px rgb(41 46 41 / 5%); transition: border-color 150ms, box-shadow 150ms, transform 150ms, background 150ms; }
+.stage-tile:hover { border-color: #cfc9bd; background: var(--surface); box-shadow: 0 6px 16px rgb(41 46 41 / 9%); transform: translateY(-1px); }
+.stage-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.stage-tile strong { display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 28px; line-height: 1; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stage-tile > span { max-width: 13ch; min-height: 2.6em; color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1.3; }
+.stage-tile.empty strong { color: #c4bfb5; }
+.stage-tile.empty > span { color: #8f8a82; }
+.stage-tile::after { content: ''; position: absolute; left: 50%; bottom: 9px; width: 22px; height: 3px; border-radius: 3px; background: transparent; transform: translateX(-50%); }
+.stage-tile[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent), 0 6px 16px rgb(41 46 41 / 8%); }
 .stage-tile[aria-pressed=true] strong, .stage-tile[aria-pressed=true] > span { color: var(--accent); }
 .stage-tile[aria-pressed=true]::after { background: var(--accent); }
-.stage-pipeline > .tile-problems { flex: 0 0 136px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 1px 2px rgb(41 46 41 / 6%); overflow: hidden; }
-.tile-problems:not(.empty) { border-color: #e3b4a8; background: #fff4f1; }
+.tile-problems:not(.empty) { border-color: #e9c3b9; background: #fff6f3; }
 .tile-problems:not(.empty) strong, .tile-problems:not(.empty) > span { color: #9a3226; }
-.tile-problems:not(.empty):hover { background: #fdebe6; }
-.tile-problems[aria-pressed=true]:not(.empty) { background: #fbe1da; }
+.tile-problems[aria-pressed=true]:not(.empty) { border-color: #9a3226; background: #fbe6e0; box-shadow: 0 0 0 1px #9a3226; }
 .tile-problems[aria-pressed=true]::after { background: #9a3226; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #c08a1e; animation: live-pulse 1.6s ease-in-out infinite; }
 @keyframes live-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } .stage-tile:hover { transform: none; } }
 /* A chosen scene set: icon, title, size and date, with Rename and Delete in a menu. */
 .set-header { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 1px 2px rgb(41 46 41 / 6%); }
 .set-icon { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
@@ -1071,7 +1073,7 @@ label.picker-button:focus-within { outline: 3px solid var(--accent); outline-off
 .copy-note.clear small { color: var(--success); }
 .copy-note.checking small { color: var(--muted); font-weight: 500; }
 .copy-note.error small { color: #922d24; }
-.new-scene-list input { padding: 9px 12px; }
+.new-scene-list .row-title input { height: 42px; padding: 0 12px; }
 .import-check { margin-top: 12px; }
 .import-check.flagged { padding: 10px 12px; border: 1px solid #ead9b0; border-radius: 8px; background: #fbf5e6; }
 .import-check .checkbox-label { min-height: 32px; margin: 6px 0 0; font-weight: 600; }
@@ -1090,14 +1092,15 @@ label.picker-button:focus-within { outline: 3px solid var(--accent); outline-off
 .duplicate-copy > span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); }
 @media (max-width: 600px) {
   .library-toolbar .narrow-filter { flex: 1 1 45%; }
-  .stage-pipeline { flex-direction: column; gap: 10px; }
-  .stage-tile { min-width: 96px; padding: 12px 14px 11px; }
-  .stage-tile strong { font-size: 22px; }
-  .stage-pipeline > .tile-problems { flex: none; flex-direction: row; align-items: center; gap: 10px; padding: 10px 14px; }
-  .stage-pipeline > .tile-problems strong { font-size: 18px; }
+  .stage-pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .stage-tile { min-height: 84px; padding: 12px 8px 16px; }
+  .stage-tile strong { font-size: 24px; }
   .toolbar-actions { width: 100%; margin-left: 0; }
-  .new-scene-list li, .duplicate-group li { grid-template-columns: 48px minmax(0, 1fr); }
-  .new-scene-list img, .duplicate-group img { width: 48px; height: 36px; }
-  .new-scene-list .row-actions, .duplicate-group .row-actions { grid-column: 2; justify-content: space-between; }
+  .duplicate-group li { grid-template-columns: 48px minmax(0, 1fr); }
+  .duplicate-group img { width: 48px; height: 36px; }
+  .duplicate-group .row-actions { grid-column: 2; justify-content: space-between; }
+  .new-scene-list li { grid-template-columns: 48px minmax(0, 1fr); grid-template-areas: 'thumb title' '. note' '. actions'; }
+  .new-scene-list .row-thumb { width: 48px; height: 42px; }
+  .new-scene-list .row-actions { justify-content: space-between; margin-top: 4px; }
   .copy-note small { white-space: normal; line-height: 1.35; }
 }
