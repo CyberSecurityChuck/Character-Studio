@@ -1,13 +1,110 @@
+/* Design tokens. Light is the default; "Warm darkroom" applies with data-theme="dark", or
+   follows Windows when no theme is chosen (D033). Colours over photos stay fixed in styles.css. */
 :root {
   color-scheme: light;
-  --background: #f7f6f2;
-  --surface: #fefdf9;
-  --text: #292e29;
-  --muted: #686b61;
-  --line: #dedfd5;
+  --font-ui: 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+
+  --background: #f6f4ef;
+  --surface: #fefdfa;
+  --surface-raised: #ffffff;
+  --surface-rgb: 254 253 250;
+  --text: #24282a;
+  --muted: #666a62;
+  --faint: #a19c92;
+  --line: #e3e0d6;
+  --line-strong: #c4bfb3;
+  --input-border: #aca79c;
+  --welcome: #efece4;
+
   --accent: #9a472c;
-  --accent-hover: #7e3822;
-  --accent-soft: #f3e9df;
-  --welcome: #eeece3;
+  --accent-hover: #823a23;
+  --accent-soft: #f4e9df;
+  --accent-bg: #fbf3ec;
+  --accent-line: #e4c9b6;
+  --on-accent: #ffffff;
+  --glow: 0 0 0 0 transparent;
+
   --success: #437153;
+  --success-bg: #e6f0e8;
+  --success-line: #cfe3d4;
+  --success-text: #2c5a3d;
+  --warn-bg: #fbf5e6;
+  --warn-soft: #f6ecd3;
+  --warn-line: #ead9b0;
+  --warn-text: #5e4510;
+  --warn-strong: #9a7317;
+  --warn-strong-line: #c79a3a;
+  --danger-bg: #fff1ed;
+  --danger-soft: #f6d8d0;
+  --danger-line: #e3b4a8;
+  --danger-text: #8f2c22;
+  --danger-strong: #b73f32;
+  --wait-bg: #efecf5;
+  --wait-line: #d9d4e8;
+  --wait-text: #4f4775;
+
+  --disabled-bg: #e4e1d9;
+  --disabled-text: #67645d;
+  --brand-bg: #24282a;
+  --inverse-bg: #24282a;
+  --inverse-text: #ffffff;
+  --backdrop: rgb(21 19 16 / 70%);
+  --shadow-rgb: 41 46 41;
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-rgb) / 6%);
+  --shadow-md: 0 1px 2px rgb(var(--shadow-rgb) / 5%), 0 8px 24px rgb(var(--shadow-rgb) / 7%);
+  --shadow-lg: 0 2px 6px rgb(var(--shadow-rgb) / 8%), 0 24px 56px rgb(var(--shadow-rgb) / 16%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #111010;
+  --surface: #1a1817;
+  --surface-raised: #232120;
+  --surface-rgb: 26 24 23;
+  --text: #ede7df;
+  --muted: #a39a8f;
+  --faint: #6f685f;
+  --line: #2e2b28;
+  --line-strong: #46413b;
+  --input-border: #4f4943;
+  --welcome: #262321;
+
+  --accent: #e8875a;
+  --accent-hover: #f39e75;
+  --accent-soft: #2f2019;
+  --accent-bg: #261b15;
+  --accent-line: #5a3a29;
+  --on-accent: #1b120c;
+  --glow: 0 0 22px rgb(232 135 90 / 22%);
+
+  --success: #7cc79a;
+  --success-bg: #17261d;
+  --success-line: #2d4a37;
+  --success-text: #95d6ad;
+  --warn-bg: #251f13;
+  --warn-soft: #2f2716;
+  --warn-line: #4d3e1f;
+  --warn-text: #e8c77f;
+  --warn-strong: #d9a93a;
+  --warn-strong-line: #8a6a28;
+  --danger-bg: #2a1714;
+  --danger-soft: #3a1d18;
+  --danger-line: #5e2e26;
+  --danger-text: #f3a091;
+  --danger-strong: #e3654f;
+  --wait-bg: #1f1c2a;
+  --wait-line: #3a3550;
+  --wait-text: #bdb4ea;
+
+  --disabled-bg: #2a2725;
+  --disabled-text: #81796f;
+  --brand-bg: #2b2826;
+  --inverse-bg: #ede7df;
+  --inverse-text: #1a1817;
+  --backdrop: rgb(0 0 0 / 72%);
+  --shadow-rgb: 0 0 0;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 28px rgb(0 0 0 / 35%);
+  --shadow-lg: 0 2px 8px rgb(0 0 0 / 45%), 0 28px 64px rgb(0 0 0 / 55%);
 }

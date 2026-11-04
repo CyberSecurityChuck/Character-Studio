@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-05 — Theme switch and premium UI refresh
+
+- At the user's request (D033): a **Light · Dark · System** switch in the top bar (System follows Windows; the choice is remembered in this browser). The new **Warm darkroom** dark theme: deep warm charcoal, warm off-white text and a brighter copper accent with a soft glow.
+- **Premium refresh** of every page: Fraunces headings and Inter interface text, bundled with the studio (works offline); calmer field borders with an accent focus ring; primary buttons with depth; cards with softer shadows and a slight lift; floating dialogs and menus over a blurred backdrop; a sticky top bar; the Characters / Groups tabs as a segmented control; the phone nav row scrolls sideways.
+- Every colour now comes from theme tokens (`frontend/src/tokens.css`). New `frontend/src/Theme.tsx`. New dependencies `@fontsource-variable/inter` and `@fontsource-variable/fraunces` 5.3.0 (fonts only).
+
 ## 2026-11-05 — Phase 7A follow-up fixes
 
 - Stage filters are separate cards with gaps, count and label centred, in balanced rows (8, or 4 + 4, or 2 per row on a phone).

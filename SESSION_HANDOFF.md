@@ -2,7 +2,13 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: Phase 7A follow-up fixes (2026-11-05)
+## Latest: theme switch and premium UI refresh (2026-11-05)
+
+- Choices (one at a time): do it next, before 7B; Warm darkroom dark theme; Light · Dark · System switch in the top bar; bundle Inter + Fraunces. Recorded in D033, a dated note in PLAN.md's Phase 7 section, CHANGELOG and USER_GUIDE ("Theme").
+- Code: `tokens.css` (light and dark tokens, about 30), `styles.css` (all colours on tokens; premium pass block at the end, incl. `.theme-switch`, segmented `.library-tabs`, phone nav scrolling), new `Theme.tsx` (`storedTheme`, `applyTheme`, `ThemeSwitch`; localStorage key `character-studio.theme`), `main.tsx` (font imports, theme applied before render), `App.tsx` (switch in `.topbar-tools`). Dependencies `@fontsource-variable/inter` and `@fontsource-variable/fraunces` 5.3.0 (exact).
+- Gotchas: the primary-button depth rule uses `:where(...)` (zero specificity) so component styles can override it; primary buttons are those without a class, or `compact`/`danger` without `secondary`. Colours over photos stay literal on purpose.
+- Next action: wait for the user's review report (`Phase_Checks/Phase7A_UI_Review_Checklist.html` → `Phase7A_UI_Review_Report.md`); on "looks good" record 7A and the refresh as accepted, then 7B on the user's go-ahead. Nothing is pushed.
+
 
 - Follow-up report (`Phase_Checks/Phase7A_Followup_Report.md`): 12/12, problems at steps 2 (make the strip separate cards with gaps, centred text) and 8 (title box sat higher than the thumbnail when copies were found; user's screenshot), "Needs fixes first". Both fixed (frontend only; D032 follow-up note, CHANGELOG). Verification: pytest 149 passed, ruff and build passed; browser QA at 1440 px (all eight counts on one line, chosen card), 960 px (4 + 4) and import rows (thumbnail, title and tick centres identical).
 - The user's overall notes ask for a **theme toggle with a dark theme** (inspiration: https://framebite.com/blog/dark-mode-website-design-inspiration, choice left to the assistant) and a **more premium, professional look everywhere** ("other decisions to make the UI better" allowed). Not started: plan it with the user one question at a time, as its own step before 7B.

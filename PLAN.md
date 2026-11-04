@@ -2123,6 +2123,11 @@ mode before it starts.
   explicit.
 - A results gallery per scene set.
 
+Added at the user's request (2026-11-05, D033), before
+7B: a Light · Dark · System theme switch ("Warm
+darkroom" dark theme) and a premium visual refresh of
+every page, with bundled Inter and Fraunces fonts.
+
 Acceptance:
 
 - Many Base Images can be imported at once without

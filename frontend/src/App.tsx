@@ -7,6 +7,7 @@ import Engines from './Engines'
 import { PresetsPanel } from './Presets'
 import Library from './Library'
 import { replaceRoute, routeParts } from './route'
+import { ThemeSwitch } from './Theme'
 import ResultsGallery, { ResultCard, type Result } from './Results'
 import Scenes, { StageChip, type SceneSummary } from './Scenes'
 import { Toaster, notify } from './Toast'
@@ -135,7 +136,8 @@ export default function App() {
 
       <div className="workspace">
         <header className="topbar"><span>Workspace <span className="crumb">/</span> {page === 'overview' ? 'Overview' : page === 'characters' ? 'Characters' : page === 'scenes' ? 'Scenes' : page === 'results' ? 'Results' : 'Settings'}</span>
-          <span className={`connection ${data && !error ? 'online' : ''}`}><span aria-hidden="true" />{loading ? 'Connecting…' : error ? 'Needs attention' : 'Local studio connected'}</span>
+          <span className="topbar-tools"><ThemeSwitch />
+            <span className={`connection ${data && !error ? 'online' : ''}`}><span aria-hidden="true" />{loading ? 'Connecting…' : error ? 'Needs attention' : 'Local studio connected'}</span></span>
         </header>
         <main id="main" tabIndex={-1}>
           <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 7A</p>
