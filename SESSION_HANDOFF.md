@@ -2,7 +2,11 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: copy status icons (2026-11-05)
+## Latest: Phase 7A and the UI refresh accepted (2026-11-05)
+
+- The user's short check passed (`Phase_Checks/Phase7A_Status_Check_Report.md`: 4/4, 0 problems, "Looks good: 7A and the refresh accepted"). Recorded in AGENTS.md, DECISIONS (D033 acceptance note), CHANGELOG and PROJECT_STATUS.
+- Next action: ask the user whether to push the local commits to the public `origin/main` (last pushed `9234b76`; push only with approval), then wait for the go-ahead on 7B. 7B starts with its own questions, one at a time (Assign table rules, mismatch handling as in D030).
+
 
 - UI review report (`Phase_Checks/Phase7A_UI_Review_Report.md`): 15/15, only step 3 flagged: show a symbol after the title box with the message on hover instead of the subtitle. Built in `SceneSets.tsx` (`copyInfo`, `CopyStatus` with a fixed-position `copy-pop` card that opens on hover, focus or click and closes on scroll or Escape; `NO_PREVIEW` placeholder) and `styles.css` (row grid `thumb title status actions`, fixed 176 px actions column, `is-*` kind classes). Verification: pytest 149 passed, ruff and build passed; browser QA in light and dark: clear, copy and error rows with identical height, title width and icon position, hover cards for copy and error. Short check: `Phase_Checks/Phase7A_Status_Check.html` (report `Phase7A_Status_Check_Report.md`).
 - Next action: on "looks good", record 7A and the theme and UI refresh as accepted (PROJECT_STATUS, D031/D033, CHANGELOG), then wait for the go-ahead on 7B. Nothing is pushed.

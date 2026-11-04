@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-05 — Phase 7A and the UI refresh accepted
+
+- The user's last check passed (`Phase_Checks/Phase7A_Status_Check_Report.md`: 4/4, 0 problems, "Looks good"). Phase 7A (stage filters, folder import with copy checks, scene sets, Find duplicates) and the theme switch with the premium UI refresh are accepted. Docs only.
+
 ## 2026-11-05 — Copy status icons in the import list
 
 - From the user's theme and UI review: each import row now shows one status icon after its title (amber warning for a copy, green check for none, red when a file cannot be imported); point at it, tab to it or tap it to see the message and a picture of the match. Rows are one line again. Files that cannot be previewed show a neutral placeholder.
