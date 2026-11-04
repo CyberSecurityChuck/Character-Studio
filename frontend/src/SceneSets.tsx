@@ -67,9 +67,10 @@ function CopyNote({ entry, entries }: { entry: Entry; entries: Entry[] }) {
   const twin = entry.twin ? entries[entry.twin.index] : null
   if (!exact.length && !near.length && !twin) return null
   const match = exact[0] ?? near[0]
+  // A scene already in the studio is named first; the picture always shows what the text names.
   const text = exact.length ? `Exact copy of “${exact[0].title}”${exact.length > 1 ? ` and ${plural(exact.length - 1, 'other scene')}` : ''}`
-    : twin ? `${entry.twin!.exact ? 'Exact copy' : 'Looks like a copy'} of “${twin.title || titleFrom(twin.file)}” in this selection`
-      : `Looks like “${near[0].title}” (re-saved, resized or another format)`
+    : near.length ? `Looks like “${near[0].title}” (re-saved, resized or another format)`
+      : `${entry.twin!.exact ? 'Exact copy' : 'Looks like a copy'} of “${twin!.title || titleFrom(twin!.file)}” in this selection`
   return <span className="copy-note"><img src={match ? match.thumbnail_url : twin!.preview} alt={`Matching image: ${match ? match.title : twin!.file.name}`} /><small>{text}</small></span>
 }
 
