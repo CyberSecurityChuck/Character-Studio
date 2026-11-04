@@ -25,6 +25,7 @@ from backend.persistence import SCHEMA_REVISION, open_database
 from backend.providers import PROVIDERS
 from backend.quality_api import router as quality_router
 from backend.results import router as results_router
+from backend.scene_sets import router as scene_sets_router
 from backend.scenes import router as scenes_router
 from backend.schemas import PreferencesResponse, PreferencesUpdate
 
@@ -153,6 +154,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(library_router)
     app.include_router(scenes_router)
+    app.include_router(scene_sets_router)
     app.include_router(results_router)
     app.include_router(backups_router)
     app.include_router(batches_router)

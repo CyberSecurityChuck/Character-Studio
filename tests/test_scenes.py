@@ -22,9 +22,10 @@ from tests.conftest import ANALYSIS, authorization, wait_for_job
 from tests.test_library import picture
 
 
-def create_scene(client, title="Street scene", content=None):
+def create_scene(client, title="Street scene", content=None, allow_duplicate=True):
+    # Most tests reuse one picture; tests/test_scene_sets.py covers the exact-copy refusal.
     result = client.post(
-        f"/api/scenes?title={title}",
+        f"/api/scenes?title={title}&allow_duplicate={str(allow_duplicate).lower()}",
         headers={**authorization(client), "Content-Type": "application/octet-stream"},
         content=content if content is not None else picture("JPEG"),
     )

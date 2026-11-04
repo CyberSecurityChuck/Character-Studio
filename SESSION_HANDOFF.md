@@ -1,13 +1,17 @@
 # Session handoff
 
-Checkpoint: 2026-11-04 IST (+05:30)
+Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: Phase 7 plan (2026-11-04)
+## Latest: Phase 7 approved; 7A built (2026-11-04)
 
-- The user asked for a bulk upload / bulk scene creation option and said to plan first without modifying anything. After answering the user's 11 points (one per decision), the plan was recorded with the user's "Yes, record it": PLAN.md v2.2 (Phase 7 section, planned note in §11 "Approval Rule") and DECISIONS.md D030. Then "Yes, checkpoint": this file, PROJECT_STATUS and CHANGELOG updated and committed locally. Docs only; no tests needed or run.
-- **Phase 7 is not approved.** Do not build anything until the user says "Approve Phase 7". Then start 7A by proposing the additive schema (scene sets, set link on scenes, perceptual hash column, approval mode column) and the near-duplicate threshold, one question at a time.
-- Facts found while planning: scenes already store `content_hash` (SHA-256) but uploads never check it; the Scenes page has only a title search; Pillow (already a dependency) can make the perceptual fingerprint; batch caps are `MAX_ANALYSIS_RUNS = 50`, `MAX_GENERATION_RUNS = 20`, `MAX_IMAGES_PER_SCENE = 10` in `backend/batches.py`.
-- Next action: wait for "Approve Phase 7" (or changes to the plan). Pushing still needs approval each time; this checkpoint commit is local only.
+- The user said **"Approve Phase 7"**, answered three 7A questions one at a time (one scene set per scene; near copies at most 6 of 64 bits; one additive migration `0013_scene_sets` for all of Phase 7) and said **"Record, then build 7A"**. Recorded in AGENTS.md, PLAN.md (status header, §11 note now in effect, Phase 7 section) and DECISIONS.md (D030 approved, D031).
+- **7A is built and committed locally, awaiting the user's review** (Phase_Checks checklist not made yet; offer it). Do not start 7B before the user's review or go-ahead. Pushing still needs approval each time.
+- Backend: new `backend/duplicates.py` (`fingerprint` = dHash 9×8 greyscale with JPEG draft and EXIF transpose, `distance`, `NEAR_COPY_BITS = 6`, `Families` (Duplicate scene links), `groups`), new `backend/scene_sets.py` (`GET/POST /api/scene-sets`, `PUT/DELETE /api/scene-sets/{id}` with revision, `PUT /api/scene-set-members`, `POST /api/scene-imports/check` (stores nothing), `GET /api/scene-duplicates`, `fill_fingerprints`). `scenes.py`: `STAGES`, `scene_problem`, summary fields `stage`/`problem`/`scene_set_id`, `approval_mode` in approval data, `exact_copies`, `require_set`, `store_scene(allow_duplicate, scene_set_id)` with a 409 for exact copies, `copy_scene` keeps fingerprint and set. Models `SceneSet`, `Scene.scene_set_id`, `Scene.perceptual_hash`, `Approval.approval_mode`. Migration `0013_scene_sets`; `SCHEMA_REVISION` updated.
+- Frontend: new `SceneSets.tsx` (`StageFilters`, `ImportForm` with images/folder pickers and sequential checks, `MoveDialog`, `DuplicatesDialog`, `SetPicker`); `Scenes.tsx` list view (set picker, sort, set bar, stage filters, card tags, Move to set, Find duplicates; old `NewSceneForm` removed); `route.ts` `routeQuery()`; `Batches.tsx` exports `Dialog` and `plural`; App label "Scene sets · Phase 7A". Styles at the end of `styles.css`.
+- Tests: `tests/test_scene_sets.py` (6); `tests/test_scenes.create_scene` now passes `allow_duplicate=true` by default (most tests reuse one picture); the 0005 upgrade test in `test_generation.py` also undoes 0013.
+- Verification: pytest **149 passed**, ruff passed, build passed. Browser QA on synthetic data (launcher and seed in this session's scratchpad `qa/`; test images in git-ignored `.playwright-mcp/qa-images/`; screenshots `.playwright-mcp/7a-*.png`).
+- Not in 7A (later sub-steps): Analyse all, Assign table, mismatch rules and per-image character choice at import (7B); review queue, Approve all, auto-pipeline and writing `bulk`/`auto` modes (7C); Generate all without the 50/20 limits, pause summary, per-set results gallery (7D). README is not updated yet (planned when Phase 7 is complete).
+- Next action: give the user the 7A summary and offer the 7A review checklist; then 7B on their go-ahead.
 
 ## Objective and authorization (Phase 6, 2026-10-12)
 

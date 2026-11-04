@@ -110,10 +110,25 @@ class Scene(Base):
     duplicated_from: Mapped[str | None] = mapped_column(String(32))
     # Group last chosen to narrow the character pickers; never assigns anyone by itself.
     mapping_group_id: Mapped[str | None] = mapped_column(String(32))
+    # Phase 7: at most one scene set; deleting the set clears this link (D031).
+    scene_set_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    # 64-bit difference hash (16 hex digits) for near-copy checks; made when first needed.
+    perceptual_hash: Mapped[str | None] = mapped_column(String(16))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[str] = mapped_column(String(40))
     last_opened_at: Mapped[str | None] = mapped_column(String(40))
+
+
+class SceneSet(Base):
+    """A named collection of scenes worked on together (Phase 7); scenes link to it."""
+
+    __tablename__ = "scene_sets"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[str] = mapped_column(String(40))
 
 
 class SceneAnalysis(Base):
@@ -234,6 +249,10 @@ class Approval(Base):
     approved_at: Mapped[str] = mapped_column(String(40))
     invalidated_at: Mapped[str | None] = mapped_column(String(40))
     invalidated_reason: Mapped[str | None] = mapped_column(Text)
+    # How it was given: single, bulk (Approve all) or auto (auto-pipeline), D030.
+    approval_mode: Mapped[str] = mapped_column(
+        String(10), default="single", server_default="single"
+    )
 
 
 class GenerationResult(Base):

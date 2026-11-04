@@ -7,10 +7,10 @@ fallback (DECISIONS.md D009). Adds Phase 2.5 and updates
 §8.3, §12, §20, §22 and Phases 3–5.
 **Revision 2.2 (2026-11-04):** Adds Phase 7 (scene sets and bulk
 scene workflow, DECISIONS.md D030), recorded at the user's
-request and **not yet approved**. Once approved it adds bulk and
-automatic approval modes to §11.
-**Project Status:** Planning document (requirements unchanged since v2.1; Phase 7 proposed in v2.2)
-**Implementation Status:** Phases 1–6 complete and accepted (2026-10-12); see PROJECT_STATUS.md
+request and **approved 2026-11-04** ("Approve Phase 7"). It adds
+bulk and automatic approval modes to §11.
+**Project Status:** Planning document (v2.2: Phase 7 approved 2026-11-04)
+**Implementation Status:** Phases 1–6 complete and accepted (2026-10-12); Phase 7 in progress; see PROJECT_STATUS.md
 **Development Environment:** Codex
 **Application Type:** Local-First AI Image Generation Studio
 
@@ -676,8 +676,8 @@ user has explicitly approved the corresponding inputs.
 
 Paid operations must not begin silently.
 
-Planned change (Phase 7, D030; applies only once Phase 7
-is approved): besides approving one scene at a time, the
+Phase 7 change (D030; in effect since Phase 7 was
+approved on 2026-11-04): besides approving one scene at a time, the
 user may approve several scenes with **Approve all** or
 in advance with the **Full auto-pipeline**. Every scene
 still gets its own immutable approval snapshot, which
@@ -1998,8 +1998,8 @@ see DECISIONS.md D021 and D022.
 ## PHASE 7 — SCENE SETS AND BULK SCENE WORKFLOW
 
 Recorded 2026-11-04 at the user's request
-(DECISIONS.md D030). **Not approved yet:** building
-needs an explicit "Approve Phase 7". Delivered as
+(DECISIONS.md D030). **Approved 2026-11-04** ("Approve
+Phase 7"; build choices in D031). Delivered as
 sub-steps 7A–7D, each with tests, browser QA on
 synthetic data, a local commit and the user's review.
 

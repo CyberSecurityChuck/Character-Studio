@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-04 — Phase 7 approved; 7A: Scenes page filters, import, duplicate checks, scene sets
+
+- The user said "Approve Phase 7" and then "Record, then build 7A". AGENTS.md, PLAN.md (status header, §11 and the Phase 7 section) and DECISIONS.md (D030 approved, new D031) record the approval and the 7A choices: one set per scene, near copies at most 6 of 64 bits apart, one additive migration for all of Phase 7.
+- **Stage filters** on the Scenes page with counts (All, Not analysed, Needs your check, Prompt ready to approve, Approved not generated, Completed, Running / waiting, Problems), a **Scene set** picker (all, not in a set, each set, New set…) and **Sort** (recently changed, newest, oldest, title). The filter, set and sort are kept in the address (`#/scenes?stage=…&set=…&sort=…`). Cards show a problem tag ("Last analysis failed") and their set.
+- **+ Add scenes** (was + New scene): **Choose images** or **Choose a folder** (subfolders included, other files ignored and counted, up to 500 at a time). Every image is checked first, free and local: exact copies (content hash) and near copies (difference hash) of studio scenes or of other files in the selection are shown next to the match and unticked, with **Import anyway**. The server refuses exact copies unless Import anyway was chosen. A set (or a new one) can be chosen for the import.
+- **Scene sets**: create, rename, delete (scenes are kept), **Move to set** for selected scenes and from a card's menu; Duplicate scene keeps the source's set.
+- **Find duplicates** for the scenes already in the studio: exact and near groups with Open and Delete; Duplicate scene copies are never listed.
+- Backend: new `backend/duplicates.py`, `backend/scene_sets.py`; `scenes.py` adds `stage`, `problem` and `scene_set_id` to scene summaries, `approval_mode` to approvals, and the exact-copy refusal. Schema `0013_scene_sets` (additive). Frontend: new `SceneSets.tsx`; `route.ts` reads list filters after `?`. No dependencies added; no engine runs.
+
 ## 2026-11-04 — Phase 7 plan recorded (not approved)
 
 - PLAN.md v2.2: new **Phase 7 — Scene sets and bulk scene workflow** (7A Scenes page filters, file and folder import, free duplicate checks, scene sets; 7B Analyse all, Assign table, mismatch rules, Draft prompts for all, optional Polish all; 7C review queue, Approve all, full auto-pipeline; 7D Generate all with automatic splitting, pause summary and Continue). §11 gains a planned note on bulk and automatic approval, effective only once Phase 7 is approved.

@@ -34,6 +34,7 @@ from backend.api_engines import (
     models_of,
 )
 from backend.configuration import asset_path
+from backend.duplicates import fingerprint
 from backend.editing import edit_label
 from backend.engines import CLI_MODELS, ENGINE_NAMES, engine_status
 from backend.generation import approval_boxes, generation_timing, result_data, run_seconds
@@ -63,6 +64,7 @@ from backend.models import (
     QualityCheck,
     Scene,
     SceneAnalysis,
+    SceneSet,
     SubjectMapping,
 )
 from backend.packages import missing_images
@@ -393,6 +395,7 @@ def approval_data(approval: Approval):
         "approved_at": approval.approved_at,
         "invalidated_at": approval.invalidated_at,
         "invalidated_reason": approval.invalidated_reason,
+        "approval_mode": approval.approval_mode,
         "snapshot_hash": approval.snapshot_hash,
         "analysis_version": inputs["analysis"]["version"],
         "prompt_id": inputs["prompt"]["id"],
@@ -410,9 +413,37 @@ def approval_data(approval: Approval):
     }
 
 
+# Scenes page filters (Phase 7A): every scene is in exactly one stage.
+STAGES = {
+    "needs_analysis": "not_analysed",
+    "review_analysis": "needs_check",
+    "needs_mapping": "needs_check",
+    "analysis_ready": "needs_check",
+    "prompt_saved": "ready_to_approve",
+    "approved": "approved",
+    "generated": "completed",
+}
+
+
+def scene_problem(session, scene: Scene, active):
+    """The scene's last run if it failed or was interrupted (the Problems filter)."""
+    if active is not None:
+        return None
+    last = session.scalars(
+        select(EngineJob)
+        .where(EngineJob.scene_id == scene.id)
+        .order_by(EngineJob.created_at.desc(), EngineJob.id.desc())
+        .limit(1)
+    ).first()
+    if last is None or last.status not in ("failed", "interrupted"):
+        return None
+    return {"kind": last.kind, "status": last.status, "at": last.finished_at or last.created_at}
+
+
 def scene_summary(request, session, scene: Scene):
     analysis = latest(session, SceneAnalysis, scene.id)
     prompt = latest(session, PromptVersion, scene.id)
+    active = active_job(session, scene.id)
     return {
         "id": scene.id,
         "title": scene.title,
@@ -424,6 +455,9 @@ def scene_summary(request, session, scene: Scene):
         "updated_at": scene.updated_at,
         "last_opened_at": scene.last_opened_at,
         "duplicated_from": scene.duplicated_from,
+        "scene_set_id": scene.scene_set_id,
+        "stage": "running" if active else STAGES.get(scene.workflow_state, "running"),
+        "problem": scene_problem(session, scene, active),
         "thumbnail_url": f"/api/scenes/{scene.id}/image/thumbnail",
         "original_url": f"/api/scenes/{scene.id}/image/original",
         "analysis_version": analysis.version if analysis else None,
@@ -431,7 +465,7 @@ def scene_summary(request, session, scene: Scene):
         "result_count": session.scalar(
             select(func.count()).where(GenerationResult.scene_id == scene.id)
         ),
-        "active_job": job_data(request, active_job(session, scene.id)),
+        "active_job": job_data(request, active),
     }
 
 
@@ -627,9 +661,36 @@ def _write_new_files(settings, paths, contents):
             os.fsync(file.fileno())
 
 
-def store_scene(request, title: str, payload: bytes):
+def exact_copies(session, content_hash: str) -> list[Scene]:
+    return list(
+        session.scalars(
+            select(Scene).where(Scene.content_hash == content_hash).order_by(Scene.created_at)
+        )
+    )
+
+
+def require_set(session, scene_set_id: str | None) -> None:
+    if scene_set_id is not None and session.get(SceneSet, scene_set_id) is None:
+        raise HTTPException(422, "This scene set no longer exists. Reload and choose another.")
+
+
+def store_scene(
+    request, title: str, payload: bytes, allow_duplicate=False, scene_set_id: str | None = None
+):
     settings = request.app.state.settings
     extension, media_type, width, height, thumbnail = decode_image(payload, settings)
+    content_hash = hashlib.sha256(payload).hexdigest()
+    with Session(request.app.state.engine) as session:
+        require_set(session, scene_set_id)
+        copies = exact_copies(session, content_hash)
+        if copies and not allow_duplicate:
+            # The browser checks first; this also stops copies from other windows (D030).
+            raise HTTPException(
+                409,
+                f"“{copies[0].title}” already uses this exact image. "
+                "Choose Import anyway to add it again.",
+            )
+    perceptual_hash = fingerprint(payload)
     identifier = uuid4().hex
     paths = [f"scenes/{identifier}.{extension}", f"thumbnails/scene-{identifier}.jpg"]
     # Journal intended paths first, exactly like reference photos (docs/RECOVERY.md).
@@ -647,7 +708,9 @@ def store_scene(request, title: str, payload: bytes):
                 media_type=media_type,
                 width=width,
                 height=height,
-                content_hash=hashlib.sha256(payload).hexdigest(),
+                content_hash=content_hash,
+                perceptual_hash=perceptual_hash,
+                scene_set_id=scene_set_id,
                 workflow_state="needs_analysis",
                 revision=1,
                 created_at=now(),
@@ -663,7 +726,12 @@ def store_scene(request, title: str, payload: bytes):
 
 
 @router.post("/scenes", status_code=201)
-async def create_scene(request: Request, title: str = Query(min_length=1, max_length=120)):
+async def create_scene(
+    request: Request,
+    title: str = Query(min_length=1, max_length=120),
+    allow_duplicate: bool = False,
+    scene_set_id: str | None = Query(default=None, max_length=32),
+):
     try:
         title = visible(title)
     except ValueError as error:
@@ -674,7 +742,9 @@ async def create_scene(request: Request, title: str = Query(min_length=1, max_le
         if len(payload) + len(chunk) > limit:
             raise HTTPException(413, f"Image exceeds the {limit // (1024 * 1024)} MB upload limit.")
         payload.extend(chunk)
-    return await run_in_threadpool(store_scene, request, title, bytes(payload))
+    return await run_in_threadpool(
+        store_scene, request, title, bytes(payload), allow_duplicate, scene_set_id
+    )
 
 
 @router.get("/scenes/{scene_id}")
@@ -728,9 +798,11 @@ def copy_scene(request, scene_id: str):
                 width=source.width,
                 height=source.height,
                 content_hash=source.content_hash,
+                perceptual_hash=source.perceptual_hash,
                 workflow_state="needs_analysis",
                 duplicated_from=source.id,
                 mapping_group_id=source.mapping_group_id,
+                scene_set_id=source.scene_set_id,
                 revision=1,
                 created_at=now(),
                 updated_at=now(),

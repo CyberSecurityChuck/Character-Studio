@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
 import { ChargeDialog, engineNames, generationNames, isApiEngine, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { BatchDialog, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
@@ -8,7 +8,8 @@ import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, 
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
 import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
-import { replaceRoute, routeParts } from './route'
+import { replaceRoute, routeParts, routeQuery } from './route'
+import { DuplicatesDialog, ImportForm, MoveDialog, StageFilters, inStage, problemLabel, stageFilters, type SceneSet, type StageFilter } from './SceneSets'
 
 export type Box = { x: number; y: number; width: number; height: number }
 type Uncertainty = { field: string; note: string }
@@ -27,7 +28,8 @@ type Analysis = { id: string; version: number; source: string; engine_version: s
 export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
 export type BatchPlace = { id: string; status: string; pause_kind: string | null; position: number; total: number; scene_items: number }
 export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
-export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null }
+export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null
+  scene_set_id: string | null; stage: Exclude<StageFilter, 'all' | 'problems'>; problem: { kind: string; status: string; at: string } | null }
 export type SubjectAssignment = { label: string; bounding_box: Box; position: string; summary: string; action: 'replace' | 'keep' | 'unresolved'; character_id: string | null; reference_ids: string[]; references_auto: boolean; confirmed: boolean; suggested: boolean; images: number[]; problems: string[] }
 export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_id: string; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
 export type PendingPolish = { job_id: string; prompt_id: string; prompt_version: number; polished_text: string; engine_version: string | null; missing: string[] }
@@ -139,81 +141,6 @@ function AnalysisEditor({ draft, onChange }: { draft: AnalysisData; onChange: (n
     <div className="edit-grid">{sceneFields.map(([key, label]) => area(`edit-${key}`, label, draft[key], (v, n) => { n[key] = v }))}</div>
     {area('edit-constraints', 'Must preserve (one per line)', draft.composition_constraints.join('\n'), (v, n) => { n.composition_constraints = v.split('\n').map(x => x.trim()).filter(Boolean) }, 3)}
   </div>
-}
-
-const MAX_NEW_SCENES = 30
-const titleFrom = (file: File) => file.name.replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Untitled scene'
-
-/** One Base Image opens its new scene; several become one scene each (Phase 5.5). */
-function NewSceneForm({ data, onCreated, onCreatedMany, onCancel }: { data: Bootstrap; onCreated: (scene: SceneDetail) => void; onCreatedMany: (created: SceneDetail[], failed: string[]) => void; onCancel: () => void }) {
-  const [files, setFiles] = useState<File[]>([])
-  const [titles, setTitles] = useState<string[]>([])
-  const [previews, setPreviews] = useState<string[]>([])
-  const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState(0)
-  const [error, setError] = useState('')
-  useEffect(() => { const urls = files.map(f => URL.createObjectURL(f)); setPreviews(urls); return () => urls.forEach(u => URL.revokeObjectURL(u)) }, [files])
-  const limitMb = Math.floor(data.max_upload_bytes / 1048576)
-  function choose(list: FileList | null) {
-    const chosen = [...(list ?? [])]
-    if (!chosen.length) return
-    setError(chosen.length > MAX_NEW_SCENES ? `You chose ${chosen.length} images. Up to ${MAX_NEW_SCENES} are added at a time, so the first ${MAX_NEW_SCENES} are listed.` : '')
-    const kept = chosen.slice(0, MAX_NEW_SCENES)
-    setFiles(kept); setTitles(kept.length === 1 ? [''] : kept.map(titleFrom))
-  }
-  const remove = (index: number) => { setFiles(f => f.filter((_, i) => i !== index)); setTitles(t => t.filter((_, i) => i !== index)) }
-  const create = (file: File, title: string) => request<SceneDetail>(`/api/scenes?title=${encodeURIComponent(title.trim() || titleFrom(file))}`, {
-    method: 'POST', headers: { 'X-Studio-Token': data.session_token, 'Content-Type': 'application/octet-stream' }, body: file,
-  }, 'Check the title and image, then try again.')
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!files.length || busy) return
-    const large = files.filter(f => f.size > data.max_upload_bytes)
-    if (large.length) { setError(`${large.map(f => f.name).join(', ')} ${large.length === 1 ? 'is' : 'are'} larger than ${limitMb} MB. Remove ${large.length === 1 ? 'it' : 'them'} first.`); return }
-    setBusy(true); setError(''); setDone(0)
-    if (files.length === 1) {
-      try { onCreated(await create(files[0], titles[0] ?? '')) }
-      catch (e) { setError(e instanceof Error ? e.message : 'The scene could not be created.') }
-      finally { setBusy(false) }
-      return
-    }
-    // One at a time, like single uploads, so every file passes the same checks.
-    const created: SceneDetail[] = [], failed: string[] = []
-    for (const [index, file] of files.entries()) {
-      try { created.push(await create(file, titles[index])) } catch (e) { failed.push(`${file.name} (${e instanceof Error ? e.message : 'not added'})`) }
-      setDone(index + 1)
-    }
-    setBusy(false)
-    onCreatedMany(created, failed)
-  }
-  const many = files.length > 1
-  return <form className="new-scene" onSubmit={e => void submit(e)}>
-    <h2 id="new-scene-title">{many ? `${files.length} new scenes` : 'New scene'}</h2>
-    <p className="hint">Choose the Base Image whose composition you want to recreate, or several to make a scene from each. Images stay on this computer until you choose to analyse them.</p>
-    <fieldset disabled={busy}>
-      {many ? <div className="new-scenes">
-        <ol className="new-scene-list">{files.map((file, index) => <li key={`${file.name}-${index}`} className={file.size > data.max_upload_bytes ? 'too-large' : ''}>
-          <img src={previews[index]} alt="" />
-          <div><label htmlFor={`new-title-${index}`} className="visually-hidden">Title for {file.name}</label>
-            <input id={`new-title-${index}`} maxLength={120} value={titles[index] ?? ''} placeholder={titleFrom(file)} onChange={e => setTitles(t => t.map((x, i) => i === index ? e.target.value : x))} />
-            {file.size > data.max_upload_bytes && <small className="frame-error">Larger than {limitMb} MB</small>}</div>
-          <button type="button" className="secondary compact icon-only" aria-label={`Remove ${file.name}`} onClick={() => remove(index)}>×</button>
-        </li>)}</ol>
-        <label className="link-button change-files">Choose other images<input className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={e => choose(e.target.files)} /></label>
-      </div> : <div className="new-scene-body">
-        <label className={`drop-zone ${previews[0] ? 'has-image' : ''}`}>
-          <input className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp" required={!files.length} onChange={e => choose(e.target.files)} />
-          {previews[0] ? <img src={previews[0]} alt="Selected Base Image" /> : <span><strong>Choose Base Images</strong><small>One or several · JPEG, PNG or WebP · up to {limitMb} MB each</small></span>}
-        </label>
-        <div><label htmlFor="scene-title">Scene title</label><input id="scene-title" maxLength={120} value={titles[0] ?? ''} placeholder={files[0] ? titleFrom(files[0]) : 'For example: Garden bench'} onChange={e => setTitles([e.target.value])} />
-          <p className="hint">Optional. The file name is used if you leave it empty.</p></div>
-      </div>}
-    </fieldset>
-    {error && <p className="frame-error" role="alert">{error}</p>}
-    <div className="dialog-actions">{busy && many && <span className="spacer hint" role="status">Adding {Math.min(done + 1, files.length)} of {files.length}…</span>}
-      <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
-      <button disabled={!files.length || busy}>{busy ? 'Creating…' : many ? `Create ${files.length} scenes` : 'Create scene'}</button></div>
-  </form>
 }
 
 function ManualAnalysis({ scene, token, onImported, onClose }: { scene: SceneSummary; token: string; onImported: (scene: SceneDetail) => void; onClose: () => void }) {
@@ -770,6 +697,15 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   </div>
 }
 
+type SortOrder = 'changed' | 'newest' | 'oldest' | 'title'
+const sortLabels: Record<SortOrder, string> = { changed: 'Recently changed', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
+const sorters: Record<SortOrder, (a: SceneSummary, b: SceneSummary) => number> = {
+  changed: (a, b) => b.updated_at.localeCompare(a.updated_at),
+  newest: (a, b) => b.created_at.localeCompare(a.created_at),
+  oldest: (a, b) => a.created_at.localeCompare(b.created_at),
+  title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }),
+}
+
 export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onDirty: (dirty: boolean) => void; onBusy: (busy: boolean) => void }) {
   const token = data.session_token
   const [scenes, setScenes] = useState<SceneSummary[]>([])
@@ -788,13 +724,29 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const [batching, setBatching] = useState<{ kind: 'analysis' | 'generation'; scenes: SceneSummary[]; all?: boolean } | null>(null)
   const [suggesting, setSuggesting] = useState<SceneSummary[] | null>(null)
   const [batchKey, setBatchKey] = useState(0)
+  const [sets, setSets] = useState<SceneSet[]>([])
+  // Filters live in the address (#/scenes?stage=…&set=…&sort=…), so a refresh keeps the view.
+  const [stage, setStage] = useState<StageFilter>(() => { const s = routeQuery().get('stage'); return stageFilters.some(f => f.id === s) ? s as StageFilter : 'all' })
+  const [setFilter, setSetFilter] = useState(() => routeQuery().get('set') ?? 'all')
+  const [sort, setSort] = useState<SortOrder>(() => { const s = routeQuery().get('sort'); return s && s in sortLabels ? s as SortOrder : 'changed' })
+  const [moving, setMoving] = useState<SceneSummary[] | null>(null)
+  const [naming, setNaming] = useState<'new' | SceneSet | null>(null)
+  const [findingCopies, setFindingCopies] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
 
-  const load = useCallback(() => request<SceneSummary[]>('/api/scenes').then(list => { setScenes(list); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
+  const load = useCallback(() => Promise.all([request<SceneSummary[]>('/api/scenes'), request<SceneSet[]>('/api/scene-sets')])
+    .then(([list, setList]) => { setScenes(list); setSets(setList); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
   useEffect(() => { void load() }, [load])
   useEffect(() => { if (!open) request<EngineSettings>('/api/engines/settings').then(setEngines, () => undefined) }, [open])
   // The open workspace adds its step to the route; keep it when the scene is unchanged.
-  useEffect(() => { if (!open) replaceRoute('scenes'); else if (routeParts()[1] !== open) replaceRoute(`scenes/${open}`) }, [open])
+  useEffect(() => {
+    if (open) { if (routeParts()[1] !== open) replaceRoute(`scenes/${open}`); return }
+    const query = new URLSearchParams({ ...(stage !== 'all' ? { stage } : {}), ...(setFilter !== 'all' ? { set: setFilter } : {}), ...(sort !== 'changed' ? { sort } : {}) }).toString()
+    replaceRoute(`scenes${query ? `?${query}` : ''}`)
+  }, [open, stage, setFilter, sort])
+  // A set deleted elsewhere falls back to all scenes.
+  // Checked only when the list of sets reloads, so a set just created is never reset.
+  useEffect(() => { if (!loading) setSetFilter(f => ['all', 'none'].includes(f) || sets.some(s => s.id === f) ? f : 'all') }, [loading, sets])
   useEffect(() => { if (creating) { if (!dialogRef.current?.open) dialogRef.current?.showModal() } else dialogRef.current?.close() }, [creating])
   useEffect(() => { if (!open) onBusy(busy) }, [busy, open, onBusy])
   // Keep list cards current while any run is in progress.
@@ -816,21 +768,25 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   }
 
   async function act(action: () => Promise<void>, success: string) {
-    if (busy) return
+    if (busy) return false
     setBusy(true); setActionError(''); setNotice('')
-    try { await action(); setNotice(success) }
-    catch (e) { setActionError(e instanceof Error ? e.message : 'That did not work. Reload and try again.') }
+    try { await action(); setNotice(success); return true }
+    catch (e) { setActionError(e instanceof Error ? e.message : 'That did not work. Reload and try again.'); return false }
     finally { setBusy(false); void load() }
   }
   const togglePick = (id: string) => setPicked(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
   const stopSelecting = () => { setSelecting(false); setPicked([]) }
   const remove = (s: SceneSummary) => send<{ cleanup_pending: boolean }>(`/api/scenes/${s.id}?revision=${s.revision}`, 'DELETE', token)
   function deleteOne(s: SceneSummary) {
-    if (!window.confirm(`Permanently delete “${s.title}”, its Base Image, analyses, prompts, assignments, approvals, results and run folders? This cannot be undone.`)) return
-    void act(async () => {
+    if (!window.confirm(`Permanently delete “${s.title}”, its Base Image, analyses, prompts, assignments, approvals, results and run folders? This cannot be undone.`)) return Promise.resolve(false)
+    return act(async () => {
       const result = await remove(s)
       if (result.cleanup_pending) throw new Error('Scene removed. Some locked files are pending deletion; restart the studio to retry cleanup.')
     }, `“${s.title}” deleted.`)
+  }
+  async function deleteSet(item: SceneSet) {
+    if (!window.confirm(`Delete the set “${item.name}”? Its ${item.scene_count === 1 ? 'scene stays' : `${item.scene_count} scenes stay`} in your studio without a set.`)) return
+    await act(async () => { await send(`/api/scene-sets/${item.id}?revision=${item.revision}`, 'DELETE', token); setSetFilter('all') }, `Set “${item.name}” deleted. Its scenes are kept.`)
   }
   function deleteSelected() {
     const chosen = scenes.filter(s => picked.includes(s.id))
@@ -847,7 +803,11 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     }, `${count} deleted.`)
   }
 
-  const filtered = scenes.filter(s => s.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const setNames = Object.fromEntries(sets.map(s => [s.id, s.name]))
+  const currentSet = sets.find(s => s.id === setFilter) ?? null
+  // Stage counts follow the set and search; the stage filter is applied last.
+  const scoped = scenes.filter(s => (setFilter === 'all' || (setFilter === 'none' ? !s.scene_set_id : s.scene_set_id === setFilter)) && s.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const filtered = scoped.filter(s => inStage(s, stage)).sort(sorters[sort])
   const chosen = scenes.filter(s => picked.includes(s.id))
   const approvedScenes = scenes.filter(s => ['approved', 'generated'].includes(s.workflow_state) && !s.active_job)
   const manualAnalysis = engines?.analysis_engine === 'manual'
@@ -855,13 +815,29 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   return <div className="scenes">
     <div className="library-toolbar filters">
       <div><label htmlFor="scene-search">Search scenes</label><input id="scene-search" type="search" value={query} placeholder="Search by title" onChange={e => setQuery(e.target.value)} /></div>
-      {!selecting && approvedScenes.length > 1 && !manualGeneration && <button className="secondary" disabled={busy} onClick={() => startBatch('generation', approvedScenes, false)}>Generate approved scenes</button>}
-      {!selecting && !!filtered.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
-      <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ New scene</button>
+      <div className="narrow-filter"><label htmlFor="scene-set-filter">Scene set</label>
+        <select id="scene-set-filter" value={setFilter} onChange={e => { if (e.target.value === 'new') setNaming('new'); else { setSetFilter(e.target.value); stopSelecting() } }}>
+          <option value="all">All scenes</option><option value="none">Not in a set</option>
+          {sets.map(s => <option key={s.id} value={s.id}>{s.name} ({s.scene_count})</option>)}
+          <option value="new">New set…</option>
+        </select></div>
+      <div className="narrow-filter"><label htmlFor="scene-sort">Sort</label>
+        <select id="scene-sort" value={sort} onChange={e => setSort(e.target.value as SortOrder)}>{Object.entries(sortLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
+      <span className="toolbar-actions">
+        {!selecting && approvedScenes.length > 1 && !manualGeneration && <button className="secondary" disabled={busy} onClick={() => startBatch('generation', approvedScenes, false)}>Generate approved scenes</button>}
+        {!selecting && scenes.length > 1 && <button className="secondary" disabled={busy} onClick={() => setFindingCopies(true)}>Find duplicates</button>}
+        {!selecting && !!filtered.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
+        <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ Add scenes</button>
+      </span>
     </div>
+    {currentSet && <div className="set-bar"><span className="tiny-label">SCENE SET</span><strong>{currentSet.name}</strong><span className="hint">{currentSet.scene_count} {currentSet.scene_count === 1 ? 'scene' : 'scenes'}</span>
+      <span className="spacer" /><button type="button" className="link-button" disabled={busy} onClick={() => setNaming(currentSet)}>Rename</button>
+      <button type="button" className="link-button danger-link" disabled={busy} onClick={() => void deleteSet(currentSet)}>Delete set</button></div>}
+    {scenes.length > 0 && <StageFilters scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>
       <button type="button" className="secondary" disabled={busy || !picked.length} onClick={() => setSuggesting(chosen)}>Suggest from group</button>
+      <button type="button" className="secondary" disabled={busy || !picked.length} onClick={() => setMoving(chosen)}>Move to set</button>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualGeneration} title={manualGeneration ? 'Manual generation is selected in Studio settings' : 'Generate the selected approved scenes one after another'} onClick={() => startBatch('generation', chosen, true)}>Generate</button>
       <button type="button" className="danger secondary" disabled={busy || !picked.length} onClick={deleteSelected}>Delete</button>
     </SelectionBar>}
@@ -869,17 +845,20 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
     <StatusNote text={busy ? 'Working…' : notice} />
     <BatchList token={token} refreshKey={batchKey} onOpenScene={openAt} onProgress={() => void load()} />
-    {loading ? <p role="status">Loading your scenes…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">A REFERENCE. A NEW POSSIBILITY.</span><h2>{query ? 'No matching scenes' : 'Your first scene starts here'}</h2><p>{query ? 'Try another title.' : 'Add a Base Image whose pose, framing and light you want to recreate. The studio analyses it, you choose who appears, then review and approve the prompt.'}</p></div>
+    {loading ? <p role="status">Loading your scenes…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">A REFERENCE. A NEW POSSIBILITY.</span><h2>{!scenes.length ? 'Your first scene starts here' : query ? 'No matching scenes' : 'No scenes here'}</h2><p>{!scenes.length ? 'Add a Base Image whose pose, framing and light you want to recreate, or a whole folder of them. The studio analyses each one, you choose who appears, then review and approve the prompt.' : query ? 'Try another title.' : 'No scene in this view is at this stage.'}</p>
+        {scenes.length > 0 && (stage !== 'all' || setFilter !== 'all') && <button type="button" className="secondary" onClick={() => { setStage('all'); setSetFilter('all') }}>Show all scenes</button>}</div>
       : <div className="scene-grid">{filtered.map(s => {
         const isPicked = picked.includes(s.id)
         return <div key={s.id} className={`scene-card ${isPicked ? 'picked' : ''}`}>
           <button className="card-main" aria-pressed={selecting ? isPicked : undefined} disabled={busy} onClick={() => selecting ? togglePick(s.id) : setOpen(s.id)}>
             {selecting && <span className="pick-box" aria-hidden="true" />}
             <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
-            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{s.result_count ? `${s.result_count} ${s.result_count === 1 ? 'result' : 'results'} · ` : ''}{new Date(s.updated_at).toLocaleDateString()}</span></span></span>
+            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{s.result_count ? `${s.result_count} ${s.result_count === 1 ? 'result' : 'results'} · ` : ''}{new Date(s.updated_at).toLocaleDateString()}</span></span>
+              {(s.problem || (setFilter === 'all' && s.scene_set_id)) && <span className="scene-card-tags">{s.problem && <span className="tag bad">{problemLabel(s.problem)}</span>}{setFilter === 'all' && s.scene_set_id && <span className="tag">{setNames[s.scene_set_id]}</span>}</span>}</span>
           </button>
           {!selecting && <CardMenu label={s.title} disabled={busy} items={[
             { label: 'Rename', onSelect: () => setRenaming(s) },
+            { label: s.scene_set_id ? 'Move to another set' : 'Add to a set', onSelect: () => setMoving([s]) },
             { label: 'Duplicate', onSelect: () => void act(async () => { await send(`/api/scenes/${s.id}/duplicate`, 'POST', token) }, `Copy of “${s.title}” created.`) },
             { label: 'Delete', danger: true, disabled: !!s.active_job, onSelect: () => deleteOne(s) },
           ]} />}
@@ -888,11 +867,11 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     {renaming && <TextDialog title="Rename scene" label="Scene title" initial={renaming.title} maxLength={120} onClose={() => setRenaming(null)}
       onSave={async value => { await send(`/api/scenes/${renaming.id}`, 'PUT', token, { title: value, revision: renaming.revision }); setActionError(''); setNotice('Scene renamed.'); await load() }} />}
     <dialog ref={dialogRef} className="image-dialog new-scene-dialog" aria-labelledby="new-scene-title" onClose={() => setCreating(false)}>
-      {creating && <NewSceneForm data={data} onCancel={() => setCreating(false)} onCreated={scene => { setCreating(false); setScenes(old => [scene, ...old]); setOpen(scene.id) }}
-        onCreatedMany={(created, failed) => {
+      {creating && <ImportForm data={data} sets={sets} defaultSet={currentSet?.id ?? ''} onCancel={() => setCreating(false)} onCreated={scene => { setCreating(false); setScenes(old => [scene, ...old]); setOpen(scene.id) }}
+        onCreatedMany={(created, failed, setId) => {
           setCreating(false); void load()
           // Keep the new scenes selected so they can be analysed together straight away.
-          if (created.length) { setSelecting(true); setPicked(created.map(c => c.id)); setQuery('') }
+          if (created.length) { setSelecting(true); setPicked(created.map(c => c.id)); setQuery(''); setStage('all'); setSetFilter(setId ?? 'all') }
           setNotice(created.length ? `${created.length} ${created.length === 1 ? 'scene' : 'scenes'} created and selected. Choose Analyse to analyse them one after another, or open one to start.` : '')
           setActionError(failed.length ? `Not added: ${failed.join('; ')}.` : '')
         }} />}
@@ -906,5 +885,14 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
         const notes = [...(result.skipped.length ? [`Skipped: ${result.skipped.map(s => `${s.title} (${s.reason})`).join(', ')}.`] : []), ...(result.left_out.length ? [`Left out (no photos or archived): ${result.left_out.join(', ')}.`] : [])]
         setActionError(notes.join(' '))
       }} />}
+    {moving && <MoveDialog scenes={moving} sets={sets} token={token} onClose={() => setMoving(null)}
+      onMoved={(setId, count) => { setMoving(null); stopSelecting(); setActionError(''); setNotice(`${count} ${count === 1 ? 'scene' : 'scenes'} ${setId ? 'moved to the set' : 'taken out of their set'}.`); void load() }} />}
+    {naming && <TextDialog title={naming === 'new' ? 'New scene set' : 'Rename scene set'} label="Set name" initial={naming === 'new' ? '' : naming.name} maxLength={80} saveLabel={naming === 'new' ? 'Create set' : 'Save'} onClose={() => setNaming(null)}
+      onSave={async value => {
+        if (naming === 'new') { const made = await send<SceneSet>('/api/scene-sets', 'POST', token, { name: value }); setSetFilter(made.id); setNotice(`Set “${value}” created. Add scenes to it with + Add scenes, or Select and Move to set.`) }
+        else { await send(`/api/scene-sets/${naming.id}`, 'PUT', token, { name: value, revision: naming.revision }); setNotice('Set renamed.') }
+        setActionError(''); await load()
+      }} />}
+    {findingCopies && <DuplicatesDialog onClose={() => { setFindingCopies(false); void load() }} onOpen={id => { setFindingCopies(false); setOpen(id) }} onDelete={deleteOne} />}
   </div>
 }

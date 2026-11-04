@@ -20,7 +20,7 @@ export type BatchStart = { batch: Batch; skipped: Skipped[] }
 // Batch sizes the server accepts (backend/batches.py).
 export const MAX_ANALYSIS_RUNS = 50
 export const MAX_GENERATION_RUNS = 20
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const allowance: Record<string, string> = { claude_cli: 'your Claude plan’s allowance', codex_cli: 'your ChatGPT plan’s allowance', gemini_api: 'your Google API key (may be charged)', anthropic_api: 'your Anthropic API key (charged per use)', openai_api: 'your OpenAI API key (charged per use)' }
 const stateLabels: Record<Batch['state'], string> = { running: 'Running', pausing: 'Pausing after this run', paused: 'Paused', cancelling: 'Stopping', cancelled: 'Cancelled', finished: 'Finished' }
@@ -153,7 +153,7 @@ export function BatchList({ token, sceneId, activeOnly, refreshKey, title = 'Bat
   </section>
 }
 
-function Dialog({ label, className = '', children, onClose }: { label: string; className?: string; children: React.ReactNode; onClose: () => void }) {
+export function Dialog({ label, className = '', children, onClose }: { label: string; className?: string; children: React.ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])
   return <dialog ref={ref} className={`image-dialog text-dialog batch-dialog ${className}`} aria-labelledby={label} onClose={onClose}>{children}</dialog>
