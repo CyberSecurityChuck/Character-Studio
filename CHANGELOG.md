@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-04 — Phase 7 plan recorded (not approved)
+
+- PLAN.md v2.2: new **Phase 7 — Scene sets and bulk scene workflow** (7A Scenes page filters, file and folder import, free duplicate checks, scene sets; 7B Analyse all, Assign table, mismatch rules, Draft prompts for all, optional Polish all; 7C review queue, Approve all, full auto-pipeline; 7D Generate all with automatic splitting, pause summary and Continue). §11 gains a planned note on bulk and automatic approval, effective only once Phase 7 is approved.
+- DECISIONS.md D030 records the user's and the assistant's choices, the changes to §11 and the D020 batch sizes, and the alternatives. Docs only; no code changes. Building needs "Approve Phase 7".
+
 ## 2026-10-14 — Install instructions for a new computer
 
 - USER_GUIDE "First setup" now lists what you need (with what each tool is for and whether it is required), a copy-paste PowerShell block that installs Git, Node.js 24 LTS, uv, Claude Code and Codex CLI with winget and npm, clones the project, runs setup and starts the studio, the one-at-a-time `claude` / `codex login` sign-ins, notes (Node version, no winget, restart after installing the AI tools, other folders) and how to update to a newer version.

@@ -1,11 +1,15 @@
 # CHARACTER STUDIO
 ## Master Architecture, Implementation & Continuity Plan
 
-**Version:** 2.1
+**Version:** 2.2
 **Revision 2.1 (2026-10-10):** CLI bridge first, manual bridge as
 fallback (DECISIONS.md D009). Adds Phase 2.5 and updates
 §8.3, §12, §20, §22 and Phases 3–5.
-**Project Status:** Planning document (requirements unchanged since v2.1)
+**Revision 2.2 (2026-11-04):** Adds Phase 7 (scene sets and bulk
+scene workflow, DECISIONS.md D030), recorded at the user's
+request and **not yet approved**. Once approved it adds bulk and
+automatic approval modes to §11.
+**Project Status:** Planning document (requirements unchanged since v2.1; Phase 7 proposed in v2.2)
 **Implementation Status:** Phases 1–6 complete and accepted (2026-10-12); see PROJECT_STATUS.md
 **Development Environment:** Codex
 **Application Type:** Local-First AI Image Generation Studio
@@ -671,6 +675,15 @@ No image-generation request may start unless the
 user has explicitly approved the corresponding inputs.
 
 Paid operations must not begin silently.
+
+Planned change (Phase 7, D030; applies only once Phase 7
+is approved): besides approving one scene at a time, the
+user may approve several scenes with **Approve all** or
+in advance with the **Full auto-pipeline**. Every scene
+still gets its own immutable approval snapshot, which
+records how it was given (single, bulk or auto). Bulk and
+automatic approval always start with a user action after
+a risk explanation; nothing is approved silently.
 
 ---
 
@@ -1981,6 +1994,147 @@ see DECISIONS.md D021 and D022.
   Starting set: Gemini, Anthropic, OpenAI for analysis;
   OpenAI and Gemini for generation, plus FLUX or
   Stability AI for masked region editing.
+
+## PHASE 7 — SCENE SETS AND BULK SCENE WORKFLOW
+
+Recorded 2026-11-04 at the user's request
+(DECISIONS.md D030). **Not approved yet:** building
+needs an explicit "Approve Phase 7". Delivered as
+sub-steps 7A–7D, each with tests, browser QA on
+synthetic data, a local commit and the user's review.
+
+Goal: take many Base Images already on the user's
+storage through analysis, character assignment, prompt,
+approval and generation in bulk, instead of one scene at
+a time.
+
+A **scene set** is a named collection of scenes with one
+dashboard showing how many scenes are at each stage, and
+one action per stage that works on the whole set.
+
+### 7A — Scenes page and import
+
+- Stage filters on the Scenes page, each with a count:
+  All, Not analysed, Needs your check (analysis to
+  review, uncertain items, characters to assign, people
+  count mismatch), Prompt ready to approve, Approved not
+  generated, Completed (at least one generated result),
+  Running / waiting, Problems (last run failed or was
+  interrupted). A stage label on every scene card. Also
+  a Scene set filter and sorting (newest, oldest,
+  title). The chosen filter is kept in the address, so
+  a refresh keeps the view.
+- Import with the file picker and a folder picker
+  (subfolders included, non-image files ignored). Files
+  still pass the existing upload checks one by one.
+- Duplicate checks, free and local (no engine):
+  - Exact copies: the file's content hash is compared
+    with the studio and the rest of the selection
+    before uploading; copies are shown with the
+    existing scene's name and unticked by default. The
+    server also refuses exact copies unless the user
+    chose "Import anyway".
+  - Near copies (re-saved, resized, other format): a
+    perceptual fingerprint made with Pillow (no new
+    dependency); shown side by side, unticked by
+    default, with "Import anyway". Heavy crops or
+    mirrored copies may not be caught.
+  - A one-time "Find duplicates" for scenes already in
+    the studio.
+- Scene sets: create a set at import (or add existing
+  scenes), rename, remove scenes, delete the set (its
+  scenes stay).
+
+### 7B — Preparation
+
+- **Analyse all** with the selected analysis engine.
+- **Assign table**: one row per scene (thumbnail, people
+  found, a character choice per person). Fill buttons
+  apply a rule to every row: one character for every
+  one-person scene, or a group left to right (as
+  Suggest from group). Any row can then be changed by
+  hand. A character can also be chosen per image at
+  import, before analysis; it is applied once the
+  analysis has found the people.
+- People count mismatches:
+  - More people than characters: the largest person
+    gets the character, the others keep their original
+    look; the scene is labelled (for example "Mismatch:
+    2 people, 1 character") and goes to Needs your
+    check.
+  - More characters than people: extra characters are
+    not used; labelled the same way.
+  - No people found: nothing is assigned; labelled "No
+    people found".
+  - Mismatched scenes are left out of Approve all and
+    the auto-pipeline unless the user ticks "extra
+    people may keep their original look".
+- **Draft prompts for all** with the studio's own
+  template (no engine), with an optional preset.
+- **Polish all**: optional, off by default, because it
+  adds one engine run per scene.
+
+### 7C — Approval modes
+
+The user chooses; the studio explains the risks of each
+mode before it starts.
+
+- **Review queue**: one screen per scene (Base Image,
+  subject boxes, assignments, prompt, warnings) with
+  Approve & next, Skip and Open full editor; uncertain
+  items can be confirmed inline.
+- **Approve all**: a confirmation with thumbnails of
+  every scene and a count of scenes with warnings.
+  Scenes that cannot be approved (no prompt, missing or
+  changed files, nobody assigned) are skipped and listed
+  with the reason. Uncertain analysis items and
+  warnings are accepted in bulk only with an explicit
+  tick.
+- **Full auto-pipeline**: the user sets the rules once
+  (engines, characters, preset, images per scene) and
+  clicks Run everything; the studio analyses, assigns,
+  drafts, approves and generates. By default scenes with
+  uncertain analysis or a mismatch stop at Needs your
+  check; the user can switch that off.
+- Every scene gets its own approval snapshot recording
+  its mode (single, bulk or auto).
+
+### 7D — Generate all
+
+- Any number of images; the studio splits them into
+  batches of at most 20 images (and analyses into
+  batches of at most 50) and runs them one after
+  another, never in parallel. The D020 sizes stay as
+  the batch size, no longer as a limit on the user.
+- Before starting: total images, estimated time, the
+  allowance used, and the warning that the run may use
+  up the plan's limit and stop partway. A paid API
+  engine shows the estimated total cost and needs one
+  charge confirmation for the run.
+- A usage limit, sign-out or other stop pauses the run
+  (persisted server-side; survives restart). The
+  summary says how many images were done, failed and
+  not started, and why and when it paused. Each scene
+  is labelled Generated, Failed, Not started or
+  Interrupted; the labels also appear in the filters.
+- Never resumed automatically: the user clicks Continue
+  (for example after the plan's limit resets). Nothing
+  is retried automatically; Try failed again stays
+  explicit.
+- A results gallery per scene set.
+
+Acceptance:
+
+- Many Base Images can be imported at once without
+  creating exact duplicates, and near duplicates are
+  shown before import
+- The Scenes page filters by stage and by scene set
+- A whole set can be analysed, assigned, drafted,
+  approved (in any of the three modes) and generated
+  with one action per stage
+- A run that stops partway keeps every completed result
+  and shows exactly what is left; nothing continues
+  without the user
 
 ---
 

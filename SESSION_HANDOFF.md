@@ -1,8 +1,15 @@
 # Session handoff
 
-Checkpoint: 2026-10-12 IST (+05:30)
+Checkpoint: 2026-11-04 IST (+05:30)
 
-## Objective and authorization
+## Latest: Phase 7 plan (2026-11-04)
+
+- The user asked for a bulk upload / bulk scene creation option and said to plan first without modifying anything. After answering the user's 11 points (one per decision), the plan was recorded with the user's "Yes, record it": PLAN.md v2.2 (Phase 7 section, planned note in §11 "Approval Rule") and DECISIONS.md D030. Then "Yes, checkpoint": this file, PROJECT_STATUS and CHANGELOG updated and committed locally. Docs only; no tests needed or run.
+- **Phase 7 is not approved.** Do not build anything until the user says "Approve Phase 7". Then start 7A by proposing the additive schema (scene sets, set link on scenes, perceptual hash column, approval mode column) and the near-duplicate threshold, one question at a time.
+- Facts found while planning: scenes already store `content_hash` (SHA-256) but uploads never check it; the Scenes page has only a title search; Pillow (already a dependency) can make the perceptual fingerprint; batch caps are `MAX_ANALYSIS_RUNS = 50`, `MAX_GENERATION_RUNS = 20`, `MAX_IMAGES_PER_SCENE = 10` in `backend/batches.py`.
+- Next action: wait for "Approve Phase 7" (or changes to the plan). Pushing still needs approval each time; this checkpoint commit is local only.
+
+## Objective and authorization (Phase 6, 2026-10-12)
 
 Phase 6 is approved ("Approve Phase 6", 2026-10-11) and delivered as sub-steps 6A–6D (D022). **6A and 6B are complete, accepted and pushed.** On 2026-10-12 the user approved the 6C plan (D025, one question at a time): **6C-1** API image engines and **6C-2** region editing and selective replacement, each with its own local commit, then **one combined 6C review**. The user said "Record, then build 6C-1" and then "Start 6C-2 now". 6C-2 choices (D027): replacing a person sends only that subject's approved photos; results from earlier approvals can be edited unless the user withdrew that approval. **Both 6C-1 (D026) and 6C-2 (D027) are built and committed locally.** The user then said: "We'll now proceed with 6D and then do the review checklist for both of these together, like we did for 6A and 6B." 6D choices (D028): choose each time whether a backup gets a password (password first), and never store the password. **6D is built and committed locally.** The combined review (`Phase_Checks/Phase6CD_Review_Report.md`, "Needs fixes first") is **fixed in D029** (user's choices: keep the withdrawn-approval rule but explain it; success messages as toasts **and** green inline confirmation, everywhere). The follow-up passed (`Phase6CD_Followup_Report.md`: 16/16, 0 problems, "Phase 6C and 6D look good"): **Phase 6 and the whole PLAN.md are complete and accepted (2026-10-12).** The user then asked to update all GitHub-facing docs, make the repository public, push, and run CI (now on every push). All Phase 6 sub-steps are built; do not push or start anything beyond the PLAN.md Phase 6 list without the user's go-ahead.
 
