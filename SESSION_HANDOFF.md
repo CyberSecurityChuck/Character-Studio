@@ -2,6 +2,13 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
+## Latest: Phase 7A review fixes (2026-11-05)
+
+- The user's 7A review (`Phase_Checks/Phase7A_Review_Report.md`): 20/20 steps, problems at steps 2, 6, 8, 10, verdict "Needs fixes first". Choices (one at a time): **pipeline strip** for the stage filters and a **set header card** with a ⋯ menu. Assistant fixes from the notes: drag and drop of images and folders onto Add scenes; one fixed note line under every import row's title. Recorded in D032 and CHANGELOG; USER_GUIDE updated.
+- Code (frontend only): `SceneSets.tsx` `StageFilters` (tiles, `live-dot`), new `SetHeader`, `droppedFiles` (webkitGetAsEntry, recursive readEntries, path order), window drag listeners in `ImportForm` with a `drop-overlay`, `CopyNote` with states checking / clear / copy / error; `Scenes.tsx` uses `SetHeader`; styles replace `.stage-filter*` and `.set-bar` with `.stage-pipeline` / `.stage-tile` / `.set-header`.
+- Verification: pytest 149 passed, ruff and build passed, browser QA as in PROJECT_STATUS. Follow-up check: `Phase_Checks/Phase7A_Followup_Checklist.html` (report `Phase7A_Followup_Report.md`).
+- Next action: wait for the follow-up report; on "looks good" record 7A acceptance, then 7B on the user's go-ahead. Nothing is pushed.
+
 ## Latest: Phase 7 approved; 7A built (2026-11-04)
 
 - The user said **"Approve Phase 7"**, answered three 7A questions one at a time (one scene set per scene; near copies at most 6 of 64 bits; one additive migration `0013_scene_sets` for all of Phase 7) and said **"Record, then build 7A"**. Recorded in AGENTS.md, PLAN.md (status header, §11 note now in effect, Phase 7 section) and DECISIONS.md (D030 approved, D031).

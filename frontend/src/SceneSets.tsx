@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, request, send, type Bootstrap } from './api'
 import { Dialog, plural } from './Batches'
+import { CardMenu, Glyph } from './Controls'
 import { StageChip, type SceneDetail, type SceneSummary } from './Scenes'
 
 // Phase 7A: scene sets, the Scenes page stage filters and the free duplicate checks (D030, D031).
@@ -18,16 +19,27 @@ export const inStage = (scene: SceneSummary, stage: StageFilter) => stage === 'a
 const kindWords: Record<string, string> = { analysis: 'analysis', polish: 'polish', generation: 'generation', export: 'manual export', check: 'quality check', edit: 'region edit' }
 export const problemLabel = (problem: NonNullable<SceneSummary['problem']>) => `Last ${kindWords[problem.kind] ?? 'run'} ${problem.status === 'interrupted' ? 'was interrupted' : 'failed'}`
 
-/** One button per stage with its count; the chosen one is kept in the address. */
+/** The stages in workflow order as one strip of counts (the set's dashboard); Problems sits apart. */
 export function StageFilters({ scenes, value, onChange }: { scenes: SceneSummary[]; value: StageFilter; onChange: (stage: StageFilter) => void }) {
-  return <div className="stage-filters" role="group" aria-label="Filter by stage">
-    {stageFilters.map(f => {
-      const count = scenes.filter(s => inStage(s, f.id)).length
-      return <button key={f.id} type="button" className={`stage-filter ${f.id === 'problems' && count ? 'has-problems' : ''} ${count ? '' : 'empty'}`} aria-pressed={value === f.id} onClick={() => onChange(f.id)}>
-        {f.label}<span>{count}</span>
-      </button>
-    })}
+  const tile = (f: (typeof stageFilters)[number]) => {
+    const count = scenes.filter(s => inStage(s, f.id)).length
+    return <button key={f.id} type="button" className={`stage-tile tile-${f.id} ${count ? '' : 'empty'}`} aria-pressed={value === f.id} onClick={() => onChange(f.id)}>
+      <strong>{f.id === 'running' && count > 0 && <span className="live-dot" aria-hidden="true" />}{count}</strong><span>{f.label}</span>
+    </button>
+  }
+  return <div className="stage-pipeline" role="group" aria-label="Filter by stage">
+    <div className="pipeline-strip">{stageFilters.filter(f => f.id !== 'problems').map(tile)}</div>
+    {tile(stageFilters.find(f => f.id === 'problems')!)}
   </div>
+}
+
+/** The chosen set's title area: name, size and date, with Rename and Delete in a ⋯ menu. */
+export function SetHeader({ item, disabled, onRename, onDelete }: { item: SceneSet; disabled: boolean; onRename: () => void; onDelete: () => void }) {
+  return <section className="set-header" aria-label={`Scene set ${item.name}`}>
+    <span className="set-icon"><Glyph name="folder" /></span>
+    <div className="set-title"><h2>{item.name}</h2><p>{plural(item.scene_count, 'scene')} · created {new Date(item.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}</p></div>
+    <CardMenu label={`scene set ${item.name}`} disabled={disabled} items={[{ label: 'Rename set', onSelect: onRename }, { label: 'Delete set', danger: true, onSelect: onDelete }]} />
+  </section>
 }
 
 /** Choose an existing set, no set, or name a new one; used at import and for Move to set. */
@@ -60,18 +72,41 @@ const bits = (a: string, b: string) => { let x = BigInt(`0x${a}`) ^ BigInt(`0x${
 const flagged = (e: Entry) => !!(e.check?.exact.length || e.check?.near.length || e.twin)
 
 /** Why a file is unticked: an exact or near copy in the studio or earlier in this selection. */
+// Every row gets this one-line note under its title, so all rows keep the same shape.
 function CopyNote({ entry, entries }: { entry: Entry; entries: Entry[] }) {
-  if (entry.error) return <small className="frame-error">{entry.error}</small>
-  if (!entry.check) return <small className="hint">Checking for copies…</small>
+  if (entry.error) return <span className="copy-note error"><small>{entry.error}</small></span>
+  if (!entry.check) return <span className="copy-note checking"><small>Checking for copies…</small></span>
   const { exact, near } = entry.check
   const twin = entry.twin ? entries[entry.twin.index] : null
-  if (!exact.length && !near.length && !twin) return null
+  if (!exact.length && !near.length && !twin) return <span className="copy-note clear"><small>No copies found</small></span>
   const match = exact[0] ?? near[0]
   // A scene already in the studio is named first; the picture always shows what the text names.
   const text = exact.length ? `Exact copy of “${exact[0].title}”${exact.length > 1 ? ` and ${plural(exact.length - 1, 'other scene')}` : ''}`
     : near.length ? `Looks like “${near[0].title}” (re-saved, resized or another format)`
       : `${entry.twin!.exact ? 'Exact copy' : 'Looks like a copy'} of “${twin!.title || titleFrom(twin!.file)}” in this selection`
-  return <span className="copy-note"><img src={match ? match.thumbnail_url : twin!.preview} alt={`Matching image: ${match ? match.title : twin!.file.name}`} /><small>{text}</small></span>
+  return <span className="copy-note copy"><img src={match ? match.thumbnail_url : twin!.preview} alt={`Matching image: ${match ? match.title : twin!.file.name}`} /><small title={text}>{text}</small></span>
+}
+
+/** Files dragged in from the computer; a dropped folder is read with its subfolders, like Choose a folder. */
+async function droppedFiles(data: DataTransfer): Promise<File[]> {
+  // Entries must be taken before the first await: the drop's data is cleared afterwards.
+  const roots = [...data.items].map(item => item.webkitGetAsEntry?.()).filter((e): e is FileSystemEntry => !!e)
+  if (!roots.length) return [...data.files]
+  const found: { path: string; file: File }[] = []
+  async function walk(entry: FileSystemEntry) {
+    if (entry.isFile) found.push({ path: entry.fullPath, file: await new Promise<File>((ok, fail) => (entry as FileSystemFileEntry).file(ok, fail)) })
+    else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader()
+      // readEntries returns a folder in parts; an empty part means the end.
+      for (;;) {
+        const part = await new Promise<FileSystemEntry[]>((ok, fail) => reader.readEntries(ok, fail))
+        if (!part.length) break
+        for (const child of part) await walk(child)
+      }
+    }
+  }
+  for (const root of roots) await walk(root)
+  return found.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true })).map(f => f.file)
 }
 
 /** Add scenes from files or a whole folder, after free local copy checks (Phase 7A). */
@@ -85,6 +120,7 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
   const [error, setError] = useState('')
   const [setValue, setSetValue] = useState(defaultSet)
   const [setName, setSetName] = useState('')
+  const [dragging, setDragging] = useState(false)
   const run = useRef(0)
   const previews = useRef<string[]>([])
   const limitMb = Math.floor(data.max_upload_bytes / 1048576)
@@ -115,7 +151,7 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
     setChecking(false)
   }
 
-  function choose(list: FileList | null) {
+  function choose(list: FileList | File[] | null) {
     const all = [...(list ?? [])]
     if (!all.length) return
     const images = all.filter(isImage)
@@ -128,6 +164,22 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
     run.current += 1
     if (kept.length) void checkAll(kept, run.current)
   }
+  // Dropping anywhere while the dialog is open adds the files (and never opens them in the browser).
+  const chooseRef = useRef(choose)
+  chooseRef.current = choose
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files')
+    const over = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer!.dropEffect = busy ? 'none' : 'copy'; if (!busy) setDragging(true) }
+    const leave = (e: DragEvent) => { if (!e.relatedTarget) setDragging(false) }
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault(); setDragging(false)
+      if (busy) return
+      droppedFiles(e.dataTransfer!).then(files => chooseRef.current(files), () => setError('Those files could not be read. Use Choose images or Choose a folder instead.'))
+    }
+    window.addEventListener('dragover', over); window.addEventListener('dragleave', leave); window.addEventListener('drop', drop)
+    return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop) }
+  }, [busy])
   const update = (index: number, change: Partial<Entry>) => setEntries(list => list.map((e, i) => i === index ? { ...e, ...change } : e))
   const remove = (index: number) => setEntries(list => list.filter((_, i) => i !== index).map(e => e.twin && e.twin.index >= index ? (e.twin.index === index ? { ...e, twin: undefined } : { ...e, twin: { ...e.twin, index: e.twin.index - 1 } }) : e))
 
@@ -170,12 +222,13 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
     <label className="picker-button">Choose images<input className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={e => { choose(e.target.files); e.target.value = '' }} /></label>
     <label className="picker-button">Choose a folder<input className="visually-hidden" type="file" {...{ webkitdirectory: '', directory: '' }} onChange={e => { choose(e.target.files); e.target.value = '' }} /></label>
   </div>
-  return <form className="new-scene" onSubmit={e => void submit(e)}>
+  return <form className={`new-scene ${dragging ? 'dragging' : ''}`} onSubmit={e => void submit(e)}>
+    {dragging && <div className="drop-overlay" aria-hidden="true"><Glyph name="import" /><strong>Drop images or a folder</strong><small>{entries.length ? 'They replace the list below' : 'Subfolders are included'}</small></div>}
     <h2 id="new-scene-title">{many ? `${entries.length} new scenes` : 'Add scenes'}</h2>
-    <p className="hint">Choose a Base Image, several images, or a folder (subfolders included; other files are ignored). The studio checks each image against your scenes for exact and near copies on this computer, at no cost. Nothing is analysed until you choose to.</p>
+    <p className="hint">Drag images or a folder here, or choose them (subfolders included; other files are ignored). The studio checks each image against your scenes for exact and near copies on this computer, at no cost. Nothing is analysed until you choose to.</p>
     <fieldset disabled={busy}>
       {!entries.length ? <div className="import-start">
-        <span className="drop-zone"><span><strong>Add Base Images</strong><small>JPEG, PNG or WebP · up to {limitMb} MB each · up to {MAX_NEW_SCENES} at a time</small></span></span>
+        <span className="drop-zone"><span><Glyph name="import" /><strong>Drag Base Images or a folder here</strong><small>or use the buttons below · JPEG, PNG or WebP · up to {limitMb} MB each · up to {MAX_NEW_SCENES} at a time</small></span></span>
         {pickers}
       </div> : single ? <div className="new-scene-body">
         <span className="drop-zone has-image"><img src={single.preview} alt="Selected Base Image" /></span>
@@ -183,7 +236,7 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
           <p className="hint">Optional. The file name is used if you leave it empty.</p>
           <div className={`import-check ${flagged(single) || single.error ? 'flagged' : ''}`}><CopyNote entry={single} entries={entries} />
             {flagged(single) && <label className="checkbox-label"><input type="checkbox" checked={single.include} onChange={e => update(0, { include: e.target.checked })} /><span>Import anyway</span></label>}
-            {single.check && !flagged(single) && <small className="ok-line">No copies found in your studio.</small>}</div>
+          </div>
           {pickers}</div>
       </div> : <div className="new-scenes">
         <p className="import-summary" role="status">{checking ? `Checking for copies… ${entries.filter(e => e.check || e.error).length} of ${entries.length}` : `${plural(chosen.length, 'image')} ticked to import`}

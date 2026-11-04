@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-05 — Phase 7A review fixes
+
+- From the user's 7A review (D032). **Stage filters** are now a pipeline strip: one panel with a tile per stage in workflow order (large count, label, orange underline for the chosen one), **Problems** as its own tile that turns red when any scene has a problem, and a pulsing dot while something runs. A chosen **scene set** shows a header card (icon, name, scene count and date) with **Rename set** and **Delete set** in a ⋯ menu.
+- **Drag and drop** in **+ Add scenes**: drop images, several images or a folder (subfolders included) anywhere on the dialog.
+- **Import rows** no longer shift when a copy is found: every row has the same one-line note under its title (Checking…, No copies found, or the copy note with a small picture of the match).
+
 ## 2026-11-04 — Phase 7 approved; 7A: Scenes page filters, import, duplicate checks, scene sets
 
 - The user said "Approve Phase 7" and then "Record, then build 7A". AGENTS.md, PLAN.md (status header, §11 and the Phase 7 section) and DECISIONS.md (D030 approved, new D031) record the approval and the 7A choices: one set per scene, near copies at most 6 of 64 bits apart, one additive migration for all of Phase 7.

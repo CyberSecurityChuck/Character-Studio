@@ -9,7 +9,7 @@ import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
 import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
 import { replaceRoute, routeParts, routeQuery } from './route'
-import { DuplicatesDialog, ImportForm, MoveDialog, StageFilters, inStage, problemLabel, stageFilters, type SceneSet, type StageFilter } from './SceneSets'
+import { DuplicatesDialog, ImportForm, MoveDialog, SetHeader, StageFilters, inStage, problemLabel, stageFilters, type SceneSet, type StageFilter } from './SceneSets'
 
 export type Box = { x: number; y: number; width: number; height: number }
 type Uncertainty = { field: string; note: string }
@@ -830,9 +830,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
         <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ Add scenes</button>
       </span>
     </div>
-    {currentSet && <div className="set-bar"><span className="tiny-label">SCENE SET</span><strong>{currentSet.name}</strong><span className="hint">{currentSet.scene_count} {currentSet.scene_count === 1 ? 'scene' : 'scenes'}</span>
-      <span className="spacer" /><button type="button" className="link-button" disabled={busy} onClick={() => setNaming(currentSet)}>Rename</button>
-      <button type="button" className="link-button danger-link" disabled={busy} onClick={() => void deleteSet(currentSet)}>Delete set</button></div>}
+    {currentSet && <SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />}
     {scenes.length > 0 && <StageFilters scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>
