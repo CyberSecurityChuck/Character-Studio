@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-05 — Phase 7B accepted
+
+- The user's second follow-up check passed (`Phase_Checks/Phase7B_Followup2_Report.md`: 7/7, 0 problems, "Phase 7B looks good"). Phase 7B (Analyse all, Check details, the Assign table, a character at import, Draft prompts for all, optional Polish all) is accepted. Docs only.
+
 ## 2026-11-05 — Phase 7B follow-up: calmer Scenes page
 
 - From the follow-up check (D036). The preparation steps are a **stepper with arrows** (circle, title, state, text, button below) in **one card with the set header**. Find duplicates and Generate approved scenes moved into a ⋯ menu; the stage tiles are compact under a set.
