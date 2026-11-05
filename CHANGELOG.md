@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-05 — Phase 7B review fixes
+
+- From the user's 7B review (D036). New **Check details** step in Prepare: the uncertain details flagged per scene, **Accept as described**, **Accept all** or **Open scene**; accepting is saved as confirmed by you and keeps the assignments.
+- Preparation steps are coloured cards (done green, next up orange, to do amber, running purple, waiting grey). Batches show item tiles and an In progress / Finished switch instead of drop-downs. The Assign table has a tidier fill panel, column headings and aligned boxes.
+
 ## 2026-11-05 — Phase 7B: preparing a whole scene set
 
 - **Approved** ("Approve Phase 7B"; D035). A **Prepare this set** panel under a chosen set's header: **Analyse all** (chained batches of 50, one run at a time, one charge confirmation for a paid engine, a warning that the plan's limit may stop it partway), the **Assign table** (fill rules: one character for one-person scenes, optionally the largest person in multi-person scenes, or a group left to right; saving the table confirms the assignments), **Draft prompts for all** (the studio's own template, optional preset, no engine) and optional **Polish all** with a review list (Use polished / Keep original, bulk buttons; nothing changes until chosen).

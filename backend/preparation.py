@@ -47,6 +47,7 @@ from backend.scenes import (
     writing,
 )
 from backend.workflow import (
+    add_analysis,
     analysis_of,
     build_plan,
     character_photos,
@@ -101,6 +102,8 @@ def preparation(request: Request, scene_set_id: str):
             key: 0
             for key in (
                 "analyse",
+                "analysed",
+                "uncertain",
                 "assign",
                 "assign_open",
                 "draft",
@@ -126,6 +129,7 @@ def preparation(request: Request, scene_set_id: str):
             if analysis is None:
                 counts["analyse"] += 1
                 continue
+            counts["analysed"] += 1
             approved = current_approval(session, scene.id) is not None
             prompt = latest(session, PromptVersion, scene.id)
             waiting = pending_polish(session, scene, prompt) is not None
@@ -134,9 +138,12 @@ def preparation(request: Request, scene_set_id: str):
             if approved:
                 continue
             counts["assign"] += 1
-            if scene.workflow_state == "needs_mapping":
+            data = analysis_of(analysis)
+            if data.uncertainties:
+                counts["uncertain"] += 1
+            if build_plan(session, scene, analysis).blockers:
                 counts["assign_open"] += 1
-            if mismatch_note(scene, analysis_of(analysis)):
+            if mismatch_note(scene, data):
                 counts["mismatched"] += 1
             if scene.workflow_state == "analysis_ready":
                 counts["draft"] += 1
@@ -230,6 +237,95 @@ def analyse_all(request: Request, scene_set_id: str, body: AnalyseAllInput):
         }
     request.app.state.runner.notify()
     return result
+
+
+# Check details ---------------------------------------------------------------------------
+
+
+def _uncertain_scenes(session, scene_set_id: str):
+    """Idle, unapproved scenes whose latest analysis still has uncertain details."""
+    for scene in set_scenes(session, scene_set_id):
+        analysis = latest(session, SceneAnalysis, scene.id)
+        if analysis is None or active_job(session, scene.id):
+            continue
+        if current_approval(session, scene.id) is not None:
+            continue
+        if analysis_of(analysis).uncertainties:
+            yield scene, analysis
+
+
+@router.get("/scene-sets/{scene_set_id}/uncertain")
+def uncertain_rows(request: Request, scene_set_id: str):
+    """The uncertain details the engine flagged, per scene, for the user to accept or correct."""
+    with Session(request.app.state.engine) as session:
+        rows = [
+            {
+                "scene_id": scene.id,
+                "title": scene.title,
+                "thumbnail_url": f"/api/scenes/{scene.id}/image/thumbnail",
+                "analysis_id": analysis.id,
+                "uncertainties": [u.model_dump() for u in analysis_of(analysis).uncertainties],
+            }
+            for scene, analysis in _uncertain_scenes(session, scene_set_id)
+        ]
+        return {"rows": rows}
+
+
+class AcceptItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scene_id: str = Field(max_length=32)
+    # The analysis version the user looked at; a newer one must be looked at again.
+    analysis_id: str = Field(max_length=32)
+
+
+class AcceptInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[AcceptItem] = Field(min_length=1, max_length=500)
+
+
+@router.post("/scene-sets/{scene_set_id}/uncertain/accept")
+def accept_uncertain(request: Request, scene_set_id: str, body: AcceptInput):
+    """Record the listed uncertain details as confirmed by the user, as new analysis versions.
+
+    Only the list of uncertain details changes (they move to the confirmed list), so the
+    people, boxes and assignments stay exactly as they are.
+    """
+    done, failed = [], []
+    for item in body.items:
+        try:
+            with writing(request) as session:
+                scene = session.get(Scene, item.scene_id)
+                if scene is None or scene.scene_set_id != scene_set_id:
+                    raise HTTPException(404, "This scene is no longer in the set.")
+                if active_job(session, scene.id):
+                    raise HTTPException(409, "A run is running or waiting for it.")
+                if current_approval(session, scene.id) is not None:
+                    raise HTTPException(409, "It is approved. Withdraw the approval first.")
+                row = latest(session, SceneAnalysis, scene.id)
+                if row is None or row.id != item.analysis_id:
+                    raise HTTPException(409, "Its analysis changed. Reload the list.")
+                data = analysis_of(row)
+                if not data.uncertainties:
+                    raise HTTPException(409, "Nothing is uncertain in it any more.")
+                confirmed = json.loads(row.confirmed_uncertainties)
+                confirmed += [u.model_dump() for u in data.uncertainties]
+                add_analysis(
+                    session,
+                    scene,
+                    data.model_copy(update={"uncertainties": []}),
+                    "user_edit",
+                    confirmed=confirmed,
+                    engine_version=row.engine_version,
+                    based_on_id=row.id,
+                )
+                title, count = scene.title, len(data.uncertainties)
+            done.append({"scene_id": item.scene_id, "title": title, "count": count})
+        except HTTPException as error:
+            with Session(request.app.state.engine) as session:
+                scene = session.get(Scene, item.scene_id)
+                title = scene.title if scene else "A scene"
+            failed.append({"scene_id": item.scene_id, "title": title, "reason": error.detail})
+    return {"done": done, "failed": failed}
 
 
 # Assign table -----------------------------------------------------------------------------

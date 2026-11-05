@@ -435,3 +435,65 @@ def test_polish_all_queues_runs_and_the_review_list_decides_each(engine_client, 
     assert refused["done"] == []
     assert "missing required elements" in refused["failed"][0]["reason"]
     assert len(scene_of(client, fourth)["prompts"]) == 1
+
+
+def test_uncertain_details_are_accepted_from_the_set_without_opening_scenes(client):
+    holiday = make_set(client)
+    ada = character_with_photos(client, "Ada")
+    shadowy = add_scene(client, "Shadowy", holiday, ANALYSIS)
+    clear = add_scene(client, "Clear", holiday, ONE)
+    approved = add_scene(client, "Approved", holiday, ANALYSIS)
+    shadowy = map_subjects(client, shadowy, replace_with(ada))
+    state = counts(client, holiday)
+    assert (state["uncertain"], state["analysed"]) == (2, 3)
+    assert state["assign_open"] == 2  # counted even while an analysis still has questions
+
+    listed = client.get(f"/api/scene-sets/{holiday['id']}/uncertain").json()["rows"]
+    row = next(r for r in listed if r["scene_id"] == shadowy["id"])
+    assert row["uncertainties"] == ANALYSIS["uncertainties"] and clear["id"] not in {
+        r["scene_id"] for r in listed
+    }
+    # Nothing is drafted while details are uncertain.
+    url = f"/api/scene-sets/{holiday['id']}/draft-prompts"
+    skipped = post(client, url, {}, expect=200)["skipped"]
+    assert "uncertain" in {s["title"]: s["reason"] for s in skipped}["Shadowy"]
+
+    before = scene_of(client, shadowy)
+    accepted = post(
+        client,
+        f"/api/scene-sets/{holiday['id']}/uncertain/accept",
+        {"items": [{"scene_id": shadowy["id"], "analysis_id": row["analysis_id"]}]},
+        expect=200,
+    )
+    assert accepted["done"] == [{"scene_id": shadowy["id"], "title": "Shadowy", "count": 1}]
+    after = scene_of(client, shadowy)
+    # A new analysis version by the user; people, boxes and assignments are untouched.
+    assert (after["analyses"][0]["version"], after["analyses"][0]["source"]) == (2, "user_edit")
+    assert after["analyses"][0]["analysis"]["uncertainties"] == []
+    assert after["analyses"][0]["confirmed_uncertainties"] == ANALYSIS["uncertainties"]
+    assert after["subjects"] == before["subjects"] and after["workflow_state"] == "analysis_ready"
+    assert counts(client, holiday)["uncertain"] == 1
+
+    # The version the user looked at must still be the newest one.
+    stale = post(
+        client,
+        f"/api/scene-sets/{holiday['id']}/uncertain/accept",
+        {"items": [{"scene_id": shadowy["id"], "analysis_id": row["analysis_id"]}]},
+        expect=200,
+    )
+    assert stale["done"] == [] and "changed" in stale["failed"][0]["reason"]
+    drafted = post(client, url, {}, expect=200)["drafted"]
+    assert [d["title"] for d in drafted] == ["Shadowy"]
+    # Approved scenes are never changed.
+    last = client.get(f"/api/scene-sets/{holiday['id']}/uncertain").json()["rows"][0]
+    post(
+        client,
+        f"/api/scene-sets/{holiday['id']}/uncertain/accept",
+        {"items": [{"scene_id": last["scene_id"], "analysis_id": last["analysis_id"]}]},
+        expect=200,
+    )
+    approved = scene_of(client, approved)
+    approved = map_subjects(client, approved, replace_with(ada))
+    approved = approve(client, save_template_prompt(client, approved))
+    gone = client.get(f"/api/scene-sets/{holiday['id']}/uncertain").json()["rows"]
+    assert approved["id"] not in {r["scene_id"] for r in gone}

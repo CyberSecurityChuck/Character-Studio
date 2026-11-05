@@ -835,7 +835,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     {currentSet && <SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />}
     {currentSet && <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
       version={scoped.map(s => `${s.id}${s.workflow_state}${s.revision}${s.active_job ? 1 : 0}`).join()}
-      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />}
+      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />}
     {scenes.length > 0 && <StageFilters scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>

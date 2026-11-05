@@ -10,7 +10,7 @@ import type { SceneSet } from './SceneSets'
 // Phase 7B: preparing a whole scene set - Analyse all, the Assign table, Draft prompts for all,
 // optional Polish all and the polished-prompt review (D030, D035).
 
-type Counts = { total: number; analyse: number; assign: number; assign_open: number; draft: number; redraft: number; polish: number; polish_waiting: number; polish_running: number; review: number; mismatched: number; busy: number }
+type Counts = { total: number; analyse: number; analysed: number; uncertain: number; assign: number; assign_open: number; draft: number; redraft: number; polish: number; polish_waiting: number; polish_running: number; review: number; mismatched: number; busy: number }
 type Skipped = { scene_id: string; title: string; reason: string }
 
 const SKIP_LIMIT = 8
@@ -20,12 +20,14 @@ function SkippedList({ items, heading }: { items: { title: string; reason: strin
     <ul>{items.slice(0, SKIP_LIMIT).map(s => <li key={s.title + s.reason}><b>{s.title}</b>: {s.reason}</li>)}{items.length > SKIP_LIMIT && <li>and {items.length - SKIP_LIMIT} more</li>}</ul></div>
 }
 
-export type PrepareAction = 'analyse' | 'assign' | 'draft' | 'polish' | 'review'
+export type PrepareAction = 'analyse' | 'check' | 'assign' | 'draft' | 'polish' | 'review'
+type StepState = 'done' | 'next' | 'todo' | 'running' | 'waiting' | 'optional'
+const stateWords: Record<StepState, string> = { done: 'Done', next: 'Next up', todo: 'To do', running: 'Running', waiting: 'Waiting', optional: 'Optional' }
 
-/** "Prepare this set": the four preparation steps with how many scenes each would touch. */
-export function PreparePanel({ item, token, analysisEngine, version, disabled, onChanged, onNotice, onBatches }: {
+/** "Prepare this set": the preparation steps with how many scenes each would touch, coloured by state. */
+export function PreparePanel({ item, token, analysisEngine, version, disabled, onChanged, onNotice, onBatches, onOpenScene }: {
   item: SceneSet; token: string; analysisEngine: string; version: string; disabled: boolean
-  onChanged: () => void; onNotice: (text: string, problem?: string) => void; onBatches: () => void
+  onChanged: () => void; onNotice: (text: string, problem?: string) => void; onBatches: () => void; onOpenScene: (id: string) => void
 }) {
   const [counts, setCounts] = useState<Counts | null>(null)
   const [open, setOpen] = useState<PrepareAction | null>(null)
@@ -36,9 +38,6 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
   if (!counts || !counts.total) return null
   const polishing = counts.polish_waiting + counts.polish_running
   const close = () => { setOpen(null); void load(); onChanged() }
-  // The first step that still has work is the orange one.
-  const todo = counts.analyse ? 'analyse' : counts.assign_open ? 'assign' : counts.draft ? 'draft' : counts.review ? 'review' : null
-  const cls = (id: string) => todo === id ? '' : 'secondary'
   async function cancelPolish() {
     if (!window.confirm('Cancel the polish runs that have not started? A run in progress finishes.')) return
     setBusy(true)
@@ -46,31 +45,89 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
     catch (e) { onNotice('', e instanceof Error ? e.message : 'The runs could not be cancelled.') }
     finally { setBusy(false) }
   }
+  // Every step is in exactly one state; the first unfinished step is "Next up" (orange).
+  const raw: Record<'analyse' | 'check' | 'assign' | 'draft', StepState> = {
+    analyse: counts.analyse ? (counts.busy ? 'running' : 'todo') : 'done',
+    check: counts.uncertain ? 'todo' : counts.analysed ? 'done' : 'waiting',
+    assign: counts.assign_open ? 'todo' : counts.assign ? 'done' : 'waiting',
+    draft: counts.draft ? 'todo' : counts.redraft ? 'done' : 'waiting',
+  }
+  const firstOpen = (['analyse', 'check', 'assign', 'draft'] as const).find(k => raw[k] === 'todo')
+  const stateOf = (k: keyof typeof raw): StepState => k === firstOpen ? 'next' : raw[k]
+  const polishState: StepState = polishing ? 'running' : counts.review ? 'next' : counts.polish ? 'optional' : 'waiting'
+  const card = (state: StepState, n: number, title: React.ReactNode, text: string, action: React.ReactNode) =>
+    <li className={`prep-${state}`}><span className="prepare-number">{state === 'done' ? '✓' : n}</span>
+      <div><strong>{title}</strong><span>{text}</span></div><span className="prepare-state">{stateWords[state]}</span>{action}</li>
+  const btn = (state: StepState, label: string, on: PrepareAction, off: boolean, title?: string) =>
+    <button type="button" className={`compact ${state === 'next' ? '' : 'secondary'}`} disabled={disabled || off} title={title} onClick={() => setOpen(on)}>{label}</button>
   return <section className="prepare-panel" aria-label={`Prepare ${item.name}`}>
     <div className="prepare-head"><h3>Prepare this set</h3><span className="hint">One action per step, in order. Each starts only when you click it; nothing here approves or generates anything.</span></div>
     <ol className="prepare-steps">
-      <li className={counts.analyse ? '' : 'is-done'}><span className="prepare-number">1</span><div><strong>Analyse all</strong>
-        <span>{counts.analyse ? `${plural(counts.analyse, 'scene')} not analysed` : 'Every scene is analysed'}</span></div>
-        <button type="button" className={`compact ${cls('analyse')}`} disabled={disabled || !counts.analyse} title={analysisEngine === 'manual' ? 'Manual analysis is selected in Studio settings' : undefined} onClick={() => setOpen('analyse')}>Analyse all</button></li>
-      <li className={counts.assign_open ? '' : 'is-done'}><span className="prepare-number">2</span><div><strong>Assign characters</strong>
-        <span>{counts.assign_open ? `${plural(counts.assign_open, 'scene')} still need someone` : counts.assign ? 'Everyone is assigned' : 'Analyse some scenes first'}{counts.mismatched ? ` · ${counts.mismatched} labelled mismatch` : ''}</span></div>
-        <button type="button" className={`compact ${cls('assign')}`} disabled={disabled || !counts.assign} onClick={() => setOpen('assign')}>Open the table</button></li>
-      <li className={counts.draft ? '' : 'is-done'}><span className="prepare-number">3</span><div><strong>Draft prompts for all</strong>
-        <span>{counts.draft ? `${plural(counts.draft, 'scene')} ready for a draft` : counts.redraft ? 'Drafted. You can redraft with a preset' : 'Waiting for assignments'}</span></div>
-        <button type="button" className={`compact ${cls('draft')}`} disabled={disabled || !(counts.draft + counts.redraft)} onClick={() => setOpen('draft')}>Draft prompts</button></li>
-      <li className="is-optional"><span className="prepare-number">4</span><div><strong>Polish all <small>optional</small></strong>
-        <span>{polishing ? `${plural(counts.polish_running, 'run')} running, ${counts.polish_waiting} waiting` : counts.review ? `${plural(counts.review, 'polished prompt')} to review` : counts.polish ? `${plural(counts.polish, 'prompt')} could be polished` : 'Needs saved prompts'}</span></div>
-        {polishing ? <button type="button" className="secondary compact" disabled={busy} onClick={() => void cancelPolish()}>Cancel waiting</button>
-          : counts.review ? <button type="button" className={`compact ${cls('review')}`} disabled={disabled} onClick={() => setOpen('review')}>Review polished</button>
-            : <button type="button" className="secondary compact" disabled={disabled || !counts.polish} onClick={() => setOpen('polish')}>Polish all</button>}</li>
+      {card(stateOf('analyse'), 1, 'Analyse all', counts.analyse ? `${plural(counts.analyse, 'scene')} not analysed` : 'Every scene is analysed',
+        btn(stateOf('analyse'), 'Analyse all', 'analyse', !counts.analyse, analysisEngine === 'manual' ? 'Manual analysis is selected in Studio settings' : undefined))}
+      {card(stateOf('check'), 2, 'Check details', counts.uncertain ? `${plural(counts.uncertain, 'scene')} with uncertain details` : counts.analysed ? 'Nothing uncertain' : 'Waiting for analyses',
+        btn(stateOf('check'), 'Check details', 'check', !counts.uncertain))}
+      {card(stateOf('assign'), 3, 'Assign characters', counts.assign_open ? `${plural(counts.assign_open, 'scene')} still need someone` : counts.assign ? `Everyone is assigned${counts.mismatched ? ` · ${counts.mismatched} labelled mismatch` : ''}` : 'Waiting for analyses',
+        btn(stateOf('assign'), 'Open the table', 'assign', !counts.assign))}
+      {card(stateOf('draft'), 4, 'Draft prompts for all', counts.draft ? `${plural(counts.draft, 'scene')} ready for a draft` : counts.redraft ? 'Drafted. You can redraft with a preset' : 'Waiting for assignments',
+        btn(stateOf('draft'), 'Draft prompts', 'draft', !(counts.draft + counts.redraft)))}
+      {card(polishState, 5, <>Polish all <small>optional</small></>, polishing ? `${plural(counts.polish_running, 'run')} running, ${counts.polish_waiting} waiting` : counts.review ? `${plural(counts.review, 'polished prompt')} to review` : counts.polish ? `${plural(counts.polish, 'prompt')} could be polished` : 'Needs saved prompts',
+        polishing ? <button type="button" className="secondary compact" disabled={busy} onClick={() => void cancelPolish()}>Cancel waiting</button>
+          : counts.review ? btn(polishState, 'Review polished', 'review', false)
+            : <button type="button" className="secondary compact" disabled={disabled || !counts.polish} onClick={() => setOpen('polish')}>Polish all</button>)}
     </ol>
     {counts.mismatched > 0 && <p className="hint prepare-note">{plural(counts.mismatched, 'scene')} {counts.mismatched === 1 ? 'has' : 'have'} a different number of people and characters. {counts.mismatched === 1 ? 'It stays' : 'They stay'} in Needs your check until you open and approve {counts.mismatched === 1 ? 'it' : 'them'}.</p>}
     {open === 'analyse' && <AnalyseAllDialog item={item} token={token} engine={analysisEngine} count={counts.analyse} onClose={() => setOpen(null)} onStarted={(text, problem) => { close(); onBatches(); onNotice(text, problem) }} />}
+    {open === 'check' && <CheckDetails item={item} token={token} onClose={close} onNotice={onNotice} onOpenScene={id => { setOpen(null); onOpenScene(id) }} />}
     {open === 'assign' && <AssignTable item={item} token={token} onClose={close} onNotice={onNotice} />}
     {open === 'draft' && <DraftDialog item={item} token={token} ready={counts.draft} again={counts.redraft} onClose={close} onNotice={onNotice} />}
     {open === 'polish' && <PolishDialog item={item} token={token} count={counts.polish} onClose={() => setOpen(null)} onStarted={text => { close(); onNotice(text) }} />}
     {open === 'review' && <PolishReview item={item} token={token} onClose={close} onNotice={onNotice} />}
   </section>
+}
+
+// Check details --------------------------------------------------------------------------------
+
+type UncertainRow = { scene_id: string; title: string; thumbnail_url: string; analysis_id: string; uncertainties: { field: string; note: string }[] }
+
+/** The uncertain details the engine flagged, per scene: accept them as described, or open the scene to correct one. */
+function CheckDetails({ item, token, onClose, onNotice, onOpenScene }: { item: SceneSet; token: string; onClose: () => void; onNotice: (text: string, problem?: string) => void; onOpenScene: (id: string) => void }) {
+  const [rows, setRows] = useState<UncertainRow[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [failed, setFailed] = useState<Skipped[]>([])
+  const load = useCallback(() => request<{ rows: UncertainRow[] }>(`/api/scene-sets/${item.id}/uncertain`).then(r => setRows(r.rows), e => setError(e.message)), [item.id])
+  useEffect(() => { void load() }, [load])
+  async function accept(list: UncertainRow[]) {
+    setBusy(true); setError(''); setFailed([])
+    try {
+      const result = await send<{ done: { count: number }[]; failed: Skipped[] }>(`/api/scene-sets/${item.id}/uncertain/accept`, 'POST', token, { items: list.map(r => ({ scene_id: r.scene_id, analysis_id: r.analysis_id })) })
+      setFailed(result.failed)
+      if (result.done.length) onNotice(`Details accepted for ${plural(result.done.length, 'scene')}. They are saved as confirmed by you.`)
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'The details could not be accepted.') }
+    finally { setBusy(false) }
+  }
+  const total = rows?.reduce((n, r) => n + r.uncertainties.length, 0) ?? 0
+  return <Dialog label="check-title" className="assign-dialog" onClose={onClose}>
+    <div className="text-dialog-form">
+      <h2 id="check-title">Check details · {item.name}</h2>
+      <p className="hint">The engine was not sure about these details. Read them, then accept them as described or open the scene to correct one. Accepting saves them as <b>confirmed by you</b> in a new analysis version; the people, boxes and assignments stay exactly as they are.</p>
+      {error && <p className="frame-error" role="alert">{error}</p>}
+      {rows === null ? <p role="status">Loading…</p> : !rows.length ? <p className="ok-line">No scene has uncertain details.</p> : <>
+        <div className="assign-toolbar"><span className="hint">{plural(total, 'detail')} in {plural(rows.length, 'scene')}</span>
+          <button type="button" className="compact" disabled={busy} onClick={() => { if (window.confirm(`Accept all ${plural(total, 'detail')} in ${plural(rows.length, 'scene')} as described?`)) void accept(rows) }}>Accept all</button></div>
+        <ul className="assign-rows detail-rows">{rows.map(row => <li key={row.scene_id}>
+          <img src={row.thumbnail_url} alt="" loading="lazy" />
+          <div className="assign-title"><strong>{row.title}</strong>
+            <div className="detail-list">{row.uncertainties.map(u => <p key={u.field + u.note}><b>{u.field}</b><span>{u.note}</span></p>)}</div></div>
+          <div className="row-actions"><button type="button" className="secondary compact" disabled={busy} onClick={() => onOpenScene(row.scene_id)}>Open scene</button>
+            <button type="button" className="secondary compact" disabled={busy} onClick={() => void accept([row])}>Accept as described</button></div>
+        </li>)}</ul></>}
+      <SkippedList items={failed} heading={`${plural(failed.length, 'scene')} could not be changed`} />
+      <div className="dialog-actions"><button type="button" onClick={onClose}>Done</button></div>
+    </div>
+  </Dialog>
 }
 
 // Analyse all ----------------------------------------------------------------------------
@@ -199,28 +256,26 @@ function AssignTable({ item, token, onClose, onNotice }: { item: SceneSet; token
       <h2 id="assign-title">Assign characters · {item.name}</h2>
       <p className="hint">One row per analysed scene. Use a fill rule, then change any row by hand. Saving the table <b>confirms</b> the assignments, so the scenes can go straight to a prompt. Nothing is sent anywhere and nothing is approved.</p>
       <fieldset className="assign-fill" disabled={busy}>
-        <legend>Fill rule</legend>
-        <div className="segmented" role="radiogroup" aria-label="Fill rule">
-          <label className={`segment ${rule === 'one' ? 'selected' : ''}`}><input type="radio" name="fill-rule" checked={rule === 'one'} onChange={() => setRule('one')} />One character</label>
-          <label className={`segment ${rule === 'group' ? 'selected' : ''}`}><input type="radio" name="fill-rule" checked={rule === 'group'} onChange={() => setRule('group')} />A group, left to right</label>
-        </div>
-        {rule === 'one' ? <div className="assign-fill-body">
-          <div><label htmlFor="fill-character">Character for every one-person scene</label>
-            <select id="fill-character" value={oneId} onChange={e => setOneId(e.target.value)}>{usable.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-          <label className="checkbox-label"><input type="checkbox" checked={largest} onChange={e => setLargest(e.target.checked)} /><span>Scenes with several people: give the character to the largest person (the others keep their original look, and the scene is labelled)</span></label>
-        </div> : <div className="assign-fill-body">
-          {!groups.length ? <p className="notice-line">No groups yet. Create one on the Characters page.</p> : <>
-            <div><label htmlFor="fill-group">Group</label>
-              <select id="fill-group" value={groupId} onChange={e => { setGroupId(e.target.value); setOrder(groups.find(g => g.id === e.target.value)?.member_ids ?? []) }}>{groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.member_ids.length})</option>)}</select></div>
+        <legend className="visually-hidden">Fill rule</legend>
+        <div className="fill-head"><span className="fill-title">Fill rule</span>
+          <div className="segmented" role="radiogroup" aria-label="Fill rule">
+            <label className={`segment ${rule === 'one' ? 'selected' : ''}`}><input type="radio" name="fill-rule" checked={rule === 'one'} onChange={() => setRule('one')} />One character</label>
+            <label className={`segment ${rule === 'group' ? 'selected' : ''}`}><input type="radio" name="fill-rule" checked={rule === 'group'} onChange={() => setRule('group')} />A group, left to right</label>
+          </div></div>
+        {rule === 'one' ? <div className="fill-field"><label htmlFor="fill-character">Character for every one-person scene</label>
+          <select id="fill-character" value={oneId} onChange={e => setOneId(e.target.value)}>{usable.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          : !groups.length ? <p className="notice-line">No groups yet. Create one on the Characters page.</p> : <div className="fill-field">
+            <label htmlFor="fill-group">Group</label>
+            <select id="fill-group" value={groupId} onChange={e => { setGroupId(e.target.value); setOrder(groups.find(g => g.id === e.target.value)?.member_ids ?? []) }}>{groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.member_ids.length})</option>)}</select>
             <ol className="order-list" aria-label="Characters from left to right">{people.map((id, index) => <li key={id} className={usable.some(c => c.id === id) ? '' : 'unavailable'}>
               <span className="order-number">{index + 1}</span><Avatar character={byId[id]} size="mini" /><span className="order-name">{byId[id].name}{!usable.some(c => c.id === id) && <small> · {byId[id].archived ? 'archived' : 'no photos'}</small>}</span>
               <button type="button" className="secondary compact icon-only" aria-label={`Move ${byId[id].name} left`} disabled={index === 0} onClick={() => moveInOrder(index, -1)}>↑</button>
-              <button type="button" className="secondary compact icon-only" aria-label={`Move ${byId[id].name} right`} disabled={index === people.length - 1} onClick={() => moveInOrder(index, 1)}>↓</button></li>)}</ol></>}
-        </div>}
-        <div className="assign-fill-actions">
-          <label className="checkbox-label"><input type="checkbox" checked={onlyEmpty} onChange={e => setOnlyEmpty(e.target.checked)} /><span>Only rows nobody is assigned in yet</span></label>
-          <button type="button" className="secondary" disabled={!rows?.length || (rule === 'one' ? !oneId : !people.length)} onClick={() => void fill()}>Fill rows</button>
+              <button type="button" className="secondary compact icon-only" aria-label={`Move ${byId[id].name} right`} disabled={index === people.length - 1} onClick={() => moveInOrder(index, 1)}>↓</button></li>)}</ol></div>}
+        <div className="fill-options">
+          {rule === 'one' && <label className="option-line"><input type="checkbox" checked={largest} onChange={e => setLargest(e.target.checked)} /><span><b>Scenes with several people</b><small>Give the character to the largest person. The others keep their original look and the scene is labelled.</small></span></label>}
+          <label className="option-line"><input type="checkbox" checked={onlyEmpty} onChange={e => setOnlyEmpty(e.target.checked)} /><span><b>Only rows nobody is assigned in yet</b><small>Untick to replace what rows already have.</small></span></label>
         </div>
+        <div className="fill-action"><button type="button" disabled={!rows?.length || (rule === 'one' ? !oneId : !people.length)} onClick={() => void fill()}>Fill rows</button></div>
       </fieldset>
       {filled && <p className="ok-line" role="status">{filled}</p>}
       <SkippedList items={skipped} heading={`${plural(skipped.length, 'row')} left as they were`} />
@@ -228,6 +283,7 @@ function AssignTable({ item, token, onClose, onNotice }: { item: SceneSet; token
       {rows === null && !error ? <p role="status">Loading the table…</p> : !rows?.length ? <p className="notice-line">No scene in this set has an analysis yet. Run Analyse all first.</p> : <>
         <div className="assign-toolbar"><span className="hint">{plural(rows.length, 'scene')}{waiting ? ` · ${waiting} not analysed yet` : ''}</span>
           <label className="checkbox-label"><input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} /><span>Only rows with someone undecided</span></label></div>
+        <div className="assign-columns" aria-hidden="true"><span>Scene</span><span>People and characters</span></div>
         <ul className="assign-rows">{shown.map(row => {
           const note = mismatchOf(row)
           return <li key={row.scene_id} className={`${row.locked ? 'locked' : ''} ${edits[row.scene_id] && !row.locked ? 'changed' : ''}`}>

@@ -2,7 +2,13 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: Phase 7B built (2026-11-05)
+## Latest: Phase 7B review fixes (2026-11-05, D036)
+
+- The user's review report found 3 problems (steps 4, 5, 9). Fixed after one design question (Check details step): `preparation.py` (`/uncertain`, `/uncertain/accept`, counts `analysed`/`uncertain`, assign_open from plan blockers), `Prepare.tsx` (five state-coloured cards, `CheckDetails`, reworked fill panel and table header), `Batches.tsx` (item tiles with Show all, In progress / Finished switch), styles at the end of `styles.css`. pytest 157 passed, ruff and build passed.
+- Gotcha: nested `<li>` inside `.assign-rows li` inherits the row grid; use `<p>`/`<div>` inside rows.
+- Next action: wait for the follow-up report (`Phase_Checks/Phase7B_Followup_Checklist.html`); on "looks good" record 7B accepted; 7C only on the user's go-ahead. Nothing is pushed.
+
+## Earlier: Phase 7B built (2026-11-05)
 
 - The user said **"Approve Phase 7B"**, answered five design questions one at a time (D035) and the assistant built 7B. Committed locally; **awaiting the user's review** (`Phase_Checks/Phase7B_Review_Checklist.html` → `Phase7B_Review_Report.md`). Do not start 7C before the review or the user's go-ahead. Nothing is pushed.
 - Backend: new `backend/preparation.py` (router registered in `main.py`), `workflow.py` (`largest_subject`, `left_to_right`, `replace_entry`, `mismatch_note`, `apply_import_character` called in `add_analysis`), `scenes.py` (`mapping_entries` + `save_assignments` shared by the scene and the table, `queue_polish`, `apply_polished`, `import_character_id` query on `POST /api/scenes`, summary `mismatch`/`import_character_id` and the stage override to needs_check). Migration `0014_import_character` (`scenes.import_character_id`, `scenes.intended_characters`, both nullable); `SCHEMA_REVISION` updated; the two upgrade tests also drop the new columns.

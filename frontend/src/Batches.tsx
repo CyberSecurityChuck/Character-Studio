@@ -40,6 +40,8 @@ const approvedStates = ['approved', 'generated']
 function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch: Batch; token: string; collapsed?: boolean; onChanged: () => void; onOpenScene?: (id: string, step: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [all, setAll] = useState(false)
+  const visible = collapsed ? 3 : 6
   const { counts } = batch
   const remaining = counts.not_started
   const problems = counts.failed + counts.interrupted
@@ -101,9 +103,10 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
         onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.${chargeLine}`)}>Try failed again ({batch.retryable})</button>}
       {!isActive(batch) && <button type="button" className="link-button" disabled={busy} onClick={() => void act('', 'DELETE')}>Remove from list</button>}
     </div>
-    <details className="batch-items" open={!collapsed && isActive(batch) && batch.total <= 6}>
-      <summary>Items ({batch.total})</summary>
-      <ol>{batch.items.map(item => <li key={item.job_id} className={item.status}>
+    <div className="batch-items">
+      <div className="batch-items-head"><span>Items</span><b>{batch.total}</b>
+        {batch.items.length > visible && <button type="button" className="link-button" onClick={() => setAll(v => !v)}>{all ? 'Show fewer' : `Show all ${batch.total}`}</button>}</div>
+      <ol className="batch-tiles">{(all ? batch.items : batch.items.slice(0, visible)).map(item => <li key={item.job_id} className={`tile-${item.status}`}>
         <img src={item.thumbnail_url} alt="" loading="lazy" />
         <div className="batch-item-copy">
           {onOpenScene && item.scene_title ? <button type="button" className="link-button" onClick={() => onOpenScene(item.scene_id, step)}>{item.scene_title}</button> : <strong>{item.scene_title ?? 'Deleted scene'}</strong>}
@@ -115,7 +118,7 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
         <span className={`run-status ${item.status}`}>{itemLabels[item.status] ?? item.status}</span>
         {item.status === 'running' && <button type="button" className="link-button" disabled={busy} onClick={() => void cancelRun(item)}>Cancel run</button>}
       </li>)}</ol>
-    </details>
+    </div>
   </article>
 }
 
@@ -125,6 +128,7 @@ export function BatchList({ token, sceneId, activeOnly, refreshKey, title = 'Bat
   onOpenScene?: (id: string, step: string) => void; onProgress?: () => void
 }) {
   const [batches, setBatches] = useState<Batch[]>([])
+  const [view, setView] = useState<'active' | 'finished'>('active')
   const progress = useRef('')
   const load = useCallback(() => request<Batch[]>('/api/batches').then(list => {
     setBatches(list)
@@ -144,12 +148,15 @@ export function BatchList({ token, sceneId, activeOnly, refreshKey, title = 'Bat
   if (!shown.length) return null
   const active = shown.filter(isActive)
   const done = shown.filter(b => !isActive(b))
+  const showing = view === 'finished' && done.length ? 'finished' : view === 'active' && active.length ? 'active' : active.length ? 'active' : 'finished'
+  const cards = showing === 'active' ? active : done
   return <section className="batch-list" aria-label={title}>
     {!sceneId && <div className="section-title"><h2>{title}</h2>{active.length > 0 && <span>ONE RUN AT A TIME</span>}</div>}
-    {active.map(b => <BatchCard key={b.id} batch={b} token={token} collapsed={!!sceneId} onChanged={() => void load()} onOpenScene={onOpenScene} />)}
-    {done.length > 0 && <details className="batch-history"><summary>Finished batches ({done.length})</summary>
-      {done.map(b => <BatchCard key={b.id} batch={b} token={token} onChanged={() => void load()} onOpenScene={onOpenScene} />)}
-    </details>}
+    {active.length > 0 && done.length > 0 && <div className="segmented batch-switch" role="radiogroup" aria-label="Which batches to show">
+      {([['active', 'In progress', active.length], ['finished', 'Finished', done.length]] as const).map(([id, label, n]) => <label key={id} className={`segment ${showing === id ? 'selected' : ''}`}>
+        <input type="radio" name="batch-view" checked={showing === id} onChange={() => setView(id)} />{label} <b>{n}</b></label>)}</div>}
+    {!active.length && done.length > 0 && <p className="batch-finished-note">Finished batches ({done.length})</p>}
+    {cards.map(b => <BatchCard key={b.id} batch={b} token={token} collapsed={!!sceneId || showing === 'finished'} onChanged={() => void load()} onOpenScene={onOpenScene} />)}
   </section>
 }
 
