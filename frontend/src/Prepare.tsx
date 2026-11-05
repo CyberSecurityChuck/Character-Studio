@@ -56,8 +56,8 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
   const stateOf = (k: keyof typeof raw): StepState => k === firstOpen ? 'next' : raw[k]
   const polishState: StepState = polishing ? 'running' : counts.review ? 'next' : counts.polish ? 'optional' : 'waiting'
   const card = (state: StepState, n: number, title: React.ReactNode, text: string, action: React.ReactNode) =>
-    <li className={`prep-${state}`}><span className="prepare-number">{state === 'done' ? '✓' : n}</span>
-      <div><strong>{title}</strong><span>{text}</span></div><span className="prepare-state">{stateWords[state]}</span>{action}</li>
+    <li className={`prep-${state}`}><span className="prepare-number" aria-hidden="true">{state === 'done' ? '✓' : state === 'running' ? <span className="spinner" /> : n}</span>
+      <strong>{title}</strong><span className="prepare-state">{stateWords[state]}</span><span className="step-text">{text}</span>{action}</li>
   const btn = (state: StepState, label: string, on: PrepareAction, off: boolean, title?: string) =>
     <button type="button" className={`compact ${state === 'next' ? '' : 'secondary'}`} disabled={disabled || off} title={title} onClick={() => setOpen(on)}>{label}</button>
   return <section className="prepare-panel" aria-label={`Prepare ${item.name}`}>

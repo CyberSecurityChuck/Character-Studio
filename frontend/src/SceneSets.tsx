@@ -21,14 +21,14 @@ const kindWords: Record<string, string> = { analysis: 'analysis', polish: 'polis
 export const problemLabel = (problem: NonNullable<SceneSummary['problem']>) => `Last ${kindWords[problem.kind] ?? 'run'} ${problem.status === 'interrupted' ? 'was interrupted' : 'failed'}`
 
 /** The stages in workflow order as separate count cards (the set's dashboard); Problems comes last. */
-export function StageFilters({ scenes, value, onChange }: { scenes: SceneSummary[]; value: StageFilter; onChange: (stage: StageFilter) => void }) {
+export function StageFilters({ scenes, value, onChange, compact }: { scenes: SceneSummary[]; value: StageFilter; onChange: (stage: StageFilter) => void; compact?: boolean }) {
   const tile = (f: (typeof stageFilters)[number]) => {
     const count = scenes.filter(s => inStage(s, f.id)).length
     return <button key={f.id} type="button" className={`stage-tile tile-${f.id} ${count ? '' : 'empty'}`} aria-pressed={value === f.id} onClick={() => onChange(f.id)}>
       <strong>{f.id === 'running' && count > 0 && <span className="live-dot" aria-hidden="true" />}{count}</strong><span>{f.label}</span>
     </button>
   }
-  return <div className="stage-pipeline" role="group" aria-label="Filter by stage">
+  return <div className={`stage-pipeline ${compact ? 'compact' : ''}`} role="group" aria-label="Filter by stage">
     {stageFilters.map(tile)}
   </div>
 }

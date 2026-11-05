@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-05 — Phase 7B follow-up: calmer Scenes page
+
+- From the follow-up check (D036). The preparation steps are a **stepper with arrows** (circle, title, state, text, button below) in **one card with the set header**. Find duplicates and Generate approved scenes moved into a ⋯ menu; the stage tiles are compact under a set.
+- **Batches** are slim rows (small thumbnail, name, kind) with a status icon: check for done, an exclamation whose error message opens on hover, spinner, clock. Running batches stay near the top; finished ones are in a **Batch history** section below the scenes.
+
 ## 2026-11-05 — Phase 7B review fixes
 
 - From the user's 7B review (D036). New **Check details** step in Prepare: the uncertain details flagged per scene, **Accept as described**, **Accept all** or **Open scene**; accepting is saved as confirmed by you and keeps the assignments.

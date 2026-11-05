@@ -826,17 +826,19 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
       <div className="narrow-filter"><label htmlFor="scene-sort">Sort</label>
         <select id="scene-sort" value={sort} onChange={e => setSort(e.target.value as SortOrder)}>{Object.entries(sortLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
       <span className="toolbar-actions">
-        {!selecting && approvedScenes.length > 1 && !manualGeneration && <button className="secondary" disabled={busy} onClick={() => startBatch('generation', approvedScenes, false)}>Generate approved scenes</button>}
-        {!selecting && scenes.length > 1 && <button className="secondary" disabled={busy} onClick={() => setFindingCopies(true)}>Find duplicates</button>}
+        {!selecting && (scenes.length > 1 || (approvedScenes.length > 1 && !manualGeneration)) && <CardMenu label="more scene tools" disabled={busy} items={[
+          ...(scenes.length > 1 ? [{ label: 'Find duplicates', onSelect: () => setFindingCopies(true) }] : []),
+          ...(approvedScenes.length > 1 && !manualGeneration ? [{ label: 'Generate approved scenes', onSelect: () => startBatch('generation', approvedScenes, false) }] : []),
+        ]} />}
         {!selecting && !!filtered.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
         <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ Add scenes</button>
       </span>
     </div>
-    {currentSet && <SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />}
-    {currentSet && <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
+    {currentSet && <div className="set-card"><SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />
+      <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
       version={scoped.map(s => `${s.id}${s.workflow_state}${s.revision}${s.active_job ? 1 : 0}`).join()}
-      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />}
-    {scenes.length > 0 && <StageFilters scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
+      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} /></div>}
+    {scenes.length > 0 && <StageFilters compact={!!currentSet} scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>
       <button type="button" className="secondary" disabled={busy || !picked.length} onClick={() => setSuggesting(chosen)}>Suggest from group</button>
@@ -847,7 +849,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     {error && <div className="error" role="alert"><strong>Your scenes could not be loaded.</strong><p>{error}</p><button className="secondary" onClick={() => void load()}>Try again</button></div>}
     {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
     <StatusNote text={busy ? 'Working…' : notice} />
-    <BatchList token={token} refreshKey={batchKey} onOpenScene={openAt} onProgress={() => void load()} />
+    <BatchList part="active" token={token} refreshKey={batchKey} onOpenScene={openAt} onProgress={() => void load()} />
     {loading ? <p role="status">Loading your scenes…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">A REFERENCE. A NEW POSSIBILITY.</span><h2>{!scenes.length ? 'Your first scene starts here' : query ? 'No matching scenes' : 'No scenes here'}</h2><p>{!scenes.length ? 'Add a Base Image whose pose, framing and light you want to recreate, or a whole folder of them. The studio analyses each one, you choose who appears, then review and approve the prompt.' : query ? 'Try another title.' : 'No scene in this view is at this stage.'}</p>
         {scenes.length > 0 && (stage !== 'all' || setFilter !== 'all') && <button type="button" className="secondary" onClick={() => { setStage('all'); setSetFilter('all') }}>Show all scenes</button>}</div>
       : <div className="scene-grid">{filtered.map(s => {
@@ -867,6 +869,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
           ]} />}
         </div>
       })}</div>}
+    <BatchList part="history" token={token} refreshKey={batchKey} onOpenScene={openAt} />
     {renaming && <TextDialog title="Rename scene" label="Scene title" initial={renaming.title} maxLength={120} onClose={() => setRenaming(null)}
       onSave={async value => { await send(`/api/scenes/${renaming.id}`, 'PUT', token, { title: value, revision: renaming.revision }); setActionError(''); setNotice('Scene renamed.'); await load() }} />}
     <dialog ref={dialogRef} className="image-dialog new-scene-dialog" aria-labelledby="new-scene-title" onClose={() => setCreating(false)}>

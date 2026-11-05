@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { request, send } from './api'
 import { ChargeSummary, engineNames, generationNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { PresetSelect, usePresets } from './Presets'
@@ -37,11 +37,41 @@ const pauseTitles: Record<string, (name: string, engine: string) => string> = {
 export const isActive = (batch: Batch) => !['finished', 'cancelled'].includes(batch.state)
 const approvedStates = ['approved', 'generated']
 
-function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch: Batch; token: string; collapsed?: boolean; onChanged: () => void; onOpenScene?: (id: string, step: string) => void }) {
+const itemIcons: Record<string, React.ReactNode> = {
+  completed: <><circle cx="12" cy="12" r="8.6" /><path d="m8.2 12.2 2.6 2.6 5-5.4" /></>,
+  failed: <><circle cx="12" cy="12" r="8.6" /><path d="M12 7.6v5.2M12 16.2v.1" /></>,
+  interrupted: <><circle cx="12" cy="12" r="8.6" /><path d="M12 7.6v5.2M12 16.2v.1" /></>,
+  running: <path d="M12 3.4a8.6 8.6 0 1 1-8.6 8.6" />,
+  not_started: <><circle cx="12" cy="12" r="8.6" /><path d="M12 7.5V12l3 1.8" /></>,
+  cancelled: <><circle cx="12" cy="12" r="8.6" /><path d="M8.4 12h7.2" /></>,
+}
+
+/** One run's result as an icon: the message (an error's reason, a time) opens on hover, focus or a click. */
+function ItemStatus({ item, batch }: { item: BatchItem; batch: Batch }) {
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const id = useId()
+  const label = itemLabels[item.status] ?? item.status
+  const detail = item.error_details && item.status !== 'cancelled' ? item.error_details : item.status === 'completed' && item.seconds != null ? `Took ${duration(item.seconds)}` : item.status === 'interrupted' && batch.kind === 'generation' ? 'Open the scene to look for a saved image before generating again.' : ''
+  const show = () => { const r = button.current?.getBoundingClientRect(); if (r) setAt({ top: r.top + r.height / 2, left: r.left - 10 }) }
+  const hide = () => setAt(null)
+  useEffect(() => {
+    if (!at) return
+    const key = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') hide() }
+    window.addEventListener('scroll', hide, true); window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('keydown', key) }
+  }, [at])
+  return <span className={`item-status is-${item.status}`} onMouseEnter={show} onMouseLeave={hide}>
+    <button ref={button} type="button" className="status-icon" aria-label={detail ? `${label}: ${detail}` : label} aria-describedby={at ? id : undefined} onClick={() => at ? hide() : show()} onFocus={show} onBlur={hide}>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{itemIcons[item.status]}</svg>
+    </button>
+    {at && <span role="tooltip" id={id} className={`copy-pop item-pop is-${item.status}`} style={{ top: at.top, left: at.left }}><b>{label}</b>{detail && <span>{detail}</span>}</span>}
+  </span>
+}
+
+function BatchCard({ batch, token, onChanged, onOpenScene }: { batch: Batch; token: string; onChanged: () => void; onOpenScene?: (id: string, step: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [all, setAll] = useState(false)
-  const visible = collapsed ? 3 : 6
   const { counts } = batch
   const remaining = counts.not_started
   const problems = counts.failed + counts.interrupted
@@ -66,26 +96,28 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
   }
   const share = (n: number) => `${(n / Math.max(1, batch.total)) * 100}%`
   const step = batch.kind === 'generation' ? 'generate' : 'analysis'
-  const retriedAs = Object.fromEntries(batch.items.filter(i => i.retry_of).map(i => [i.retry_of, i.position]))
+  const part = batch.settings.of && batch.settings.of > 1 ? ` · part ${batch.settings.part} of ${batch.settings.of}` : ''
   return <article className={`batch-card ${batch.state}`} aria-label={`${batch.kind === 'generation' ? 'Generation' : 'Analysis'} batch`}>
     <div className="batch-head">
       <div><strong>{batch.kind === 'generation' ? `Generate ${runs(batch.total)}` : `Analyse ${plural(batch.total, 'scene')}`}</strong>
-        <span className="hint"> · {batch.engine_name} · {batch.settings.of && batch.settings.of > 1 ? `part ${batch.settings.part} of ${batch.settings.of} · ` : ''}{batch.kind === 'generation' && batch.scene_count > 1 ? `${plural(batch.scene_count, 'scene')} · ` : ''}{batch.settings.mode === 'variation' ? 'variations · ' : ''}started {formatDate(batch.created_at)}</span></div>
+        <span className="hint"> · {batch.engine_name}{part} · {batch.kind === 'generation' && batch.scene_count > 1 ? `${plural(batch.scene_count, 'scene')} · ` : ''}{batch.settings.mode === 'variation' ? 'variations · ' : ''}{formatDate(batch.created_at)}</span></div>
       <span className={`batch-state ${batch.state}`}>{stateLabels[batch.state]}</span>
     </div>
-    <div className="batch-bar" role="img" aria-label={`${counts.completed} done, ${problems} failed or interrupted, ${counts.cancelled} cancelled, ${remaining + counts.running} not finished, of ${batch.total}`}>
-      <span className="done" style={{ width: share(counts.completed) }} />
-      <span className="failed" style={{ width: share(problems) }} />
-      <span className="cancelled" style={{ width: share(counts.cancelled) }} />
-      <span className="running" style={{ width: share(counts.running) }} />
+    <div className="batch-progress">
+      <div className="batch-bar" role="img" aria-label={`${counts.completed} done, ${problems} failed or interrupted, ${counts.cancelled} cancelled, ${remaining + counts.running} not finished, of ${batch.total}`}>
+        <span className="done" style={{ width: share(counts.completed) }} />
+        <span className="failed" style={{ width: share(problems) }} />
+        <span className="cancelled" style={{ width: share(counts.cancelled) }} />
+        <span className="running" style={{ width: share(counts.running) }} />
+      </div>
+      <p className="batch-counts">
+        <span><b>{counts.completed}</b> of {batch.total} done</span>
+        {problems > 0 && <span className="bad"><b>{problems}</b> {counts.interrupted && !counts.failed ? 'interrupted' : 'failed'}</span>}
+        {counts.cancelled > 0 && <span><b>{counts.cancelled}</b> cancelled</span>}
+        {remaining > 0 && <span><b>{remaining}</b> not started</span>}
+        {batch.state === 'running' && batch.estimate_seconds != null && <span className="hint">about {duration(batch.estimate_seconds + (counts.running ? batch.average_seconds ?? 0 : 0))} left</span>}
+      </p>
     </div>
-    <p className="batch-counts">
-      <span><b>{counts.completed}</b> of {batch.total} done</span>
-      {problems > 0 && <span className="bad"><b>{problems}</b> {counts.interrupted && !counts.failed ? 'interrupted' : 'failed'}</span>}
-      {counts.cancelled > 0 && <span><b>{counts.cancelled}</b> cancelled</span>}
-      {remaining > 0 && <span><b>{remaining}</b> not started</span>}
-      {batch.state === 'running' && batch.estimate_seconds != null && <span className="hint">about {duration(batch.estimate_seconds + (counts.running ? batch.average_seconds ?? 0 : 0))} left</span>}
-    </p>
     {batch.state === 'paused' && batch.pause_kind && <div className="check-box warning batch-paused">
       <strong>{(pauseTitles[batch.pause_kind] ?? pauseTitles.user)(engineNames[batch.engine] ?? batch.engine_name, batch.engine)}</strong>
       {batch.pause_details && <p>{batch.pause_details}</p>}
@@ -93,6 +125,13 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
     </div>}
     {batch.state === 'pausing' && <p className="hint">The run in progress finishes first; nothing new starts after it.</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
+    <ol className="batch-rows">{batch.items.map(item => <li key={item.job_id} className={`row-${item.status}`}>
+      <img src={item.thumbnail_url} alt="" loading="lazy" />
+      {onOpenScene && item.scene_title ? <button type="button" className="link-button row-name" onClick={() => onOpenScene(item.scene_id, step)}>{item.scene_title}</button> : <strong className="row-name">{item.scene_title ?? 'Deleted scene'}</strong>}
+      <span className="row-meta">{item.retry_of ? 'Tried again · ' : ''}{batch.kind === 'generation' ? (item.mode === 'variation' ? 'Variation' : 'Image') : 'Analysis'}{item.result_version ? ` · Result ${item.result_version}` : ''}</span>
+      {item.status === 'running' && <button type="button" className="link-button row-cancel" disabled={busy} onClick={() => void cancelRun(item)}>Cancel run</button>}
+      <ItemStatus item={item} batch={batch} />
+    </li>)}</ol>
     <div className="batch-actions">
       {batch.state === 'running' && <button type="button" className="secondary compact" disabled={busy} onClick={() => void act('/pause')}>Pause</button>}
       {batch.state === 'paused' && <button type="button" className="compact" disabled={busy}
@@ -103,32 +142,16 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
         onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.${chargeLine}`)}>Try failed again ({batch.retryable})</button>}
       {!isActive(batch) && <button type="button" className="link-button" disabled={busy} onClick={() => void act('', 'DELETE')}>Remove from list</button>}
     </div>
-    <div className="batch-items">
-      <div className="batch-items-head"><span>Items</span><b>{batch.total}</b>
-        {batch.items.length > visible && <button type="button" className="link-button" onClick={() => setAll(v => !v)}>{all ? 'Show fewer' : `Show all ${batch.total}`}</button>}</div>
-      <ol className="batch-tiles">{(all ? batch.items : batch.items.slice(0, visible)).map(item => <li key={item.job_id} className={`tile-${item.status}`}>
-        <img src={item.thumbnail_url} alt="" loading="lazy" />
-        <div className="batch-item-copy">
-          {onOpenScene && item.scene_title ? <button type="button" className="link-button" onClick={() => onOpenScene(item.scene_id, step)}>{item.scene_title}</button> : <strong>{item.scene_title ?? 'Deleted scene'}</strong>}
-          <span className="hint">{item.retry_of ? 'Tried again · ' : ''}{batch.kind === 'generation' ? (item.mode === 'variation' ? 'Variation' : 'Image') : 'Analysis'}{item.result_version ? ` · Result ${item.result_version}` : ''}{item.seconds != null && item.status === 'completed' ? ` · ${duration(item.seconds)}` : ''}</span>
-          {item.error_details && item.status !== 'cancelled' && <span className="batch-item-error">{item.error_details}</span>}
-          {item.status === 'failed' && retriedAs[item.job_id] && <span className="hint">Tried again as item {retriedAs[item.job_id]}</span>}
-          {item.status === 'interrupted' && batch.kind === 'generation' && <span className="hint">Open the scene to look for a saved image before generating again.</span>}
-        </div>
-        <span className={`run-status ${item.status}`}>{itemLabels[item.status] ?? item.status}</span>
-        {item.status === 'running' && <button type="button" className="link-button" disabled={busy} onClick={() => void cancelRun(item)}>Cancel run</button>}
-      </li>)}</ol>
-    </div>
   </article>
 }
 
-/** Batches from the server, refreshed while any of them is running. */
-export function BatchList({ token, sceneId, activeOnly, refreshKey, title = 'Batches', onOpenScene, onProgress }: {
-  token: string; sceneId?: string; activeOnly?: boolean; refreshKey?: number; title?: string
+/** Batches from the server, refreshed while any of them is running.
+ *  `part` shows only the batches in progress or only the finished ones (the history section). */
+export function BatchList({ token, sceneId, activeOnly, refreshKey, title = 'Batches', part, onOpenScene, onProgress }: {
+  token: string; sceneId?: string; activeOnly?: boolean; refreshKey?: number; title?: string; part?: 'active' | 'history'
   onOpenScene?: (id: string, step: string) => void; onProgress?: () => void
 }) {
   const [batches, setBatches] = useState<Batch[]>([])
-  const [view, setView] = useState<'active' | 'finished'>('active')
   const progress = useRef('')
   const load = useCallback(() => request<Batch[]>('/api/batches').then(list => {
     setBatches(list)
@@ -145,18 +168,12 @@ export function BatchList({ token, sceneId, activeOnly, refreshKey, title = 'Bat
     const timer = window.setInterval(() => void load(), 2000)
     return () => window.clearInterval(timer)
   }, [moving, load])
-  if (!shown.length) return null
-  const active = shown.filter(isActive)
-  const done = shown.filter(b => !isActive(b))
-  const showing = view === 'finished' && done.length ? 'finished' : view === 'active' && active.length ? 'active' : active.length ? 'active' : 'finished'
-  const cards = showing === 'active' ? active : done
-  return <section className="batch-list" aria-label={title}>
-    {!sceneId && <div className="section-title"><h2>{title}</h2>{active.length > 0 && <span>ONE RUN AT A TIME</span>}</div>}
-    {active.length > 0 && done.length > 0 && <div className="segmented batch-switch" role="radiogroup" aria-label="Which batches to show">
-      {([['active', 'In progress', active.length], ['finished', 'Finished', done.length]] as const).map(([id, label, n]) => <label key={id} className={`segment ${showing === id ? 'selected' : ''}`}>
-        <input type="radio" name="batch-view" checked={showing === id} onChange={() => setView(id)} />{label} <b>{n}</b></label>)}</div>}
-    {!active.length && done.length > 0 && <p className="batch-finished-note">Finished batches ({done.length})</p>}
-    {cards.map(b => <BatchCard key={b.id} batch={b} token={token} collapsed={!!sceneId || showing === 'finished'} onChanged={() => void load()} onOpenScene={onOpenScene} />)}
+  const list = part === 'history' ? shown.filter(b => !isActive(b)) : part === 'active' ? shown.filter(isActive) : shown
+  if (!list.length) return null
+  const heading = part === 'history' ? 'Batch history' : title
+  return <section className={`batch-list ${part === 'history' ? 'batch-history' : ''}`} aria-label={heading}>
+    {!sceneId && <div className="section-title"><h2>{heading}</h2><span>{part === 'history' ? `${list.length} FINISHED` : 'ONE RUN AT A TIME'}</span></div>}
+    {list.map(b => <BatchCard key={b.id} batch={b} token={token} onChanged={() => void load()} onOpenScene={onOpenScene} />)}
   </section>
 }
 

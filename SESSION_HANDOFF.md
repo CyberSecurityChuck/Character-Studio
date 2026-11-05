@@ -2,7 +2,12 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: Phase 7B review fixes (2026-11-05, D036)
+## Latest: Phase 7B follow-up fixes (2026-11-05, D036)
+
+- Follow-up report: step card text misaligned/small (fixed) plus design requests the user left to the assistant. Frontend only: `Prepare.tsx` (stepper markup), `Scenes.tsx` (`.set-card` wrapper, ⋯ menu in the toolbar, `BatchList part="active"` near the top and `part="history"` below the grid, `StageFilters compact`), `Batches.tsx` (`BatchCard` rows, `ItemStatus` icon with hover card, `BatchList part`), `SceneSets.tsx` (compact), styles at the end of `styles.css`. The scene workspace and Overview still use `BatchList` without `part`.
+- Next action: wait for `Phase_Checks/Phase7B_Followup2_Checklist.html`'s report; on "looks good" record 7B accepted; 7C only on the user's go-ahead. Nothing is pushed.
+
+## Earlier: Phase 7B review fixes (2026-11-05, D036)
 
 - The user's review report found 3 problems (steps 4, 5, 9). Fixed after one design question (Check details step): `preparation.py` (`/uncertain`, `/uncertain/accept`, counts `analysed`/`uncertain`, assign_open from plan blockers), `Prepare.tsx` (five state-coloured cards, `CheckDetails`, reworked fill panel and table header), `Batches.tsx` (item tiles with Show all, In progress / Finished switch), styles at the end of `styles.css`. pytest 157 passed, ruff and build passed.
 - Gotcha: nested `<li>` inside `.assign-rows li` inherits the row grid; use `<p>`/`<div>` inside rows.
