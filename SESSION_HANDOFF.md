@@ -4,7 +4,7 @@ Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
 ## Latest: Phase 7B accepted (2026-11-05)
 
-- The user's second follow-up check passed (`Phase_Checks/Phase7B_Followup2_Report.md`: 7/7, 0 problems, "Phase 7B looks good"). Recorded in AGENTS.md, DECISIONS (D036 acceptance note), CHANGELOG and PROJECT_STATUS. Three local 7B commits (`e7a80c5`, `0b8677d`, `a03a8b7`) plus this record; nothing is pushed. A restart upgrades the user's database to `0014_import_character` (additive; back up first).
+- The user's second follow-up check passed (`Phase_Checks/Phase7B_Followup2_Report.md`: 7/7, 0 problems, "Phase 7B looks good"). Recorded in AGENTS.md, DECISIONS (D036 acceptance note), CHANGELOG and PROJECT_STATUS. Three local 7B commits (`e7a80c5`, `0b8677d`, `a03a8b7`) plus this record; pushed to `origin/main` with the user's approval (`87278ee..0381d4a`, CI run 41971043404 passed). A restart upgrades the user's database to `0014_import_character` (additive; back up first).
 - Next action: wait for the user's go-ahead on 7C, then ask its decisions one at a time (the plan: review queue, Approve all with an explicit tick for uncertain items and warnings, full auto-pipeline; each scene's own approval snapshot records `single`/`bulk`/`auto`; mismatched scenes are left out unless "extra people may keep their original look" is ticked). Pushing needs approval.
 
 ## Earlier: Phase 7B follow-up fixes (2026-11-05, D036)

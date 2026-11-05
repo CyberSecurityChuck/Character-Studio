@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-05 — Phase 7B pushed
+
+- Pushed to `origin/main` with the user's approval (`87278ee..0381d4a`); CI run 41971043404 passed. Docs only.
+
 ## 2026-11-05 — Phase 7B accepted
 
 - The user's second follow-up check passed (`Phase_Checks/Phase7B_Followup2_Report.md`: 7/7, 0 problems, "Phase 7B looks good"). Phase 7B (Analyse all, Check details, the Assign table, a character at import, Draft prompts for all, optional Polish all) is accepted. Docs only.
