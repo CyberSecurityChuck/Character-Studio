@@ -82,6 +82,7 @@ from backend.workflow import (
     check_approval,
     create_approval,
     current_approval,
+    mismatch_note,
     next_prompt_version,
     refresh_workflow,
     review,
@@ -444,6 +445,13 @@ def scene_summary(request, session, scene: Scene):
     analysis = latest(session, SceneAnalysis, scene.id)
     prompt = latest(session, PromptVersion, scene.id)
     active = active_job(session, scene.id)
+    stage = "running" if active else STAGES.get(scene.workflow_state, "running")
+    mismatch = None
+    if analysis is not None and stage in ("needs_check", "ready_to_approve"):
+        mismatch = mismatch_note(scene, analysis_of(analysis))
+        if mismatch and stage == "ready_to_approve":
+            # A scene whose people and characters differ waits for the user's check (D030).
+            stage = "needs_check"
     return {
         "id": scene.id,
         "title": scene.title,
@@ -456,7 +464,9 @@ def scene_summary(request, session, scene: Scene):
         "last_opened_at": scene.last_opened_at,
         "duplicated_from": scene.duplicated_from,
         "scene_set_id": scene.scene_set_id,
-        "stage": "running" if active else STAGES.get(scene.workflow_state, "running"),
+        "stage": stage,
+        "mismatch": mismatch,
+        "import_character_id": scene.import_character_id,
         "problem": scene_problem(session, scene, active),
         "thumbnail_url": f"/api/scenes/{scene.id}/image/thumbnail",
         "original_url": f"/api/scenes/{scene.id}/image/original",
@@ -675,13 +685,24 @@ def require_set(session, scene_set_id: str | None) -> None:
 
 
 def store_scene(
-    request, title: str, payload: bytes, allow_duplicate=False, scene_set_id: str | None = None
+    request,
+    title: str,
+    payload: bytes,
+    allow_duplicate=False,
+    scene_set_id: str | None = None,
+    import_character_id: str | None = None,
 ):
     settings = request.app.state.settings
     extension, media_type, width, height, thumbnail = decode_image(payload, settings)
     content_hash = hashlib.sha256(payload).hexdigest()
     with Session(request.app.state.engine) as session:
         require_set(session, scene_set_id)
+        if import_character_id is not None:
+            character = session.get(Character, import_character_id)
+            if character is None or character.archived:
+                raise HTTPException(
+                    422, "That character is not available. Reload and choose another."
+                )
         copies = exact_copies(session, content_hash)
         if copies and not allow_duplicate:
             # The browser checks first; this also stops copies from other windows (D030).
@@ -711,6 +732,7 @@ def store_scene(
                 content_hash=content_hash,
                 perceptual_hash=perceptual_hash,
                 scene_set_id=scene_set_id,
+                import_character_id=import_character_id,
                 workflow_state="needs_analysis",
                 revision=1,
                 created_at=now(),
@@ -731,6 +753,7 @@ async def create_scene(
     title: str = Query(min_length=1, max_length=120),
     allow_duplicate: bool = False,
     scene_set_id: str | None = Query(default=None, max_length=32),
+    import_character_id: str | None = Query(default=None, max_length=32),
 ):
     try:
         title = visible(title)
@@ -743,7 +766,13 @@ async def create_scene(
             raise HTTPException(413, f"Image exceeds the {limit // (1024 * 1024)} MB upload limit.")
         payload.extend(chunk)
     return await run_in_threadpool(
-        store_scene, request, title, bytes(payload), allow_duplicate, scene_set_id
+        store_scene,
+        request,
+        title,
+        bytes(payload),
+        allow_duplicate,
+        scene_set_id,
+        import_character_id,
     )
 
 
@@ -1040,6 +1069,87 @@ def edit_subjects(request: Request, scene_id: str, body: SubjectsInput):
         return scene_detail(request, session, scene)
 
 
+def mapping_entries(session, scene_id: str, data, mappings: list[MappingEntry]) -> list[dict]:
+    """Validate the user's choices for each person and turn them into stored entries."""
+    subjects = {s.label: s for s in data.subjects}
+    previous = {
+        m.subject_label: m.character_id
+        for m in session.scalars(
+            select(SubjectMapping).where(SubjectMapping.scene_id == scene_id)
+        )
+    }
+    entries, used = [], {}
+    for entry in mappings:
+        if entry.label not in subjects:
+            raise HTTPException(422, f"{entry.label} is not in the current analysis. Reload.")
+        if any(e["label"] == entry.label for e in entries):
+            raise HTTPException(422, f"{entry.label} appears twice.")
+        if entry.action != "replace":
+            entries.append({"label": entry.label, "action": entry.action})
+            continue
+        character = session.get(Character, entry.character_id) if entry.character_id else None
+        if character is None:
+            raise HTTPException(
+                422 if not entry.character_id else 404,
+                f"Choose a character for {entry.label}."
+                if not entry.character_id
+                else "That character no longer exists. Reload the scene.",
+            )
+        if character.archived and previous.get(entry.label) != character.id:
+            raise HTTPException(
+                409, f"Restore {character.name} in Characters before assigning."
+            )
+        if character.id in used:
+            raise HTTPException(
+                422,
+                f"{character.name} is already assigned to {used[character.id]}. Each "
+                "character can appear only once in a scene.",
+            )
+        used[character.id] = entry.label
+        photos = character_photos(session, character.id)
+        if not photos:
+            raise HTTPException(
+                422, f"{character.name} has no reference photos yet. Add one in Characters."
+            )
+        if entry.reference_ids is None:
+            references = auto_references(
+                photos, character.primary_photo_id, subjects[entry.label].facial_viewing_angle
+            )
+        else:
+            references = entry.reference_ids
+            owned = {p.id for p in photos}
+            if (
+                not references
+                or len(set(references)) != len(references)
+                or not set(references) <= owned
+            ):
+                raise HTTPException(
+                    422, f"Choose 1 to {MAX_REFERENCES} reference photos of {character.name}."
+                )
+        entries.append(
+            {
+                "label": entry.label,
+                "action": "replace",
+                "character_id": character.id,
+                "reference_ids": references,
+                "references_auto": entry.reference_ids is None,
+            }
+        )
+    return entries
+
+
+def save_assignments(session, scene: Scene, analysis, mappings, group_id, intended=None) -> None:
+    """Save the user's choices as checked assignments (the user chose them, D035)."""
+    data = analysis_of(analysis)
+    entries = mapping_entries(session, scene.id, data, mappings)
+    save_mappings(session, scene, subjects_fingerprint(data), entries)
+    scene.mapping_group_id = group_id
+    scene.intended_characters = intended
+    scene.revision += 1
+    scene.updated_at = now()
+    refresh_workflow(session, scene)
+
+
 @router.put("/scenes/{scene_id}/mappings")
 def save_scene_mappings(request: Request, scene_id: str, body: MappingsInput):
     with writing(request) as session:
@@ -1052,76 +1162,8 @@ def save_scene_mappings(request: Request, scene_id: str, body: MappingsInput):
             raise HTTPException(409, "Analyse the scene before assigning characters.")
         if body.group_id and session.get(CharacterGroup, body.group_id) is None:
             raise HTTPException(404, "That group no longer exists. Reload the scene.")
-        data = analysis_of(analysis)
-        subjects = {s.label: s for s in data.subjects}
-        previous = {
-            m.subject_label: m.character_id
-            for m in session.scalars(
-                select(SubjectMapping).where(SubjectMapping.scene_id == scene_id)
-            )
-        }
-        entries, used = [], {}
-        for entry in body.mappings:
-            if entry.label not in subjects:
-                raise HTTPException(422, f"{entry.label} is not in the current analysis. Reload.")
-            if any(e["label"] == entry.label for e in entries):
-                raise HTTPException(422, f"{entry.label} appears twice.")
-            if entry.action != "replace":
-                entries.append({"label": entry.label, "action": entry.action})
-                continue
-            character = session.get(Character, entry.character_id) if entry.character_id else None
-            if character is None:
-                raise HTTPException(
-                    422 if not entry.character_id else 404,
-                    f"Choose a character for {entry.label}."
-                    if not entry.character_id
-                    else "That character no longer exists. Reload the scene.",
-                )
-            if character.archived and previous.get(entry.label) != character.id:
-                raise HTTPException(
-                    409, f"Restore {character.name} in Characters before assigning."
-                )
-            if character.id in used:
-                raise HTTPException(
-                    422,
-                    f"{character.name} is already assigned to {used[character.id]}. Each "
-                    "character can appear only once in a scene.",
-                )
-            used[character.id] = entry.label
-            photos = character_photos(session, character.id)
-            if not photos:
-                raise HTTPException(
-                    422, f"{character.name} has no reference photos yet. Add one in Characters."
-                )
-            if entry.reference_ids is None:
-                references = auto_references(
-                    photos, character.primary_photo_id, subjects[entry.label].facial_viewing_angle
-                )
-            else:
-                references = entry.reference_ids
-                owned = {p.id for p in photos}
-                if (
-                    not references
-                    or len(set(references)) != len(references)
-                    or not set(references) <= owned
-                ):
-                    raise HTTPException(
-                        422, f"Choose 1 to {MAX_REFERENCES} reference photos of {character.name}."
-                    )
-            entries.append(
-                {
-                    "label": entry.label,
-                    "action": "replace",
-                    "character_id": character.id,
-                    "reference_ids": references,
-                    "references_auto": entry.reference_ids is None,
-                }
-            )
-        save_mappings(session, scene, subjects_fingerprint(data), entries)
-        scene.mapping_group_id = body.group_id
-        scene.revision += 1
-        scene.updated_at = now()
-        refresh_workflow(session, scene)
+        # Assigning by hand is the user's own decision, so an earlier mismatch label ends.
+        save_assignments(session, scene, analysis, body.mappings, body.group_id)
         return scene_detail(request, session, scene)
 
 
@@ -1276,6 +1318,36 @@ def save_prompt(request: Request, scene_id: str, body: PromptInput):
         return scene_detail(request, session, scene)
 
 
+def queue_polish(session, scene: Scene, prompt: PromptVersion) -> None:
+    """Queue one Claude run that rewrites this saved prompt; nothing changes until accepted."""
+    analysis = session.get(SceneAnalysis, prompt.analysis_id) if prompt.analysis_id else None
+    analysis = analysis or latest(session, SceneAnalysis, scene.id)
+    if analysis is None:
+        raise HTTPException(409, "Analyse the scene before polishing its prompt.")
+    if len(polish_instruction(prompt.prompt_text, analysis_of(analysis))) > MAX_POLISH_INSTRUCTION:
+        raise HTTPException(
+            422,
+            "This prompt is too long to polish in one run. Shorten it or edit it by hand.",
+        )
+    settings = session.get(EngineSettings, 1)
+    model = chosen_model(settings, "claude_cli")
+    session.add(
+        EngineJob(
+            id=uuid4().hex,
+            kind="polish",
+            scene_id=scene.id,
+            engine="claude_cli",
+            status="not_started",
+            input_id=prompt.id,
+            settings_json=json.dumps({"model": model}) if model else None,
+            timeout_seconds=settings.claude_timeout,
+            created_at=now(),
+        )
+    )
+    session.flush()
+    refresh_workflow(session, scene)
+
+
 @router.post("/scenes/{scene_id}/polish", status_code=202)
 def polish_prompt(request: Request, scene_id: str, body: PolishInput):
     """Queue one Claude run that rewrites the saved prompt; nothing changes until accepted."""
@@ -1285,34 +1357,7 @@ def polish_prompt(request: Request, scene_id: str, body: PolishInput):
         prompt = latest(session, PromptVersion, scene_id)
         if prompt is None or prompt.id != body.prompt_id:
             raise HTTPException(409, "Save your prompt first, then polish the saved version.")
-        analysis = session.get(SceneAnalysis, prompt.analysis_id) if prompt.analysis_id else None
-        analysis = analysis or latest(session, SceneAnalysis, scene_id)
-        if analysis is None:
-            raise HTTPException(409, "Analyse the scene before polishing its prompt.")
-        if len(polish_instruction(prompt.prompt_text, analysis_of(analysis))) > (
-            MAX_POLISH_INSTRUCTION
-        ):
-            raise HTTPException(
-                422,
-                "This prompt is too long to polish in one run. Shorten it or edit it by hand.",
-            )
-        settings = session.get(EngineSettings, 1)
-        model = chosen_model(settings, "claude_cli")
-        session.add(
-            EngineJob(
-                id=uuid4().hex,
-                kind="polish",
-                scene_id=scene_id,
-                engine="claude_cli",
-                status="not_started",
-                input_id=prompt.id,
-                settings_json=json.dumps({"model": model}) if model else None,
-                timeout_seconds=settings.claude_timeout,
-                created_at=now(),
-            )
-        )
-        session.flush()
-        refresh_workflow(session, scene)
+        queue_polish(session, scene, prompt)
         result = scene_detail(request, session, scene)
     request.app.state.runner.notify()
     return result
@@ -1331,47 +1376,52 @@ def _polish_job(session, scene_id, job_id) -> EngineJob:
     return job
 
 
+def apply_polished(
+    session, scene: Scene, job_id: str, prompt_text: str, accept_warnings: bool
+) -> None:
+    """Make the polished text the newest prompt version (the user chose it)."""
+    job = _polish_job(session, scene.id, job_id)
+    original = latest(session, PromptVersion, scene.id)
+    if original is None or job.input_id != original.id:
+        raise HTTPException(
+            409, "The prompt changed after it was polished. Polish it again if you want to."
+        )
+    plan = _current_plan(session, scene)
+    missing = check_prompt(prompt_text, plan.assignments, plan.total_images) if plan else []
+    if missing and not accept_warnings:
+        raise HTTPException(
+            409,
+            "The polished prompt is missing required elements: "
+            + " ".join(missing)
+            + " Keep the original, fix it by hand, or confirm that you want it anyway.",
+        )
+    session.add(
+        PromptVersion(
+            id=uuid4().hex,
+            scene_id=scene.id,
+            analysis_id=original.analysis_id,
+            mapping_hash=original.mapping_hash,
+            version=next_prompt_version(session, scene.id),
+            prompt_text=prompt_text,
+            negative_prompt=original.negative_prompt,
+            scene_changes=original.scene_changes,
+            source="polished" if prompt_text == job.output_text else "user_edit",
+            is_polished=True,
+            polished_from_version_id=original.id,
+            engine_version=job.engine_version,
+            created_at=now(),
+        )
+    )
+    job.decision = "used"
+    scene.updated_at = now()
+    refresh_workflow(session, scene)
+
+
 @router.post("/scenes/{scene_id}/prompts/polished", status_code=201)
 def use_polished(request: Request, scene_id: str, body: PolishedInput):
     with writing(request) as session:
         scene = require_scene(session, scene_id)
-        job = _polish_job(session, scene_id, body.job_id)
-        original = latest(session, PromptVersion, scene_id)
-        if original is None or job.input_id != original.id:
-            raise HTTPException(
-                409, "The prompt changed after it was polished. Polish it again if you want to."
-            )
-        plan = _current_plan(session, scene)
-        missing = (
-            check_prompt(body.prompt_text, plan.assignments, plan.total_images) if plan else []
-        )
-        if missing and not body.accept_warnings:
-            raise HTTPException(
-                409,
-                "The polished prompt is missing required elements: "
-                + " ".join(missing)
-                + " Keep the original, fix it by hand, or confirm that you want it anyway.",
-            )
-        session.add(
-            PromptVersion(
-                id=uuid4().hex,
-                scene_id=scene_id,
-                analysis_id=original.analysis_id,
-                mapping_hash=original.mapping_hash,
-                version=next_prompt_version(session, scene_id),
-                prompt_text=body.prompt_text,
-                negative_prompt=original.negative_prompt,
-                scene_changes=original.scene_changes,
-                source="polished" if body.prompt_text == job.output_text else "user_edit",
-                is_polished=True,
-                polished_from_version_id=original.id,
-                engine_version=job.engine_version,
-                created_at=now(),
-            )
-        )
-        job.decision = "used"
-        scene.updated_at = now()
-        refresh_workflow(session, scene)
+        apply_polished(session, scene, body.job_id, body.prompt_text, body.accept_warnings)
         return scene_detail(request, session, scene)
 
 

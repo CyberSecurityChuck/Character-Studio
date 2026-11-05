@@ -190,6 +190,8 @@ def test_upgrade_from_region_edit_schema_records_earlier_approvals_as_single(set
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
         _ada, scene = approved_scene(client)
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
+        db.execute("ALTER TABLE scenes DROP COLUMN import_character_id")
+        db.execute("ALTER TABLE scenes DROP COLUMN intended_characters")
         db.execute("DROP TABLE scene_sets")
         db.execute("DROP INDEX ix_scenes_scene_set_id")
         db.execute("ALTER TABLE scenes DROP COLUMN scene_set_id")
@@ -197,7 +199,7 @@ def test_upgrade_from_region_edit_schema_records_earlier_approvals_as_single(set
         db.execute("ALTER TABLE approvals DROP COLUMN approval_mode")
         db.execute("UPDATE alembic_version SET version_num = '0012_region_edits'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0013_scene_sets"
+        assert client.get("/api/health").json()["schema_revision"] == "0014_import_character"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["current"]["approval_mode"] == "single"
         assert (detail["stage"], detail["scene_set_id"]) == ("approved", None)

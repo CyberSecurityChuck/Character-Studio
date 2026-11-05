@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-05 — Phase 7B: preparing a whole scene set
+
+- **Approved** ("Approve Phase 7B"; D035). A **Prepare this set** panel under a chosen set's header: **Analyse all** (chained batches of 50, one run at a time, one charge confirmation for a paid engine, a warning that the plan's limit may stop it partway), the **Assign table** (fill rules: one character for one-person scenes, optionally the largest person in multi-person scenes, or a group left to right; saving the table confirms the assignments), **Draft prompts for all** (the studio's own template, optional preset, no engine) and optional **Polish all** with a review list (Use polished / Keep original, bulk buttons; nothing changes until chosen).
+- A character can be chosen per image at import and is given to the largest person once the analysis finds the people. People and characters that differ are labelled (**Mismatch: 2 people, 1 character**, **No people found**) and stay in Needs your check.
+- Schema `0014_import_character` (additive: `scenes.import_character_id`, `scenes.intended_characters`); back up before restarting. New `backend/preparation.py`, `frontend/src/Prepare.tsx`. 156 tests pass (7 new in `tests/test_preparation.py`).
+
 ## 2026-11-05 — Pillow 13 security upgrade
 
 - Pillow 12.3.0 → **13.0.0** (D034), closing 72 Dependabot alerts (8 critical). `pyproject.toml` allows `pillow>=13,<14`; no code changes. 149 tests pass with no deprecation warnings; uploads, copy checks and duplicates checked on a real server.

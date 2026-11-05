@@ -10,7 +10,7 @@ scene workflow, DECISIONS.md D030), recorded at the user's
 request and **approved 2026-11-04** ("Approve Phase 7"). It adds
 bulk and automatic approval modes to §11.
 **Project Status:** Planning document (v2.2: Phase 7 approved 2026-11-04)
-**Implementation Status:** Phases 1–6 complete and accepted (2026-10-12); Phase 7 in progress; see PROJECT_STATUS.md
+**Implementation Status:** Phases 1–6 complete and accepted (2026-10-12); Phase 7 in progress (7A accepted; 7B approved 2026-11-05 and built, awaiting review); see PROJECT_STATUS.md
 **Development Environment:** Codex
 **Application Type:** Local-First AI Image Generation Studio
 

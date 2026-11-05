@@ -114,6 +114,10 @@ class Scene(Base):
     scene_set_id: Mapped[str | None] = mapped_column(String(32), index=True)
     # 64-bit difference hash (16 hex digits) for near-copy checks; made when first needed.
     perceptual_hash: Mapped[str | None] = mapped_column(String(16))
+    # Phase 7B: the character picked at import (applied after the analysis, then cleared) and
+    # how many characters a fill rule or that choice meant to place (mismatch labels).
+    import_character_id: Mapped[str | None] = mapped_column(String(32))
+    intended_characters: Mapped[int | None] = mapped_column(Integer)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[str] = mapped_column(String(40))

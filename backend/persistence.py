@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.configuration import Settings, asset_path, initialize_storage
 
-SCHEMA_REVISION = "0013_scene_sets"
+SCHEMA_REVISION = "0014_import_character"
 
 
 def open_database(settings: Settings) -> Engine:

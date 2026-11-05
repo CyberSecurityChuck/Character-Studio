@@ -6,6 +6,7 @@ import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
+import { PreparePanel } from './Prepare'
 import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
 import { replaceRoute, routeParts, routeQuery } from './route'
@@ -29,7 +30,8 @@ export type Prompt = { id: string; version: number; analysis_id: string | null; 
 export type BatchPlace = { id: string; status: string; pause_kind: string | null; position: number; total: number; scene_items: number }
 export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
 export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null
-  scene_set_id: string | null; stage: Exclude<StageFilter, 'all' | 'problems'>; problem: { kind: string; status: string; at: string } | null }
+  scene_set_id: string | null; stage: Exclude<StageFilter, 'all' | 'problems'>; problem: { kind: string; status: string; at: string } | null
+  mismatch: string | null; import_character_id: string | null }
 export type SubjectAssignment = { label: string; bounding_box: Box; position: string; summary: string; action: 'replace' | 'keep' | 'unresolved'; character_id: string | null; reference_ids: string[]; references_auto: boolean; confirmed: boolean; suggested: boolean; images: number[]; problems: string[] }
 export type ApprovalRecord = { id: string; approved_at: string; invalidated_at: string | null; invalidated_reason: string | null; snapshot_hash: string; analysis_version: number; prompt_id: string; prompt_version: number; is_polished: boolean; mappings: { subject: string; action: string; character_name: string | null; images: number[] }[] }
 export type PendingPolish = { job_id: string; prompt_id: string; prompt_version: number; polished_text: string; engine_version: string | null; missing: string[] }
@@ -51,7 +53,7 @@ type CameraField = 'height' | 'direction' | 'shot_type' | 'framing' | 'perspecti
 const subjectFields: [SubjectField, string][] = [['position', 'Position'], ['pose_summary', 'Pose'], ['body_direction', 'Body direction'], ['torso_orientation', 'Torso'], ['shoulder_alignment', 'Shoulders'], ['head_direction', 'Head direction'], ['facial_viewing_angle', 'Face angle'], ['eye_direction', 'Eyes and gaze'], ['expression', 'Expression'], ['arms_and_hands', 'Arms and hands'], ['legs_and_feet', 'Legs and feet'], ['outfit', 'Outfit'], ['hairstyle', 'Hairstyle'], ['accessories', 'Accessories']]
 const cameraFields: [CameraField, string][] = [['height', 'Height'], ['direction', 'Direction'], ['shot_type', 'Shot type'], ['framing', 'Framing'], ['perspective', 'Perspective']]
 const sceneFields: ['environment' | 'lighting' | 'color_palette' | 'atmosphere', string][] = [['environment', 'Environment'], ['lighting', 'Lighting and shadows'], ['color_palette', 'Colour palette'], ['atmosphere', 'Atmosphere']]
-export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate', checking: 'Checking a result…', editing: 'Editing a result…' }
+export const stageLabels: Record<string, string> = { needs_analysis: 'Needs analysis', analysing: 'Analysing…', review_analysis: 'Review analysis', needs_mapping: 'Assign characters', analysis_ready: 'Ready for prompt', check_needed: 'Needs your check', prompt_saved: 'Ready to approve', polishing: 'Polishing…', approved: 'Approved', generating: 'Generating…', generated: 'Results ready', waiting_analysis: 'Waiting to analyse', waiting_generation: 'Waiting to generate', checking: 'Checking a result…', editing: 'Editing a result…' }
 const sourceLabels: Record<string, string> = { ...engineNames, manual_import: 'Manual import', user_edit: 'Your edit' }
 const engineLabels = engineNames
 const statusLabels: Record<string, string> = { not_started: 'Waiting', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
@@ -831,6 +833,9 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
       </span>
     </div>
     {currentSet && <SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />}
+    {currentSet && <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
+      version={scoped.map(s => `${s.id}${s.workflow_state}${s.revision}${s.active_job ? 1 : 0}`).join()}
+      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />}
     {scenes.length > 0 && <StageFilters scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>
@@ -851,8 +856,8 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
           <button className="card-main" aria-pressed={selecting ? isPicked : undefined} disabled={busy} onClick={() => selecting ? togglePick(s.id) : setOpen(s.id)}>
             {selecting && <span className="pick-box" aria-hidden="true" />}
             <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
-            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.workflow_state} /><span>{s.result_count ? `${s.result_count} ${s.result_count === 1 ? 'result' : 'results'} · ` : ''}{new Date(s.updated_at).toLocaleDateString()}</span></span>
-              {(s.problem || (setFilter === 'all' && s.scene_set_id)) && <span className="scene-card-tags">{s.problem && <span className="tag bad">{problemLabel(s.problem)}</span>}{setFilter === 'all' && s.scene_set_id && <span className="tag">{setNames[s.scene_set_id]}</span>}</span>}</span>
+            <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.mismatch && s.stage === 'needs_check' && s.workflow_state === 'prompt_saved' ? 'check_needed' : s.workflow_state} /><span>{s.result_count ? `${s.result_count} ${s.result_count === 1 ? 'result' : 'results'} · ` : ''}{new Date(s.updated_at).toLocaleDateString()}</span></span>
+              {(s.problem || s.mismatch || (setFilter === 'all' && s.scene_set_id)) && <span className="scene-card-tags">{s.problem && <span className="tag bad">{problemLabel(s.problem)}</span>}{s.mismatch && <span className="tag warn">{s.mismatch}</span>}{setFilter === 'all' && s.scene_set_id && <span className="tag">{setNames[s.scene_set_id]}</span>}</span>}</span>
           </button>
           {!selecting && <CardMenu label={s.title} disabled={busy} items={[
             { label: 'Rename', onSelect: () => setRenaming(s) },

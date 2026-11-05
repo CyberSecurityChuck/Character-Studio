@@ -10,7 +10,7 @@ export type BatchItem = { job_id: string; position: number; scene_id: string; sc
 export type Batch = {
   id: string; kind: 'analysis' | 'generation'; engine: string; engine_name: string; status: string
   state: 'running' | 'pausing' | 'paused' | 'cancelling' | 'cancelled' | 'finished'
-  pause_kind: string | null; pause_details: string | null; settings: { count?: number; mode?: string }
+  pause_kind: string | null; pause_details: string | null; settings: { count?: number; mode?: string; part?: number; of?: number }
   created_at: string; updated_at: string; counts: Record<'not_started' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted', number>
   total: number; scene_count: number; retryable: number; average_seconds: number | null; estimate_seconds: number | null; items: BatchItem[]
 }
@@ -68,7 +68,7 @@ function BatchCard({ batch, token, collapsed, onChanged, onOpenScene }: { batch:
   return <article className={`batch-card ${batch.state}`} aria-label={`${batch.kind === 'generation' ? 'Generation' : 'Analysis'} batch`}>
     <div className="batch-head">
       <div><strong>{batch.kind === 'generation' ? `Generate ${runs(batch.total)}` : `Analyse ${plural(batch.total, 'scene')}`}</strong>
-        <span className="hint"> · {batch.engine_name} · {batch.kind === 'generation' && batch.scene_count > 1 ? `${plural(batch.scene_count, 'scene')} · ` : ''}{batch.settings.mode === 'variation' ? 'variations · ' : ''}started {formatDate(batch.created_at)}</span></div>
+        <span className="hint"> · {batch.engine_name} · {batch.settings.of && batch.settings.of > 1 ? `part ${batch.settings.part} of ${batch.settings.of} · ` : ''}{batch.kind === 'generation' && batch.scene_count > 1 ? `${plural(batch.scene_count, 'scene')} · ` : ''}{batch.settings.mode === 'variation' ? 'variations · ' : ''}started {formatDate(batch.created_at)}</span></div>
       <span className={`batch-state ${batch.state}`}>{stateLabels[batch.state]}</span>
     </div>
     <div className="batch-bar" role="img" aria-label={`${counts.completed} done, ${problems} failed or interrupted, ${counts.cancelled} cancelled, ${remaining + counts.running} not finished, of ${batch.total}`}>

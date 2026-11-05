@@ -22,6 +22,7 @@ from backend.library import backfill_photo_hashes, clean_deleted_files
 from backend.library import router as library_router
 from backend.models import StudioPreferences
 from backend.persistence import SCHEMA_REVISION, open_database
+from backend.preparation import router as preparation_router
 from backend.providers import PROVIDERS
 from backend.quality_api import router as quality_router
 from backend.results import router as results_router
@@ -155,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(library_router)
     app.include_router(scenes_router)
     app.include_router(scene_sets_router)
+    app.include_router(preparation_router)
     app.include_router(results_router)
     app.include_router(backups_router)
     app.include_router(batches_router)

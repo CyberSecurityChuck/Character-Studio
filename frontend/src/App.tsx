@@ -131,7 +131,7 @@ export default function App() {
             <svg className="nav-symbol" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7h18M3 17h18" /><circle cx="8" cy="7" r="3" fill="var(--surface)" /><circle cx="16" cy="17" r="3" fill="var(--surface)" /></svg> Studio settings
           </button>
         </nav>
-        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Scene sets · Phase 7A</span></div>
+        <div className="sidebar-note"><span className="tiny-label">BUILT AROUND YOU</span><p>Your characters.<br />Your scenes.<br />Your computer.</p><span className="version">Scene sets · Phase 7B</span></div>
       </aside>
 
       <div className="workspace">
@@ -140,7 +140,7 @@ export default function App() {
             <span className={`connection ${data && !error ? 'online' : ''}`}><span aria-hidden="true" />{loading ? 'Connecting…' : error ? 'Needs attention' : 'Local studio connected'}</span></span>
         </header>
         <main id="main" tabIndex={-1}>
-          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 7A</p>
+          <div className="page-heading"><div><p className="eyebrow">CHARACTER STUDIO / PHASE 7B</p>
             <h1 ref={heading} tabIndex={-1}>{page === 'overview' ? (data?.preferences.studio_name || 'Your studio') : titles[page][0]}</h1>
             <p className="intro">{titles[page][1]}</p></div>
             <span className="phase-badge">Local & private</span>

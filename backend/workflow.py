@@ -113,6 +113,89 @@ def character_photos(session, character_id) -> list[ReferencePhoto]:
     )
 
 
+def subject_area(subject) -> float:
+    box = subject.bounding_box
+    return box.width * box.height
+
+
+def largest_subject(data: SceneAnalysisData):
+    """The biggest person in the frame (first in numbering on a tie), or None."""
+    return max(
+        data.subjects,
+        key=lambda s: (round(subject_area(s), 6), -int(s.label.split()[1])),
+        default=None,
+    )
+
+
+def left_to_right(data: SceneAnalysisData) -> list:
+    return sorted(data.subjects, key=lambda s: s.bounding_box.x + s.bounding_box.width / 2)
+
+
+def replace_entry(character: Character, photos: list[ReferencePhoto], subject) -> dict:
+    """A mapping entry giving this person the character, with the studio's own photo choice."""
+    return {
+        "label": subject.label,
+        "action": "replace",
+        "character_id": character.id,
+        "reference_ids": auto_references(
+            photos, character.primary_photo_id, subject.facial_viewing_angle
+        ),
+        "references_auto": True,
+    }
+
+
+def mismatch_note(scene: Scene, data: SceneAnalysisData) -> str | None:
+    """People found against the characters a fill rule or import choice meant to place.
+
+    Only scenes that were part of such a plan are labelled (D030, D035); a scene the user
+    assigned by hand, or one with no plan, never is.
+    """
+    intended = scene.intended_characters
+    if intended is None:
+        return None
+    people = len(data.subjects)
+    if people == 0:
+        return "No people found"
+    if people == intended:
+        return None
+    return (
+        f"Mismatch: {people} {'person' if people == 1 else 'people'}, "
+        f"{intended} {'character' if intended == 1 else 'characters'}"
+    )
+
+
+def apply_import_character(session, scene: Scene, data: SceneAnalysisData) -> None:
+    """Give the character chosen at import to the largest person once the people are known.
+
+    Applied once and then forgotten. The assignment counts as confirmed (the user chose it);
+    other people keep their original look and the scene is labelled as a mismatch.
+    """
+    character_id = scene.import_character_id
+    if not character_id:
+        return
+    scene.import_character_id = None
+    character = session.get(Character, character_id)
+    photos = character_photos(session, character_id) if character else []
+    if not data.subjects:
+        scene.intended_characters = 1
+        return
+    if character is None or character.archived or not photos:
+        return
+    if session.scalar(
+        select(SubjectMapping.id).where(SubjectMapping.scene_id == scene.id).limit(1)
+    ):
+        return
+    biggest = largest_subject(data)
+    entries = [
+        replace_entry(character, photos, s)
+        if s.label == biggest.label
+        else {"label": s.label, "action": "keep"}
+        for s in data.subjects
+    ]
+    save_mappings(session, scene, subjects_fingerprint(data), entries)
+    scene.intended_characters = 1
+
+
 @dataclass
 class SubjectPlan:
     label: str
@@ -524,6 +607,7 @@ def add_analysis(
     session.add(analysis)
     session.flush()
     scene.updated_at = now()
+    apply_import_character(session, scene, data)
     refresh_workflow(session, scene)
     return analysis
 

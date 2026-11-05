@@ -2,7 +2,15 @@
 
 Checkpoint: 2026-11-04 IST (+05:30), after building 7A
 
-## Latest: Phase 7A and the UI refresh accepted (2026-11-05)
+## Latest: Phase 7B built (2026-11-05)
+
+- The user said **"Approve Phase 7B"**, answered five design questions one at a time (D035) and the assistant built 7B. Committed locally; **awaiting the user's review** (`Phase_Checks/Phase7B_Review_Checklist.html` → `Phase7B_Review_Report.md`). Do not start 7C before the review or the user's go-ahead. Nothing is pushed.
+- Backend: new `backend/preparation.py` (router registered in `main.py`), `workflow.py` (`largest_subject`, `left_to_right`, `replace_entry`, `mismatch_note`, `apply_import_character` called in `add_analysis`), `scenes.py` (`mapping_entries` + `save_assignments` shared by the scene and the table, `queue_polish`, `apply_polished`, `import_character_id` query on `POST /api/scenes`, summary `mismatch`/`import_character_id` and the stage override to needs_check). Migration `0014_import_character` (`scenes.import_character_id`, `scenes.intended_characters`, both nullable); `SCHEMA_REVISION` updated; the two upgrade tests also drop the new columns.
+- Frontend: new `Prepare.tsx` (`PreparePanel`, `AnalyseAllDialog`, `AssignTable`, `DraftDialog`, `PolishDialog`, `PolishReview`), `Scenes.tsx` (panel under the set header, mismatch tag and "Needs your check" chip on cards), `SceneSets.tsx` (character boxes in the import list), `Batches.tsx` ("part 1 of 3"), styles at the end of `styles.css`, labels say 7B.
+- Gotchas: Polish all queues single `polish` jobs (batches only allow analysis and generation); chained analysis batches use strictly increasing created_at so the runner stays on one batch; `pause_batches` pauses every running batch of the same engine; fill rules only propose (the table's Save confirms); the mismatch label exists only for scenes with `intended_characters` set and is cleared by a hand save in the scene (`save_scene_mappings`) or a table row edited by hand; `httpx2` (not httpx) is the dev dependency name. QA launcher and seed live in this session's scratchpad (`qa/qa_server.py`, `qa/seed.py`).
+- Next action: wait for the user's 7B review report; fix what it finds, then 7C on their go-ahead (Review queue, Approve all, auto-pipeline; approval mode recorded per scene).
+
+## Earlier: Phase 7A and the UI refresh accepted (2026-11-05)
 
 - The user's short check passed (`Phase_Checks/Phase7A_Status_Check_Report.md`: 4/4, 0 problems, "Looks good: 7A and the refresh accepted"). Recorded in AGENTS.md, DECISIONS (D033 acceptance note), CHANGELOG and PROJECT_STATUS.
 - Pushed with the user's "Yes, push" (2026-11-05): `origin/main` `0d3b896..8cedda3`, CI run 41905021106 passed. GitHub reports 72 open Dependabot alerts, all Pillow 12.3.0, fixed in 13.0.0 (pyproject pins `pillow>=12,<13`; Dependabot PR "Bump pillow from 12.3.0 to 13.0.0" open). The user said "Yes, upgrade Pillow": D034, pin `pillow>=13,<14`, lock 13.0.0, no code changes, 149 passed with no deprecation warnings, real-server image checks passed; committed locally. Pushed with the user's approval (`8cedda3..87278ee`); CI run 41911807501 passed; 0 open Dependabot alerts; Dependabot PR #1 closed. Next action: wait for the user's go-ahead on 7B, then ask its decisions one at a time. 7B starts with its own questions, one at a time (Assign table rules, mismatch handling as in D030).

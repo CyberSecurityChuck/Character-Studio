@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { ApiError, request, send, type Bootstrap } from './api'
 import { Dialog, plural } from './Batches'
 import { CardMenu, Glyph } from './Controls'
+import type { Character } from './Library'
 import { StageChip, type SceneDetail, type SceneSummary } from './Scenes'
 
 // Phase 7A: scene sets, the Scenes page stage filters and the free duplicate checks (D030, D031).
@@ -61,7 +62,7 @@ async function chosenSet(value: string, name: string, token: string): Promise<st
 
 type Match = { id: string; title: string; thumbnail_url: string; created_at: string; distance?: number }
 type Check = { content_hash: string; perceptual_hash: string; near_copy_bits: number; exact: Match[]; near: Match[] }
-type Entry = { file: File; title: string; preview: string; check?: Check; error?: string; twin?: { index: number; exact: boolean }; include: boolean }
+type Entry = { file: File; title: string; preview: string; check?: Check; error?: string; twin?: { index: number; exact: boolean }; include: boolean; character?: string }
 
 const MAX_NEW_SCENES = 500
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -161,11 +162,14 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
   const [setValue, setSetValue] = useState(defaultSet)
   const [setName, setSetName] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [characters, setCharacters] = useState<Character[]>([])
+  const [allCharacter, setAllCharacter] = useState('')
   const run = useRef(0)
   const previews = useRef<string[]>([])
   const limitMb = Math.floor(data.max_upload_bytes / 1048576)
   // Stop checking and free the previews when the dialog closes.
   useEffect(() => () => { run.current += 1; previews.current.forEach(url => URL.revokeObjectURL(url)) }, [])
+  useEffect(() => { request<Character[]>('/api/characters').then(list => setCharacters(list.filter(c => !c.archived && c.photos.length > 0)), () => undefined) }, [])
 
   async function checkAll(list: Entry[], token_: number) {
     setChecking(true)
@@ -197,7 +201,7 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
     const images = all.filter(isImage)
     setIgnored(all.length - images.length)
     setError(images.length > MAX_NEW_SCENES ? `You chose ${images.length} images. Up to ${MAX_NEW_SCENES} are added at a time, so the first ${MAX_NEW_SCENES} are listed.` : images.length ? '' : 'No JPEG, PNG or WebP images were found there.')
-    const kept = images.slice(0, MAX_NEW_SCENES).map(file => ({ file, title: images.length === 1 ? '' : titleFrom(file), preview: URL.createObjectURL(file), include: false }))
+    const kept = images.slice(0, MAX_NEW_SCENES).map(file => ({ file, title: images.length === 1 ? '' : titleFrom(file), preview: URL.createObjectURL(file), include: false, character: allCharacter }))
     previews.current.forEach(url => URL.revokeObjectURL(url))
     previews.current = kept.map(e => e.preview)
     setEntries(kept)
@@ -238,7 +242,7 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
     const create = (entry: Entry) => {
       // Exact copies are refused by the server too, unless the user ticked Import anyway.
       const anyway = !!(entry.check?.exact.length || entry.twin?.exact)
-      const query = new URLSearchParams({ title: entry.title.trim() || titleFrom(entry.file), ...(anyway ? { allow_duplicate: 'true' } : {}), ...(setId ? { scene_set_id: setId } : {}) })
+      const query = new URLSearchParams({ title: entry.title.trim() || titleFrom(entry.file), ...(anyway ? { allow_duplicate: 'true' } : {}), ...(setId ? { scene_set_id: setId } : {}), ...(entry.character ? { import_character_id: entry.character } : {}) })
       return request<SceneDetail>(`/api/scenes?${query}`, { method: 'POST', headers: { 'X-Studio-Token': token, 'Content-Type': 'application/octet-stream' }, body: entry.file }, 'Check the title and image, then try again.')
     }
     if (entries.length === 1) {
@@ -277,6 +281,9 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
           <div className={`import-check ${flagged(single) || single.error ? 'flagged' : ''}`}><CopyNote entry={single} entries={entries} />
             {flagged(single) && <label className="checkbox-label"><input type="checkbox" checked={single.include} onChange={e => update(0, { include: e.target.checked })} /><span>Import anyway</span></label>}
           </div>
+          {characters.length > 0 && <div className="import-character"><label htmlFor="scene-character">Character (optional)</label>
+            <select id="scene-character" value={single.character ?? ''} onChange={e => { update(0, { character: e.target.value }); setAllCharacter(e.target.value) }}><option value="">Decide later</option>{characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <p className="hint">Given to the largest person in the picture once it is analysed.</p></div>}
           {pickers}</div>
       </div> : <div className="new-scenes">
         <p className="import-summary" role="status">{checking ? `Checking for copies… ${entries.filter(e => e.check || e.error).length} of ${entries.length}` : `${plural(chosen.length, 'image')} ticked to import`}
@@ -284,12 +291,16 @@ export function ImportForm({ data, sets, defaultSet, onCreated, onCreatedMany, o
           {nearCount > 0 && <span className="tag warn">{nearCount} near {nearCount === 1 ? 'copy' : 'copies'}</span>}
           {failedCount > 0 && <span className="tag bad">{failedCount} cannot be imported</span>}
           {ignored > 0 && <span className="tag">{ignored} other {ignored === 1 ? 'file' : 'files'} ignored</span>}</p>
+        {characters.length > 0 && <div className="import-character-all"><label htmlFor="all-character">Character for every image (optional)</label>
+          <select id="all-character" value={allCharacter} onChange={e => { setAllCharacter(e.target.value); setEntries(list => list.map(x => ({ ...x, character: e.target.value }))) }}><option value="">Decide later</option>{characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <span className="hint">Given to the largest person once the image is analysed. You can change any row, or assign in the table later.</span></div>}
         {(exactCount > 0 || nearCount > 0) && <p className="hint">Copies are unticked and marked with <b className="hint-warn">⚠</b>; point at the mark to see what it matches. Tick <b>Import anyway</b> to add one regardless. Heavily cropped or mirrored copies may not be found.</p>}
         <ol className="new-scene-list">{entries.map((entry, index) => <li key={`${entry.file.webkitRelativePath || entry.file.name}-${index}`} className={entry.error ? 'too-large' : flagged(entry) ? 'flagged' : ''}>
           {/* One line per image: thumbnail, title, copy status (message on hover), tick. */}
           <img className="row-thumb" src={entry.preview} alt="" loading="lazy" onError={e => { e.currentTarget.src = NO_PREVIEW }} />
           <div className="row-title"><label htmlFor={`new-title-${index}`} className="visually-hidden">Title for {entry.file.name}</label>
             <input id={`new-title-${index}`} maxLength={120} value={entry.title} placeholder={titleFrom(entry.file)} onChange={e => update(index, { title: e.target.value })} /></div>
+          {characters.length > 0 && <select className="row-character" aria-label={`Character for ${entry.file.name}`} value={entry.character ?? ''} onChange={e => update(index, { character: e.target.value })}><option value="">Character: later</option>{characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
           <CopyStatus entry={entry} entries={entries} />
           <span className="row-actions">
             {!entry.error && <label className="checkbox-label"><input type="checkbox" checked={entry.include} disabled={!entry.check} onChange={e => update(index, { include: e.target.checked })} /><span>{flagged(entry) ? 'Import anyway' : 'Import'}</span></label>}
