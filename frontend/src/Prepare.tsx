@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { request, send } from './api'
+import { ApproveAllDialog, type ApprovalCounts, type ApprovalList } from './Approve'
 import { ChargeSummary, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { Dialog, plural, MAX_ANALYSIS_RUNS, type Batch } from './Batches'
 import { Avatar, type Character, type Group } from './Library'
@@ -20,19 +21,23 @@ function SkippedList({ items, heading }: { items: { title: string; reason: strin
     <ul>{items.slice(0, SKIP_LIMIT).map(s => <li key={s.title + s.reason}><b>{s.title}</b>: {s.reason}</li>)}{items.length > SKIP_LIMIT && <li>and {items.length - SKIP_LIMIT} more</li>}</ul></div>
 }
 
-export type PrepareAction = 'analyse' | 'check' | 'assign' | 'draft' | 'polish' | 'review'
+export type PrepareAction = 'analyse' | 'check' | 'assign' | 'draft' | 'polish' | 'review' | 'approve'
 type StepState = 'done' | 'next' | 'todo' | 'running' | 'waiting' | 'optional'
 const stateWords: Record<StepState, string> = { done: 'Done', next: 'Next up', todo: 'To do', running: 'Running', waiting: 'Waiting', optional: 'Optional' }
 
 /** "Prepare this set": the preparation steps with how many scenes each would touch, coloured by state. */
-export function PreparePanel({ item, token, analysisEngine, version, disabled, onChanged, onNotice, onBatches, onOpenScene }: {
+export function PreparePanel({ item, token, analysisEngine, version, disabled, onChanged, onNotice, onBatches, onOpenScene, onReview }: {
   item: SceneSet; token: string; analysisEngine: string; version: string; disabled: boolean
-  onChanged: () => void; onNotice: (text: string, problem?: string) => void; onBatches: () => void; onOpenScene: (id: string) => void
+  onChanged: () => void; onNotice: (text: string, problem?: string) => void; onBatches: () => void; onOpenScene: (id: string) => void; onReview: () => void
 }) {
   const [counts, setCounts] = useState<Counts | null>(null)
+  const [approval, setApproval] = useState<ApprovalCounts | null>(null)
   const [open, setOpen] = useState<PrepareAction | null>(null)
   const [busy, setBusy] = useState(false)
-  const load = useCallback(() => request<Counts>(`/api/scene-sets/${item.id}/preparation`).then(setCounts, () => undefined), [item.id])
+  const load = useCallback(() => Promise.all([
+    request<Counts>(`/api/scene-sets/${item.id}/preparation`).then(setCounts, () => undefined),
+    request<ApprovalList>(`/api/scene-sets/${item.id}/approval`).then(a => setApproval(a.counts), () => undefined),
+  ]).then(() => undefined), [item.id])
   // Reloaded whenever the page's scenes change (analyses, assignments, prompts, polish runs).
   useEffect(() => { void load() }, [load, version, item.scene_count])
   if (!counts || !counts.total) return null
@@ -55,6 +60,12 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
   const firstOpen = (['analyse', 'check', 'assign', 'draft'] as const).find(k => raw[k] === 'todo')
   const stateOf = (k: keyof typeof raw): StepState => k === firstOpen ? 'next' : raw[k]
   const polishState: StepState = polishing ? 'running' : counts.review ? 'next' : counts.polish ? 'optional' : 'waiting'
+  // Approving comes after the preparation steps; it is "Next up" once none of them is open.
+  const ready = approval?.ready ?? 0
+  const approveState: StepState = ready ? (firstOpen || counts.review ? 'todo' : 'next') : approval?.approved ? 'done' : 'waiting'
+  const approveText = !approval ? '' : ready
+    ? `${plural(ready, 'scene')} ready${approval.clean < ready ? ` · ${approval.clean} clean` : ''}`
+    : approval.approved ? `${plural(approval.approved, 'scene')} approved${approval.blocked ? ` · ${approval.blocked} not ready` : ''}` : 'Needs saved prompts'
   const card = (state: StepState, n: number, title: React.ReactNode, text: string, action: React.ReactNode) =>
     <li className={`prep-${state}`}><span className="prepare-number" aria-hidden="true">{state === 'done' ? '✓' : state === 'running' ? <span className="spinner" /> : n}</span>
       <strong>{title}</strong><span className="prepare-state">{stateWords[state]}</span><span className="step-text">{text}</span>{action}</li>
@@ -75,7 +86,13 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
         polishing ? <button type="button" className="secondary compact" disabled={busy} onClick={() => void cancelPolish()}>Cancel waiting</button>
           : counts.review ? btn(polishState, 'Review polished', 'review', false)
             : <button type="button" className="secondary compact" disabled={disabled || !counts.polish} onClick={() => setOpen('polish')}>Polish all</button>)}
+      {card(approveState, 6, 'Approve', approveText,
+        <div className="step-actions">
+          <button type="button" className={`compact ${approveState === 'next' ? '' : 'secondary'}`} disabled={disabled || !ready} title="Look at each scene, then approve it" onClick={onReview}>Review one by one</button>
+          <button type="button" className="secondary compact" disabled={disabled || !ready} title="Approve many scenes after one confirmation" onClick={() => setOpen('approve')}>Approve all</button>
+        </div>)}
     </ol>
+    {ready > 0 && <p className="hint prepare-note"><b>Review one by one</b> shows each scene before you approve it. <b>Approve all</b> approves many scenes from one confirmation, so scenes with uncertain details, warnings or a different number of people and characters are left out until you tick them. Either way every scene gets its own approval and nothing is generated.</p>}
     {counts.mismatched > 0 && <p className="hint prepare-note">{plural(counts.mismatched, 'scene')} {counts.mismatched === 1 ? 'has' : 'have'} a different number of people and characters. {counts.mismatched === 1 ? 'It stays' : 'They stay'} in Needs your check until you open and approve {counts.mismatched === 1 ? 'it' : 'them'}.</p>}
     {open === 'analyse' && <AnalyseAllDialog item={item} token={token} engine={analysisEngine} count={counts.analyse} onClose={() => setOpen(null)} onStarted={(text, problem) => { close(); onBatches(); onNotice(text, problem) }} />}
     {open === 'check' && <CheckDetails item={item} token={token} onClose={close} onNotice={onNotice} onOpenScene={id => { setOpen(null); onOpenScene(id) }} />}
@@ -83,6 +100,7 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
     {open === 'draft' && <DraftDialog item={item} token={token} ready={counts.draft} again={counts.redraft} onClose={close} onNotice={onNotice} />}
     {open === 'polish' && <PolishDialog item={item} token={token} count={counts.polish} onClose={() => setOpen(null)} onStarted={text => { close(); onNotice(text) }} />}
     {open === 'review' && <PolishReview item={item} token={token} onClose={close} onNotice={onNotice} />}
+    {open === 'approve' && <ApproveAllDialog item={item} token={token} onClose={close} onDone={(text, problem) => { close(); onNotice(text, problem) }} />}
   </section>
 }
 

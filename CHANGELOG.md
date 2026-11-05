@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-05 — Phase 7C-1: review queue and Approve all
+
+- **Approved** ("Approve Phase 7C"; D037), delivered as 7C-1 (this entry) and 7C-2 (auto-pipeline, not started) with one combined review. A sixth **Approve** step in Prepare this set: **Review one by one** (the review queue, its own page `#/scenes/review?set=…&at=…`: Base Image with subject boxes, assignments, prompt, warnings, Approve & next / Skip / Open full editor, uncertain details confirmed inline) and **Approve all** (thumbnails, three unticked boxes for uncertain details, warnings and mismatched scenes, any scene can be unticked, blocked scenes listed with the reason).
+- Every scene still gets its own snapshot; Approve all records `bulk` (the column exists since `0013`, so no migration). One shared `approve_in_session` serves the scene, the queue and Approve all. Confirming uncertain details with `keep_prompt` saves the old prompt word for word for the new analysis version, so it is not made stale.
+- New `backend/bulk_approval.py` (`GET /api/scene-sets/{id}/approval`, `POST …/approve-all`), `frontend/src/Approve.tsx`. 163 tests pass (6 new in `tests/test_bulk_approval.py`).
+
 ## 2026-11-05 — Phase 7B pushed
 
 - Pushed to `origin/main` with the user's approval (`87278ee..0381d4a`); CI run 41971043404 passed. Docs only.

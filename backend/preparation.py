@@ -281,15 +281,69 @@ class AcceptItem(BaseModel):
 class AcceptInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     items: list[AcceptItem] = Field(min_length=1, max_length=500)
+    # Phase 7C review queue: keep the saved prompt (its text unchanged) for the new analysis
+    # version, so confirming details does not make the prompt look out of date.
+    keep_prompt: bool = False
+
+
+def accept_scene_details(
+    session, scene: Scene, analysis_id: str, keep_prompt: bool = False
+) -> int:
+    """Move a scene's uncertain details to its confirmed list as a new analysis version.
+
+    Only the list of uncertain details changes, so the people, boxes and assignments stay
+    exactly as they are. With keep_prompt, a saved prompt that matched the old analysis is
+    saved again, word for word, for the new one. Returns how many details were accepted.
+    """
+    if active_job(session, scene.id):
+        raise HTTPException(409, "A run is running or waiting for it.")
+    if current_approval(session, scene.id) is not None:
+        raise HTTPException(409, "It is approved. Withdraw the approval first.")
+    row = latest(session, SceneAnalysis, scene.id)
+    if row is None or row.id != analysis_id:
+        raise HTTPException(409, "Its analysis changed. Reload the list.")
+    data = analysis_of(row)
+    if not data.uncertainties:
+        raise HTTPException(409, "Nothing is uncertain in it any more.")
+    prompt = latest(session, PromptVersion, scene.id)
+    carry = keep_prompt and prompt is not None and prompt.analysis_id == row.id
+    confirmed = json.loads(row.confirmed_uncertainties)
+    confirmed += [u.model_dump() for u in data.uncertainties]
+    created = add_analysis(
+        session,
+        scene,
+        data.model_copy(update={"uncertainties": []}),
+        "user_edit",
+        confirmed=confirmed,
+        engine_version=row.engine_version,
+        based_on_id=row.id,
+    )
+    if carry:
+        session.add(
+            PromptVersion(
+                id=uuid4().hex,
+                scene_id=scene.id,
+                analysis_id=created.id,
+                mapping_hash=prompt.mapping_hash,
+                version=next_prompt_version(session, scene.id),
+                prompt_text=prompt.prompt_text,
+                negative_prompt=prompt.negative_prompt,
+                scene_changes=prompt.scene_changes,
+                source=prompt.source,
+                is_polished=prompt.is_polished,
+                polished_from_version_id=prompt.polished_from_version_id,
+                engine_version=prompt.engine_version,
+                created_at=now(),
+            )
+        )
+        session.flush()
+        refresh_workflow(session, scene)
+    return len(data.uncertainties)
 
 
 @router.post("/scene-sets/{scene_set_id}/uncertain/accept")
 def accept_uncertain(request: Request, scene_set_id: str, body: AcceptInput):
-    """Record the listed uncertain details as confirmed by the user, as new analysis versions.
-
-    Only the list of uncertain details changes (they move to the confirmed list), so the
-    people, boxes and assignments stay exactly as they are.
-    """
+    """Record the listed uncertain details as confirmed by the user, as new analysis versions."""
     done, failed = [], []
     for item in body.items:
         try:
@@ -297,28 +351,10 @@ def accept_uncertain(request: Request, scene_set_id: str, body: AcceptInput):
                 scene = session.get(Scene, item.scene_id)
                 if scene is None or scene.scene_set_id != scene_set_id:
                     raise HTTPException(404, "This scene is no longer in the set.")
-                if active_job(session, scene.id):
-                    raise HTTPException(409, "A run is running or waiting for it.")
-                if current_approval(session, scene.id) is not None:
-                    raise HTTPException(409, "It is approved. Withdraw the approval first.")
-                row = latest(session, SceneAnalysis, scene.id)
-                if row is None or row.id != item.analysis_id:
-                    raise HTTPException(409, "Its analysis changed. Reload the list.")
-                data = analysis_of(row)
-                if not data.uncertainties:
-                    raise HTTPException(409, "Nothing is uncertain in it any more.")
-                confirmed = json.loads(row.confirmed_uncertainties)
-                confirmed += [u.model_dump() for u in data.uncertainties]
-                add_analysis(
-                    session,
-                    scene,
-                    data.model_copy(update={"uncertainties": []}),
-                    "user_edit",
-                    confirmed=confirmed,
-                    engine_version=row.engine_version,
-                    based_on_id=row.id,
+                count = accept_scene_details(
+                    session, scene, item.analysis_id, body.keep_prompt
                 )
-                title, count = scene.title, len(data.uncertainties)
+                title = scene.title
             done.append({"scene_id": item.scene_id, "title": title, "count": count})
         except HTTPException as error:
             with Session(request.app.state.engine) as session:

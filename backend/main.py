@@ -14,6 +14,7 @@ from backend.api_settings import router as api_settings_router
 from backend.backup import BackupRunner, clean_partial
 from backend.backups_api import router as backups_router
 from backend.batches import router as batches_router
+from backend.bulk_approval import router as bulk_approval_router
 from backend.configuration import Settings, load_settings
 from backend.editing_api import router as editing_router
 from backend.jobs import JobRunner, reconcile_on_startup
@@ -157,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(scenes_router)
     app.include_router(scene_sets_router)
     app.include_router(preparation_router)
+    app.include_router(bulk_approval_router)
     app.include_router(results_router)
     app.include_router(backups_router)
     app.include_router(batches_router)

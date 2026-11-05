@@ -6,6 +6,7 @@ import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
+import { ReviewQueue } from './Approve'
 import { PreparePanel } from './Prepare'
 import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
@@ -717,7 +718,9 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
-  const [open, setOpen] = useState<string | null>(() => routeParts()[0] === 'scenes' ? routeParts()[1] ?? null : null)
+  // #/scenes/review?set=<id>&at=<scene> is the review queue (Phase 7C); other second parts are scene ids.
+  const [reviewing, setReviewing] = useState<string | null>(() => routeParts()[0] === 'scenes' && routeParts()[1] === 'review' ? routeQuery().get('set') : null)
+  const [open, setOpen] = useState<string | null>(() => routeParts()[0] === 'scenes' && routeParts()[1] !== 'review' ? routeParts()[1] ?? null : null)
   const [creating, setCreating] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
@@ -743,9 +746,10 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   // The open workspace adds its step to the route; keep it when the scene is unchanged.
   useEffect(() => {
     if (open) { if (routeParts()[1] !== open) replaceRoute(`scenes/${open}`); return }
+    if (reviewing) return // the queue keeps its own place in the address
     const query = new URLSearchParams({ ...(stage !== 'all' ? { stage } : {}), ...(setFilter !== 'all' ? { set: setFilter } : {}), ...(sort !== 'changed' ? { sort } : {}) }).toString()
     replaceRoute(`scenes${query ? `?${query}` : ''}`)
-  }, [open, stage, setFilter, sort])
+  }, [open, reviewing, stage, setFilter, sort])
   // A set deleted elsewhere falls back to all scenes.
   // Checked only when the list of sets reloads, so a set just created is never reset.
   useEffect(() => { if (!loading) setSetFilter(f => ['all', 'none'].includes(f) || sets.some(s => s.id === f) ? f : 'all') }, [loading, sets])
@@ -759,6 +763,8 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   }, [open, scenes, load])
 
   if (open) return <Workspace key={open} data={data} sceneId={open} onBack={() => { setOpen(null); void load() }} onOpen={setOpen} onDirty={onDirty} onBusy={onBusy} onChanged={() => void load()} />
+  // Leaving the queue returns to the Scenes page with the set still chosen.
+  if (reviewing) return <ReviewQueue setId={reviewing} token={token} onExit={() => { setSetFilter(reviewing); setReviewing(null); void load() }} onOpenScene={setOpen} />
 
   const openAt = (id: string, step: string) => { replaceRoute(`scenes/${id}/${step}`); setOpen(id) }
   const startBatch = (kind: 'analysis' | 'generation', chosen: SceneSummary[], all = false) => setBatching({ kind, scenes: chosen, all })
@@ -837,7 +843,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     {currentSet && <div className="set-card"><SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />
       <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
       version={scoped.map(s => `${s.id}${s.workflow_state}${s.revision}${s.active_job ? 1 : 0}`).join()}
-      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} /></div>}
+      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onReview={() => setReviewing(currentSet.id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} /></div>}
     {scenes.length > 0 && <StageFilters compact={!!currentSet} scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>

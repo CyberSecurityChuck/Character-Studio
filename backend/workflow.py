@@ -471,6 +471,15 @@ class Review:
     notes: list[str]
     plan: Plan | None
     prompt_missing: list[str]
+    # How many uncertain analysis details still wait for the user (they are also a blocker).
+    uncertain: int = 0
+
+
+def uncertain_blocker(count: int) -> str:
+    return (
+        f"Confirm or correct the {count} uncertain "
+        f"{'detail' if count == 1 else 'details'} in the analysis."
+    )
 
 
 def review(session, scene: Scene) -> Review:
@@ -485,10 +494,7 @@ def review(session, scene: Scene) -> Review:
     plan = build_plan(session, scene, analysis)
     pending = len(plan.analysis.uncertainties)
     if pending:
-        blockers.append(
-            f"Confirm or correct the {pending} uncertain "
-            f"{'detail' if pending == 1 else 'details'} in the analysis."
-        )
+        blockers.append(uncertain_blocker(pending))
     blockers += plan.blockers
     if prompt is None:
         blockers.append("Save a prompt version.")
@@ -507,10 +513,11 @@ def review(session, scene: Scene) -> Review:
             f"{references} reference photos will be attached. Codex image generation has been "
             "tested here with fewer; consider fewer photos per character if results ignore some."
         )
-    return Review(blockers, warnings, notes, plan, missing)
+    return Review(blockers, warnings, notes, plan, missing, pending)
 
 
-def create_approval(session, scene: Scene) -> Approval:
+def create_approval(session, scene: Scene, mode: str = "single") -> Approval:
+    """Make the scene's own immutable snapshot. mode: single, bulk (Approve all) or auto."""
     inputs = snapshot_inputs(session, scene)
     previous = current_approval(session, scene.id)
     if previous is not None:
@@ -524,6 +531,7 @@ def create_approval(session, scene: Scene) -> Approval:
         ),
         snapshot_hash=digest(inputs),
         approved_at=now(),
+        approval_mode=mode,
     )
     session.add(approval)
     session.flush()

@@ -1459,35 +1459,48 @@ def delete_prompt(request: Request, scene_id: str, prompt_id: str):
         return scene_detail(request, session, scene)
 
 
+def approve_in_session(
+    settings, session, scene: Scene, prompt_id: str, accept_warnings: bool, mode: str = "single"
+) -> Approval:
+    """Check everything and make the scene's own approval snapshot.
+
+    The one place a scene is approved: the scene's Review step (single), Approve all (bulk) and
+    the auto-pipeline (auto) all pass through the same blockers, warnings and file checks.
+    """
+    result = review(session, scene)
+    if result.blockers:
+        raise HTTPException(409, result.blockers[0])
+    prompt = latest(session, PromptVersion, scene.id)
+    if prompt.id != prompt_id:
+        raise HTTPException(409, "The prompt changed. Review the latest version, then approve.")
+    if result.warnings and not accept_warnings:
+        raise HTTPException(409, "Read the warnings and confirm that you checked them.")
+    # Approve what is really on disk: the files must still match their recorded hashes.
+    if file_hash(asset_path(settings, scene.original_path)) != scene.content_hash:
+        raise HTTPException(
+            409, "The Base Image file is missing or changed. Restore it from a backup."
+        )
+    for subject in result.plan.subjects:
+        for photo in subject.photos:
+            actual = file_hash(asset_path(settings, photo.original_path))
+            if actual is None or (photo.content_hash and actual != photo.content_hash):
+                raise HTTPException(
+                    409,
+                    f"A reference photo of {subject.character.name} is missing or changed. "
+                    "Restore it or choose other photos.",
+                )
+            photo.content_hash = actual
+    approval = create_approval(session, scene, mode)
+    refresh_workflow(session, scene)
+    return approval
+
+
 def approve_scene_inputs(request, scene_id: str, body: ApproveInput):
-    settings = request.app.state.settings
     with writing(request) as session:
         scene = require_scene(session, scene_id)
-        result = review(session, scene)
-        if result.blockers:
-            raise HTTPException(409, result.blockers[0])
-        prompt = latest(session, PromptVersion, scene_id)
-        if prompt.id != body.prompt_id:
-            raise HTTPException(409, "The prompt changed. Review the latest version, then approve.")
-        if result.warnings and not body.accept_warnings:
-            raise HTTPException(409, "Read the warnings and confirm that you checked them.")
-        # Approve what is really on disk: the files must still match their recorded hashes.
-        if file_hash(asset_path(settings, scene.original_path)) != scene.content_hash:
-            raise HTTPException(
-                409, "The Base Image file is missing or changed. Restore it from a backup."
-            )
-        for subject in result.plan.subjects:
-            for photo in subject.photos:
-                actual = file_hash(asset_path(settings, photo.original_path))
-                if actual is None or (photo.content_hash and actual != photo.content_hash):
-                    raise HTTPException(
-                        409,
-                        f"A reference photo of {subject.character.name} is missing or changed. "
-                        "Restore it or choose other photos.",
-                    )
-                photo.content_hash = actual
-        create_approval(session, scene)
-        refresh_workflow(session, scene)
+        approve_in_session(
+            request.app.state.settings, session, scene, body.prompt_id, body.accept_warnings
+        )
         return scene_detail(request, session, scene)
 
 

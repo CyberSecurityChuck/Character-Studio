@@ -1,8 +1,16 @@
 # Session handoff
 
-Checkpoint: 2026-11-04 IST (+05:30), after building 7A
+Checkpoint: 2026-11-05 IST (+05:30), after building 7C-1
 
-## Latest: Phase 7B accepted (2026-11-05)
+## Latest: Phase 7C approved; 7C-1 built (2026-11-05)
+
+- The user said **"Approve Phase 7C"**, answered five design questions one at a time (D037) and the assistant built **7C-1** (review queue + Approve all). Committed locally. **7C-2 (auto-pipeline) is not started**; ask its decisions one at a time first (rules: engines, characters, preset, images per scene; generation batching since Generate all without limits is 7D; stop at uncertain/mismatch by default; mode `auto`). Then write `Phase_Checks/Phase7C_Review_Checklist.html` covering 7C-1 and 7C-2 together. Nothing is pushed; pushing needs approval.
+- Backend: new `backend/bulk_approval.py` (router registered in `main.py`; `approval_row`, `GET /api/scene-sets/{id}/approval` with rows + counts, `POST …/approve-all` per scene in its own transaction with `allow_mismatch`/`accept_uncertain`/`accept_warnings`); `scenes.approve_in_session(settings, session, scene, prompt_id, accept_warnings, mode)` is the one approval path (the 7C-2 pipeline must call it with `mode="auto"`); `workflow.create_approval(session, scene, mode)`, `Review.uncertain`, `uncertain_blocker()`; `preparation.accept_scene_details(session, scene, analysis_id, keep_prompt)` and `keep_prompt` on `POST …/uncertain/accept` (queue passes true so the prompt is carried to the new analysis version).
+- Frontend: new `Approve.tsx` (`ApproveAllDialog`, `ReviewQueue` at `#/scenes/review?set=&at=`, module-level `resume` so Open full editor returns to the same scene); `Prepare.tsx` sixth step Approve (loads `/approval` counts; `step-actions` buttons); `Scenes.tsx` `reviewing` state; styles at the end of `styles.css`; labels say 7C.
+- Gotchas: the queue records approvals as `single` (one click per scene); only Approve all writes `bulk`. Stepper is now six columns. QA launcher and seed are in this session's scratchpad (`qa/qa_server.py`, `qa/seed.py`; seed reuses characters, creates a set called Harbour).
+- Verification: pytest **163 passed**, ruff and build passed, browser QA as in PROJECT_STATUS.
+
+## Earlier: Phase 7B accepted (2026-11-05)
 
 - The user's second follow-up check passed (`Phase_Checks/Phase7B_Followup2_Report.md`: 7/7, 0 problems, "Phase 7B looks good"). Recorded in AGENTS.md, DECISIONS (D036 acceptance note), CHANGELOG and PROJECT_STATUS. Three local 7B commits (`e7a80c5`, `0b8677d`, `a03a8b7`) plus this record; pushed to `origin/main` with the user's approval (`87278ee..0381d4a`, CI run 41971043404 passed). A restart upgrades the user's database to `0014_import_character` (additive; back up first).
 - Next action: wait for the user's go-ahead on 7C, then ask its decisions one at a time (the plan: review queue, Approve all with an explicit tick for uncertain items and warnings, full auto-pipeline; each scene's own approval snapshot records `single`/`bulk`/`auto`; mismatched scenes are left out unless "extra people may keep their original look" is ticked). Pushing needs approval.
