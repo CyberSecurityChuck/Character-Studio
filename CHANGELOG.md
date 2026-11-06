@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-07 — Phase 7C-2: Run everything
+
+- **Run everything** in a set's header (D037): rules set once (one character, optionally the largest person; a group left to right; or leave them to me), a preset and images per scene; analyses in chained batches of 50, then assign, draft and approve every scene (approvals recorded **auto**), then images in chained batches of 20, stage by stage. Scenes with uncertain details or a mismatch stop at Needs your check unless let through (two switches); prompt warnings always stop; an opt-in **Stop before generating** waits with a Generate button. Each scene picks up where it is; hand work is kept.
+- The run is stored server-side: new table `pipeline_runs` (additive migration `0015_pipeline_runs`; back up before restarting). A restart pauses it until Continue; a plan limit pauses its batches; Cancel run stops what has not started. Nothing is retried.
+- New `backend/pipeline.py`, `frontend/src/Pipeline.tsx`; shared helpers split out of `preparation.py` and `batches.py`. 169 tests pass (6 new in `tests/test_pipeline.py`). Review checklist for all of 7C: `Phase_Checks/Phase7C_Review_Checklist.html`.
+
 ## 2026-11-05 — Phase 7C-1: review queue and Approve all
 
 - **Approved** ("Approve Phase 7C"; D037), delivered as 7C-1 (this entry) and 7C-2 (auto-pipeline, not started) with one combined review. A sixth **Approve** step in Prepare this set: **Review one by one** (the review queue, its own page `#/scenes/review?set=…&at=…`: Base Image with subject boxes, assignments, prompt, warnings, Approve & next / Skip / Open full editor, uncertain details confirmed inline) and **Approve all** (thumbnails, three unticked boxes for uncertain details, warnings and mismatched scenes, any scene can be unticked, blocked scenes listed with the reason).

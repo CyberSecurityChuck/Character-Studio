@@ -1446,3 +1446,29 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
 .rq-done { display: grid; gap: 10px; justify-items: start; max-width: 560px; }
 .rq-done h3 { margin: 0; }
 @media (max-width: 1000px) { .rq-body { grid-template-columns: 1fr; } .rq-image { position: static; } }
+
+/* Phase 7C-2: Run everything (Pipeline.tsx). */
+.set-header .run-button { margin-left: auto; }
+.set-header .run-button + .card-menu, .set-header .run-button + * { margin-left: 8px; }
+.run-dialog .run-plan { margin: 10px 0 4px; padding-left: 22px; display: grid; gap: 4px; font-size: 13.5px; }
+.run-dialog .run-rules { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--background); }
+.run-dialog .run-rules legend { padding: 0 6px; font-weight: 650; font-size: 13.5px; }
+.run-dialog .run-rules .checkbox-label { min-height: 34px; margin: 2px 0; font-weight: 400; }
+.run-dialog .run-sub { display: grid; gap: 6px; margin: 0 0 6px 28px; }
+.run-dialog .run-sub select { max-width: 320px; }
+.run-order { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-width: 320px; }
+.run-order li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.run-dialog .run-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 12px; align-items: end; margin-top: 14px; }
+.run-card { margin: 0; padding: 14px 20px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.run-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.run-head > div { display: grid; gap: 2px; }
+.run-dot { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--wait-bg); color: var(--wait-text); font-size: 12px; font-weight: 700; }
+.run-finished .run-dot { background: var(--success-bg); color: var(--success-text); }
+.run-cancelled .run-dot { background: var(--disabled-bg); color: var(--disabled-text); }
+.run-paused .run-dot, .run-waiting .run-dot { background: var(--warn-bg); color: var(--warn-text); }
+.run-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.run-stopped summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.run-stopped ul { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13px; }
+@media (max-width: 640px) { .run-head { grid-template-columns: auto minmax(0, 1fr); } .run-actions { grid-column: 1 / -1; justify-content: flex-start; } .run-dialog .run-row { grid-template-columns: 1fr; } }
+.run-dialog .run-row .preset-select { display: grid; gap: 6px; margin: 0; }
+.run-dialog .run-row .preset-select label { margin: 0; }

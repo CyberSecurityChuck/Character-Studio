@@ -1,8 +1,15 @@
 # Session handoff
 
-Checkpoint: 2026-11-05 IST (+05:30), after building 7C-1
+Checkpoint: 2026-11-07 IST (+05:30), after building 7C-2
 
-## Latest: Phase 7C approved; 7C-1 built (2026-11-05)
+## Latest: Phase 7C-2 built; 7C awaiting the combined review (2026-11-07)
+
+- The user said "Start 7C-2 questions" and answered five questions one at a time (D037 7C-2 choices); the assistant built **Run everything** and committed it locally. **Next action: wait for the user's combined 7C review** (`Phase_Checks/Phase7C_Review_Checklist.html` → `Phase7C_Review_Report.md`); fix what it finds; on "looks good" record 7C accepted. 7D only on the user's go-ahead. Nothing is pushed; pushing needs approval.
+- Backend: `backend/pipeline.py` (model `PipelineRun` in `models.py`, migration `0015_pipeline_runs`). Status running / paused / waiting / cancelled / finished; stage analysing / generating. Batches carry `pipeline_id` in `settings_json` (found with a LIKE on `"pipeline_id": "<id>"`). `advance_run` holds a module lock; the runner calls `advance_pipelines` at the top of every loop (`JobRunner._advance_pipelines`, errors logged, never fatal). `_approve_stage` runs each scene in its own `writing_session`; `Stop` or `HTTPException` → listed in `outcome.stopped`. `_queue_generation` pauses the run if Studio settings now use another generation engine. `continue_batch` also resumes a restart-paused run.
+- Frontend: `Pipeline.tsx` (`RunEverythingDialog`, `PipelineCard` with polling while running and Hide kept in localStorage `character-studio.run-hidden.<set>`), `SetHeader` got an `actions` prop, `Scenes.tsx` wires both; styles at the end of `styles.css`.
+- Gotchas: tests patch `backend.pipeline.MAX_GENERATION_RUNS` (imported name) and `backend.preparation.MAX_ANALYSIS_RUNS`; a run where every scene stops finishes at once (nothing to generate). QA scripts in this session's scratchpad: `qa/qa_server.py`, `qa/seed.py`, `qa/seed_run.py` (set "Night market").
+
+## Earlier: Phase 7C approved; 7C-1 built (2026-11-05)
 
 - The user said **"Approve Phase 7C"**, answered five design questions one at a time (D037) and the assistant built **7C-1** (review queue + Approve all). Committed locally. **7C-2 (auto-pipeline) is not started**; ask its decisions one at a time first (rules: engines, characters, preset, images per scene; generation batching since Generate all without limits is 7D; stop at uncertain/mismatch by default; mode `auto`). Then write `Phase_Checks/Phase7C_Review_Checklist.html` covering 7C-1 and 7C-2 together. Nothing is pushed; pushing needs approval.
 - Backend: new `backend/bulk_approval.py` (router registered in `main.py`; `approval_row`, `GET /api/scene-sets/{id}/approval` with rows + counts, `POST …/approve-all` per scene in its own transaction with `allow_mismatch`/`accept_uncertain`/`accept_warnings`); `scenes.approve_in_session(settings, session, scene, prompt_id, accept_warnings, mode)` is the one approval path (the 7C-2 pipeline must call it with `mode="auto"`); `workflow.create_approval(session, scene, mode)`, `Review.uncertain`, `uncertain_blocker()`; `preparation.accept_scene_details(session, scene, analysis_id, keep_prompt)` and `keep_prompt` on `POST …/uncertain/accept` (queue passes true so the prompt is carried to the new analysis version).

@@ -34,10 +34,11 @@ export function StageFilters({ scenes, value, onChange, compact }: { scenes: Sce
 }
 
 /** The chosen set's title area: name, size and date, with Rename and Delete in a ⋯ menu. */
-export function SetHeader({ item, disabled, onRename, onDelete }: { item: SceneSet; disabled: boolean; onRename: () => void; onDelete: () => void }) {
+export function SetHeader({ item, disabled, onRename, onDelete, actions }: { item: SceneSet; disabled: boolean; onRename: () => void; onDelete: () => void; actions?: React.ReactNode }) {
   return <section className="set-header" aria-label={`Scene set ${item.name}`}>
     <span className="set-icon"><Glyph name="folder" /></span>
     <div className="set-title"><h2>{item.name}</h2><p>{plural(item.scene_count, 'scene')} · created {new Date(item.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}</p></div>
+    {actions}
     <CardMenu label={`scene set ${item.name}`} disabled={disabled} items={[{ label: 'Rename set', onSelect: onRename }, { label: 'Delete set', danger: true, onSelect: onDelete }]} />
   </section>
 }

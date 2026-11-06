@@ -9,6 +9,7 @@ single runs become Cancelled, and batches are paused with their remaining items 
 """
 
 import json
+import logging
 import threading
 from pathlib import Path
 from uuid import uuid4
@@ -86,6 +87,7 @@ INTERRUPTED_MESSAGE = (
 )
 NOT_STARTED_MESSAGE = "The studio stopped before this run started. Nothing was sent."
 NOT_SENT_CANCEL = "Cancelled before it started. Nothing was sent."
+LOG = logging.getLogger(__name__)
 RESTART_PAUSE_MESSAGE = (
     "The studio stopped while this batch was running. Nothing continues on its own: a run "
     "that was in progress is marked Interrupted, and the remaining items have not started."
@@ -146,6 +148,9 @@ def reconcile_on_startup(engine) -> None:
                 batch.pause_kind = "restart"
                 batch.pause_details = RESTART_PAUSE_MESSAGE
                 batch.updated_at = now()
+        from backend.pipeline import pause_on_restart  # imports scenes, which imports this
+
+        pause_on_restart(session)
         for scene in session.scalars(select(Scene)):
             refresh_workflow(session, scene)
 
@@ -227,12 +232,22 @@ class JobRunner:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            self._advance_pipelines()
             job_id = self._claim_next()
             if job_id is None:
                 self._wake.wait(timeout=1)
                 self._wake.clear()
                 continue
             self._execute(job_id)
+
+    def _advance_pipelines(self) -> None:
+        """Move Run everything on when a stage it started has finished (Phase 7C-2)."""
+        from backend.pipeline import advance_pipelines  # imports scenes, which imports this
+
+        try:
+            advance_pipelines(self.engine, self.settings)
+        except Exception:  # a problem in one run must never stop the runner
+            LOG.exception("Run everything could not move on")
 
     def _claim_next(self) -> str | None:
         with writing_session(self.engine) as session:

@@ -190,46 +190,7 @@ def analyse_all(request: Request, scene_set_id: str, body: AnalyseAllInput):
                 409, "Nothing to analyse: every scene in this set already has an analysis."
             )
         run = api_run_settings(request, settings, engine, body.confirm_charges)
-        timeout = engine_timeout(settings, engine)
-        chunks = [
-            queued[i : i + MAX_ANALYSIS_RUNS] for i in range(0, len(queued), MAX_ANALYSIS_RUNS)
-        ]
-        base = datetime.now(UTC)
-        batches = []
-        for index, chunk in enumerate(chunks):
-            # Strictly increasing stamps keep the runner on one batch at a time, in order.
-            stamp = (base + timedelta(microseconds=index)).isoformat()
-            batch = Batch(
-                id=uuid4().hex,
-                kind="analysis",
-                engine=engine,
-                status="running",
-                settings_json=json.dumps(
-                    {**run, "scene_set_id": scene_set_id, "part": index + 1, "of": len(chunks)}
-                ),
-                created_at=stamp,
-                updated_at=stamp,
-            )
-            session.add(batch)
-            for position, scene in enumerate(chunk):
-                session.add(
-                    EngineJob(
-                        id=uuid4().hex,
-                        kind="analysis",
-                        scene_id=scene.id,
-                        engine=engine,
-                        status="not_started",
-                        settings_json=json.dumps(run) if run else None,
-                        batch_id=batch.id,
-                        batch_position=position,
-                        timeout_seconds=timeout,
-                        created_at=stamp,
-                    )
-                )
-            batches.append(batch)
-        session.flush()
-        for scene in queued:
-            refresh_workflow(session, scene)
+        batches = queue_analysis_batches(session, settings, queued, run, scene_set_id)
         result = {
             "batches": [batch_data(session, b) for b in batches],
             "queued": len(queued),
@@ -237,6 +198,62 @@ def analyse_all(request: Request, scene_set_id: str, body: AnalyseAllInput):
         }
     request.app.state.runner.notify()
     return result
+
+
+def queue_analysis_batches(
+    session, settings: EngineSettings, queued: list[Scene], run: dict, scene_set_id: str,
+    extra: dict | None = None,
+) -> list[Batch]:
+    """Queue the scenes' analyses in chained batches of at most 50 that run one after another.
+
+    extra goes into each batch's settings (Run everything records its own id there).
+    """
+    engine = settings.analysis_engine
+    timeout = engine_timeout(settings, engine)
+    chunks = [queued[i : i + MAX_ANALYSIS_RUNS] for i in range(0, len(queued), MAX_ANALYSIS_RUNS)]
+    base = datetime.now(UTC)
+    batches = []
+    for index, chunk in enumerate(chunks):
+        # Strictly increasing stamps keep the runner on one batch at a time, in order.
+        stamp = (base + timedelta(microseconds=index)).isoformat()
+        batch = Batch(
+            id=uuid4().hex,
+            kind="analysis",
+            engine=engine,
+            status="running",
+            settings_json=json.dumps(
+                {
+                    **run,
+                    "scene_set_id": scene_set_id,
+                    "part": index + 1,
+                    "of": len(chunks),
+                    **(extra or {}),
+                }
+            ),
+            created_at=stamp,
+            updated_at=stamp,
+        )
+        session.add(batch)
+        for position, scene in enumerate(chunk):
+            session.add(
+                EngineJob(
+                    id=uuid4().hex,
+                    kind="analysis",
+                    scene_id=scene.id,
+                    engine=engine,
+                    status="not_started",
+                    settings_json=json.dumps(run) if run else None,
+                    batch_id=batch.id,
+                    batch_position=position,
+                    timeout_seconds=timeout,
+                    created_at=stamp,
+                )
+            )
+        batches.append(batch)
+    session.flush()
+    for scene in queued:
+        refresh_workflow(session, scene)
+    return batches
 
 
 # Check details ---------------------------------------------------------------------------
@@ -481,43 +498,50 @@ def fill_rows(request: Request, scene_set_id: str, body: FillInput):
                 continue
             data = analysis_of(analysis)
             people = data.subjects
-            if body.only_empty and (
-                session.scalar(
-                    select(SubjectMapping.id)
-                    .where(
-                        SubjectMapping.scene_id == scene.id, SubjectMapping.action != "unresolved"
-                    )
-                    .limit(1)
-                )
-                or (not people and scene.intended_characters is not None)
-            ):
+            if body.only_empty and has_assignment(session, scene, people):
                 skip(skipped, scene, "Someone is already assigned.")
                 continue
-            if not people:
-                # Nothing to assign; saving the row labels the scene "No people found".
-                proposals.append(
-                    {"scene_id": scene.id, "mappings": [], "intended": len(characters)}
-                )
+            mappings = rule_mappings(data, body.rule, characters, body.several_people)
+            if mappings is None:
+                skip(skipped, scene, f"{len(people)} people: choose by hand or tick the box.")
                 continue
-            if body.rule == "one":
-                if len(people) > 1 and body.several_people == "skip":
-                    skip(skipped, scene, f"{len(people)} people: choose by hand or tick the box.")
-                    continue
-                biggest = largest_subject(data)
-                chosen = {biggest.label: characters[0].id}
-            else:
-                ordered = left_to_right(data)
-                chosen = {s.label: c.id for s, c in zip(ordered, characters, strict=False)}
-            mappings = [
-                {"label": s.label, "action": "replace", "character_id": chosen[s.label]}
-                if s.label in chosen
-                else {"label": s.label, "action": "keep", "character_id": None}
-                for s in people
-            ]
             proposals.append(
                 {"scene_id": scene.id, "mappings": mappings, "intended": len(characters)}
             )
         return {"proposals": proposals, "skipped": skipped}
+
+
+def has_assignment(session, scene: Scene, people) -> bool:
+    """Someone (or "nobody here", for a scene without people) was already decided."""
+    decided = session.scalar(
+        select(SubjectMapping.id)
+        .where(SubjectMapping.scene_id == scene.id, SubjectMapping.action != "unresolved")
+        .limit(1)
+    )
+    return bool(decided) or (not people and scene.intended_characters is not None)
+
+
+def rule_mappings(data, rule: str, characters: list[Character], several_people: str):
+    """Who each person gets under a fill rule, or None when the rule leaves the scene alone.
+
+    No people gives an empty list (saving it labels the scene "No people found").
+    """
+    people = data.subjects
+    if not people:
+        return []
+    if rule == "one":
+        if len(people) > 1 and several_people == "skip":
+            return None
+        chosen = {largest_subject(data).label: characters[0].id}
+    else:
+        ordered = left_to_right(data)
+        chosen = {s.label: c.id for s, c in zip(ordered, characters, strict=False)}
+    return [
+        {"label": s.label, "action": "replace", "character_id": chosen[s.label]}
+        if s.label in chosen
+        else {"label": s.label, "action": "keep", "character_id": None}
+        for s in people
+    ]
 
 
 class AssignRow(BaseModel):
@@ -625,28 +649,34 @@ def draft_all(request: Request, scene_set_id: str, body: DraftAllInput):
             if prompt_is_current(prompt, analysis, plan) and not body.replace_existing:
                 skip(skipped, scene, "It already has a saved prompt.")
                 continue
-            text, negative = build_prompt(plan.analysis, changes, plan.assignments)
-            version = next_prompt_version(session, scene.id)
-            session.add(
-                PromptVersion(
-                    id=uuid4().hex,
-                    scene_id=scene.id,
-                    analysis_id=analysis.id,
-                    mapping_hash=plan.mapping_hash,
-                    version=version,
-                    prompt_text=text,
-                    negative_prompt=append_lines(negative, negatives),
-                    scene_changes=changes,
-                    source="template",
-                    is_polished=False,
-                    created_at=now(),
-                )
-            )
-            session.flush()
-            scene.updated_at = now()
-            refresh_workflow(session, scene)
+            version = draft_scene(session, scene, analysis, plan, changes, negatives)
             drafted.append({"scene_id": scene.id, "title": scene.title, "version": version})
         return {"drafted": drafted, "skipped": skipped, "preset": preset_name}
+
+
+def draft_scene(session, scene: Scene, analysis, plan, changes: str, negatives: str) -> int:
+    """Save the studio's own template draft as the scene's next prompt version (no engine)."""
+    text, negative = build_prompt(plan.analysis, changes, plan.assignments)
+    version = next_prompt_version(session, scene.id)
+    session.add(
+        PromptVersion(
+            id=uuid4().hex,
+            scene_id=scene.id,
+            analysis_id=analysis.id,
+            mapping_hash=plan.mapping_hash,
+            version=version,
+            prompt_text=text,
+            negative_prompt=append_lines(negative, negatives),
+            scene_changes=changes,
+            source="template",
+            is_polished=False,
+            created_at=now(),
+        )
+    )
+    session.flush()
+    scene.updated_at = now()
+    refresh_workflow(session, scene)
+    return version
 
 
 # Polish all and its review -----------------------------------------------------------------

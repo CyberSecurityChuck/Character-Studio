@@ -386,8 +386,10 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
     with sqlite3.connect(settings.data_dir / "studio.db") as db:
         # Undo 0009 (quality), 0008 (API engines), 0007 (batches) and 0006 (generation) to
         # recreate a Phase 4 database, including the Phase 3 engine settings CHECK constraint.
-        # 0013 (scene sets) and 0014 (import character) are additive, so their table, index and
+        # 0013 (scene sets), 0014 (import character) and 0015 (pipeline runs) are additive,
+        # so their tables, index and
         # columns simply go.
+        db.execute("DROP TABLE pipeline_runs")
         db.execute("ALTER TABLE scenes DROP COLUMN import_character_id")
         db.execute("ALTER TABLE scenes DROP COLUMN intended_characters")
         db.execute("DROP TABLE scene_sets")
@@ -418,7 +420,7 @@ def test_upgrade_from_mapping_schema_keeps_approvals(settings):
         db.execute("ALTER TABLE engine_jobs DROP COLUMN provider_request_id")
         db.execute("UPDATE alembic_version SET version_num = '0005_mapping'")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/health").json()["schema_revision"] == "0014_import_character"
+        assert client.get("/api/health").json()["schema_revision"] == "0015_pipeline_runs"
         detail = client.get(f"/api/scenes/{scene['id']}").json()
         assert detail["approval"]["state"] == "approved"
         assert detail["results"] == [] and detail["exports"] == []

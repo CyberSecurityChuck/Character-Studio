@@ -330,3 +330,23 @@ class GenerationPreset(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[str] = mapped_column(String(40))
+
+
+class PipelineRun(Base):
+    """Run everything on one scene set (Phase 7C-2, D037): its rules, stage and outcome.
+
+    status: running, paused (a restart; only the user continues it), waiting (stopped before
+    generating, as the user asked), cancelled or finished. stage: analysing or generating.
+    Its batches carry its id in their settings; progress comes from them.
+    """
+
+    __tablename__ = "pipeline_runs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scene_set_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(20))
+    stage: Mapped[str] = mapped_column(String(20))
+    rules_json: Mapped[str] = mapped_column(Text)
+    outcome_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    pause_details: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[str] = mapped_column(String(40))

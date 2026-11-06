@@ -7,6 +7,7 @@ import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
 import { ReviewQueue } from './Approve'
+import { PipelineCard, RunEverythingDialog } from './Pipeline'
 import { PreparePanel } from './Prepare'
 import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
@@ -737,6 +738,8 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const [moving, setMoving] = useState<SceneSummary[] | null>(null)
   const [naming, setNaming] = useState<'new' | SceneSet | null>(null)
   const [findingCopies, setFindingCopies] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [runKey, setRunKey] = useState(0)
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   const load = useCallback(() => Promise.all([request<SceneSummary[]>('/api/scenes'), request<SceneSet[]>('/api/scene-sets')])
@@ -840,7 +843,10 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
         <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ Add scenes</button>
       </span>
     </div>
-    {currentSet && <div className="set-card"><SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} />
+    {currentSet && <div className="set-card"><SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)}
+      actions={<button type="button" className="secondary compact run-button" disabled={busy || !currentSet.scene_count} title="Analyse, assign, draft, approve and generate the whole set" onClick={() => setRunning(true)}>Run everything</button>} />
+      <PipelineCard key={`${currentSet.id}-${runKey}`} item={currentSet} token={token} version={scoped.map(s => `${s.id}${s.workflow_state}${s.active_job ? 1 : 0}`).join()}
+        onChanged={() => { void load(); setBatchKey(k => k + 1) }} onOpenScene={id => setOpen(id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />
       <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
       version={scoped.map(s => `${s.id}${s.workflow_state}${s.revision}${s.active_job ? 1 : 0}`).join()}
       onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onReview={() => setReviewing(currentSet.id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} /></div>}
@@ -905,6 +911,8 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
         else { await send(`/api/scene-sets/${naming.id}`, 'PUT', token, { name: value, revision: naming.revision }); setNotice('Set renamed.') }
         setActionError(''); await load()
       }} />}
+    {running && currentSet && <RunEverythingDialog item={currentSet} token={token} onClose={() => setRunning(false)}
+      onStarted={() => { setRunning(false); setRunKey(k => k + 1); setBatchKey(k => k + 1); setActionError(''); setNotice('Run everything started. It goes from one stage to the next; you can follow it here.'); void load() }} />}
     {findingCopies && <DuplicatesDialog onClose={() => { setFindingCopies(false); void load() }} onOpen={id => { setFindingCopies(false); setOpen(id) }} onDelete={deleteOne} />}
   </div>
 }

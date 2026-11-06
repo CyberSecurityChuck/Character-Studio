@@ -39,6 +39,7 @@ from backend.models import (
     EngineSettings,
     GenerationResult,
     GroupMember,
+    PipelineRun,
     Scene,
     SceneAnalysis,
     SubjectMapping,
@@ -493,6 +494,11 @@ async def continue_batch(request: Request, batch_id: str, body: ChargeInput | No
             _require_generation_engine(session.get(EngineSettings, 1), batch)
         batch.status, batch.pause_kind, batch.pause_details = "running", None, None
         batch.updated_at = now()
+        # A batch of Run everything that a restart paused: continuing it continues the run.
+        run_id = json.loads(batch.settings_json).get("pipeline_id")
+        run = session.get(PipelineRun, run_id) if run_id else None
+        if run is not None and run.status == "paused":
+            run.status, run.pause_details, run.updated_at = "running", None, now()
         result = batch_data(session, batch)
     request.app.state.runner.notify()
     return result
@@ -506,24 +512,29 @@ def cancel_remaining(request: Request, batch_id: str):
         batch = require_batch(session, batch_id)
         if batch.status == "cancelled":
             raise HTTPException(409, "This batch is already cancelled.")
-        waiting = [j for j in _items(session, batch.id) if j.status == "not_started"]
-        session.execute(
-            update(EngineJob)
-            .where(EngineJob.id.in_([j.id for j in waiting]))
-            .values(
-                status="cancelled",
-                error_kind="cancelled",
-                error_details=CANCELLED_WITH_BATCH,
-                finished_at=now(),
-            )
-        )
-        batch.status, batch.updated_at = "cancelled", now()
-        session.flush()
-        for scene_id in {j.scene_id for j in waiting}:
-            scene = session.get(Scene, scene_id)
-            if scene is not None:
-                refresh_workflow(session, scene)
+        cancel_waiting(session, batch)
         return batch_data(session, batch)
+
+
+def cancel_waiting(session, batch: Batch) -> None:
+    """Cancel the batch: its items that have not started never run."""
+    waiting = [j for j in _items(session, batch.id) if j.status == "not_started"]
+    session.execute(
+        update(EngineJob)
+        .where(EngineJob.id.in_([j.id for j in waiting]))
+        .values(
+            status="cancelled",
+            error_kind="cancelled",
+            error_details=CANCELLED_WITH_BATCH,
+            finished_at=now(),
+        )
+    )
+    batch.status, batch.updated_at = "cancelled", now()
+    session.flush()
+    for scene_id in {j.scene_id for j in waiting}:
+        scene = session.get(Scene, scene_id)
+        if scene is not None:
+            refresh_workflow(session, scene)
 
 
 @router.post("/batches/{batch_id}/retry", status_code=202)
