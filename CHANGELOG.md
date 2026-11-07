@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-07 — Phase 7C accepted
+
+- The user's second follow-up check passed (`Phase_Checks/Phase7C_Followup2_Report.md`: 4/4, 0 problems, "Phase 7C looks good"). Phase 7C (review queue, Approve all, Run everything, Sets and Batches tabs) is accepted. Docs only.
+
 ## 2026-11-07 — 7C follow-up: Add scenes and Remove from history
 
 - From the follow-up check (D038). **Add scenes** on a set card is always available and offers **Import new images…** (opens + Add scenes with the set chosen); it explains when every scene is already in the set. A finished batch's **Remove from history** (was Remove from list) asks first and says what is kept. Frontend only; 170 tests pass.
