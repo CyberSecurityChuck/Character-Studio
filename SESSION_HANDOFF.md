@@ -1,6 +1,10 @@
 # Session handoff
 
-Checkpoint: 2026-11-07 IST (+05:30), after the 7C review fixes
+Checkpoint: 2026-11-07 IST (+05:30), after the 7C follow-up fixes
+
+## Latest: 7C follow-up fixes (2026-11-07)
+
+- Follow-up report: 12/12, problem at step 2 (Add scenes greyed out: all scenes were already in the set) and a question about deleting history records. Fixed in `SetsView.tsx` (`onImport` → `Scenes.tsx` sets the filter, switches to the Scenes tab and opens the import dialog, whose `defaultSet` is the chosen set) and `Batches.tsx` (Remove from history with a confirm). **Next action: wait for `Phase_Checks/Phase7C_Followup2_Checklist.html` → `Phase7C_Followup2_Report.md`; on "looks good" record 7C accepted; 7D only on "Approve Phase 7D".** Nothing is pushed.
 
 ## Latest: 7C review fixes (2026-11-07, D038)
 

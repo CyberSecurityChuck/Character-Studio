@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-07 — 7C follow-up: Add scenes and Remove from history
+
+- From the follow-up check (D038). **Add scenes** on a set card is always available and offers **Import new images…** (opens + Add scenes with the set chosen); it explains when every scene is already in the set. A finished batch's **Remove from history** (was Remove from list) asks first and says what is kept. Frontend only; 170 tests pass.
+
 ## 2026-11-07 — Phase 7C review fixes: Sets and Batches tabs
 
 - From the user's combined 7C review (D038; 14/14 steps, 0 problems, "Needs fixes first", three notes). The Scenes page gets a **Scenes | Sets | Batches** switch. **Sets**: a card per set with thumbnails, stage counts, Open, Add scenes (new dialog), Rename and Delete in a ⋯ menu, + New set. **Batches**: every batch of both kinds, running first, with All / Analysis / Generation, a set filter, a scene search that highlights the scene's rows, Result links and Show more; the Scenes tab keeps only running batches.

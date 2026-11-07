@@ -289,9 +289,9 @@ Under a chosen scene set, **Prepare this set** has a sixth step, **Approve**, wi
 
 The Scenes page has three tabs at the top: **Scenes**, **Sets** and **Batches**; a refresh keeps the one you chose.
 
-**Sets** shows one card per scene set: a few thumbnails, the name, how many scenes it has and how many are at each stage, and when it was created. **Open** shows the set's scenes with its Prepare panel, **Add scenes** puts scenes you already have into it (a scene from another set moves over; nothing else about it changes), and the card's **⋯** menu renames or deletes the set (its scenes stay). **+ New set** creates an empty one.
+**Sets** shows one card per scene set: a few thumbnails, the name, how many scenes it has and how many are at each stage, and when it was created. **Open** shows the set's scenes with its Prepare panel, **Add scenes** puts scenes you already have into it (a scene from another set moves over; nothing else about it changes) or, with **Import new images…**, opens + Add scenes with the set already chosen, and the card's **⋯** menu renames or deletes the set (its scenes stay). **+ New set** creates an empty one.
 
-**Batches** lists every batch, analysis and generation: running ones first, then the history, newest first. Each row is one run for one scene with its status (done, failed with the reason on hover, interrupted, cancelled, waiting, running); an image row links to that scene's results. Filter by **All / Analysis / Generation** and by **Scene set**, or type part of a scene's name to see only the batches that scene was in, with its rows highlighted. The Scenes tab keeps only the batches that are running.
+**Batches** lists every batch, analysis and generation: running ones first, then the history, newest first. Each row is one run for one scene with its status (done, failed with the reason on hover, interrupted, cancelled, waiting, running); an image row links to that scene's results. Filter by **All / Analysis / Generation** and by **Scene set**, or type part of a scene's name to see only the batches that scene was in, with its rows highlighted. **Remove from history** on a finished batch takes its card off the list after asking; its runs, images and each scene's own run history are kept. The Scenes tab keeps only the batches that are running.
 
 ## Run everything (Phase 7C-2)
 

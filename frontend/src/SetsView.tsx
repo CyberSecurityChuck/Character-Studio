@@ -20,10 +20,10 @@ function StageLine({ scenes }: { scenes: SceneSummary[] }) {
   return <ul className="set-stages">{parts.map(([n, id, word]) => <li key={id} className={`stage-${id}`}><b>{n}</b> {word}</li>)}{problems > 0 && <li className="stage-problem"><b>{problems}</b> with problems</li>}</ul>
 }
 
-export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete, onNew, onMoved }: {
+export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete, onNew, onMoved, onImport }: {
   scenes: SceneSummary[]; sets: SceneSet[]; token: string; busy: boolean
   onOpen: (setId: string) => void; onRename: (item: SceneSet) => void; onDelete: (item: SceneSet) => void
-  onNew: () => void; onMoved: (text: string) => void
+  onNew: () => void; onMoved: (text: string) => void; onImport: (setId: string) => void
 }) {
   const [adding, setAdding] = useState<SceneSet | null>(null)
   const loose = scenes.filter(s => !s.scene_set_id)
@@ -47,19 +47,19 @@ export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete
             <StageLine scenes={members} />
             <div className="set-tile-actions">
               <button type="button" className="secondary compact" disabled={busy} onClick={() => onOpen(item.id)}>Open</button>
-              <button type="button" className="secondary compact" disabled={busy || scenes.length === members.length} onClick={() => setAdding(item)}>Add scenes</button>
+              <button type="button" className="secondary compact" disabled={busy} onClick={() => setAdding(item)}>Add scenes</button>
             </div>
           </div>
         </article>
       })}</div>}
     {loose.length > 0 && sets.length > 0 && <p className="hint sets-loose">{plural(loose.length, 'scene')} {loose.length === 1 ? 'is' : 'are'} not in a set. <button type="button" className="link-button" onClick={() => onOpen('none')}>Show {loose.length === 1 ? 'it' : 'them'}</button></p>}
-    {adding && <AddToSetDialog item={adding} scenes={scenes} sets={sets} token={token} onClose={() => setAdding(null)}
+    {adding && <AddToSetDialog item={adding} scenes={scenes} sets={sets} token={token} onClose={() => setAdding(null)} onImport={() => { const id = adding.id; setAdding(null); onImport(id) }}
       onAdded={count => { setAdding(null); onMoved(`${plural(count, 'scene')} added to “${adding.name}”.`) }} />}
   </div>
 }
 
 /** Pick scenes to put into a set. A scene that is in another set leaves that set. */
-function AddToSetDialog({ item, scenes, sets, token, onClose, onAdded }: { item: SceneSet; scenes: SceneSummary[]; sets: SceneSet[]; token: string; onClose: () => void; onAdded: (count: number) => void }) {
+function AddToSetDialog({ item, scenes, sets, token, onClose, onAdded, onImport }: { item: SceneSet; scenes: SceneSummary[]; sets: SceneSet[]; token: string; onClose: () => void; onAdded: (count: number) => void; onImport: () => void }) {
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -77,10 +77,13 @@ function AddToSetDialog({ item, scenes, sets, token, onClose, onAdded }: { item:
   return <Dialog label="add-to-set-title" className="assign-dialog" onClose={onClose}>
     <div className="text-dialog-form">
       <h2 id="add-to-set-title">Add scenes to “{item.name}”</h2>
+      <div className="add-import"><div><strong>New images</strong><span className="hint">Import Base Images from your computer straight into this set.</span></div>
+        <button type="button" className="secondary compact" disabled={busy} onClick={onImport}>Import new images…</button></div>
+      <h3 className="sub-head">Scenes already in your studio</h3>
       <p className="hint">Scenes not in a set are listed first. Adding a scene that is in another set moves it here. Nothing else about the scene changes.</p>
       <div className="assign-toolbar"><input type="search" aria-label="Search scenes" placeholder="Search by title" value={query} onChange={e => setQuery(e.target.value)} />
         <span className="hint">{plural(picked.length, 'scene')} chosen</span></div>
-      {!others.length ? <p className="hint">No other scenes{query ? ' match' : ''}.</p> : <ul className="add-grid">{others.map(s => <li key={s.id} className={picked.includes(s.id) ? 'on' : ''}>
+      {!others.length ? <p className="notice-line">{query ? 'No other scenes match.' : 'Every scene in your studio is already in this set. Use Import new images to add more.'}</p> : <ul className="add-grid">{others.map(s => <li key={s.id} className={picked.includes(s.id) ? 'on' : ''}>
         <label><input type="checkbox" checked={picked.includes(s.id)} onChange={() => toggle(s.id)} />
           <img src={s.thumbnail_url} alt="" loading="lazy" /><strong>{s.title}</strong>
           <small>{s.scene_set_id ? `In ${names[s.scene_set_id] ?? 'another set'}` : 'Not in a set'}</small></label></li>)}</ul>}

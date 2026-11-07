@@ -140,7 +140,7 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
         onClick={() => void act('/cancel', 'POST', `Cancel the ${plural(remaining, 'item')} that ${remaining === 1 ? 'has' : 'have'} not started? Nothing is sent for them.${counts.running ? ' The run in progress continues; you can cancel it in the list below.' : ''}`)}>Cancel remaining</button>}
       {!isActive(batch) && batch.retryable > 0 && <button type="button" className="secondary compact" disabled={busy}
         onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.${chargeLine}`)}>Try failed again ({batch.retryable})</button>}
-      {!isActive(batch) && <button type="button" className="link-button" disabled={busy} onClick={() => void act('', 'DELETE')}>Remove from list</button>}
+      {!isActive(batch) && <button type="button" className="link-button" disabled={busy} onClick={() => void act('', 'DELETE', 'Remove this batch from the history? Its runs, images and each scene’s own run history are kept; only this batch card goes.')}>Remove from history</button>}
     </div>
   </article>
 }

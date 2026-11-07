@@ -837,7 +837,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     {tabs}
     {view === 'sets' ? <><SetsView scenes={scenes} sets={sets} token={token} busy={busy} onOpen={id => { setSetFilter(id); setStage('all'); setView('scenes') }}
       onRename={item => setNaming(item)} onDelete={item => void deleteSet(item)} onNew={() => setNaming('new')}
-      onMoved={text => { setActionError(''); setNotice(text); void load() }} />
+      onMoved={text => { setActionError(''); setNotice(text); void load() }} onImport={id => { setSetFilter(id); setStage('all'); setView('scenes'); setCreating(true) }} />
       {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
       <StatusNote text={busy ? 'Working…' : notice} /></>
     : view === 'batches' ? <BatchHistory token={token} sets={sets} initial={routeQuery()} onRoute={historyRoute} onOpenScene={openAt} />

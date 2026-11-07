@@ -1518,3 +1518,5 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
 .batch-history-link { margin-top: 20px; }
 @media (max-width: 760px) { .history-filters { grid-template-columns: 1fr; } .history-filters .segmented { width: max-content; } }
 .set-tile-title .card-menu { position: relative; top: auto; right: auto; flex: none; }
+.add-import { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 12px 0 4px; padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--background); }
+.add-import > div { display: grid; gap: 2px; }
