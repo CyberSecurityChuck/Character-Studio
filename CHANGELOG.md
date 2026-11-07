@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-07 — Phase 7C pushed
+
+- Pushed to `origin/main` with the user's approval (`9b91d1a..f3345c1`); CI run 42335480860 passed. Docs only.
+
 ## 2026-11-07 — Phase 7C accepted
 
 - The user's second follow-up check passed (`Phase_Checks/Phase7C_Followup2_Report.md`: 4/4, 0 problems, "Phase 7C looks good"). Phase 7C (review queue, Approve all, Run everything, Sets and Batches tabs) is accepted. Docs only.
