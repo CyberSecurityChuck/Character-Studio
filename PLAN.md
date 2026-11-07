@@ -2128,6 +2128,11 @@ Added at the user's request (2026-11-05, D033), before
 darkroom" dark theme) and a premium visual refresh of
 every page, with bundled Inter and Fraunces fonts.
 
+Added at the user's request in the 7C review (2026-11-07, D038): a
+Scenes | Sets | Batches switch on the Scenes page, with a card per
+scene set (open, rename, add scenes, delete) and a full batch history
+(analysis and generation, filters, scene search).
+
 Acceptance:
 
 - Many Base Images can be imported at once without

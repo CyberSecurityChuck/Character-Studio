@@ -69,7 +69,7 @@ function ItemStatus({ item, batch }: { item: BatchItem; batch: Batch }) {
   </span>
 }
 
-function BatchCard({ batch, token, onChanged, onOpenScene }: { batch: Batch; token: string; onChanged: () => void; onOpenScene?: (id: string, step: string) => void }) {
+function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { batch: Batch; token: string; onChanged: () => void; onOpenScene?: (id: string, step: string) => void; highlight?: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const { counts } = batch
@@ -125,10 +125,10 @@ function BatchCard({ batch, token, onChanged, onOpenScene }: { batch: Batch; tok
     </div>}
     {batch.state === 'pausing' && <p className="hint">The run in progress finishes first; nothing new starts after it.</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
-    <ol className="batch-rows">{batch.items.map(item => <li key={item.job_id} className={`row-${item.status}`}>
+    <ol className="batch-rows">{batch.items.map(item => <li key={item.job_id} className={`row-${item.status} ${highlight && item.scene_title?.toLocaleLowerCase().includes(highlight.toLocaleLowerCase()) ? 'row-match' : ''}`}>
       <img src={item.thumbnail_url} alt="" loading="lazy" />
       {onOpenScene && item.scene_title ? <button type="button" className="link-button row-name" onClick={() => onOpenScene(item.scene_id, step)}>{item.scene_title}</button> : <strong className="row-name">{item.scene_title ?? 'Deleted scene'}</strong>}
-      <span className="row-meta">{item.retry_of ? 'Tried again · ' : ''}{batch.kind === 'generation' ? (item.mode === 'variation' ? 'Variation' : 'Image') : 'Analysis'}{item.result_version ? ` · Result ${item.result_version}` : ''}</span>
+      <span className="row-meta">{item.retry_of ? 'Tried again · ' : ''}{batch.kind === 'generation' ? (item.mode === 'variation' ? 'Variation' : 'Image') : 'Analysis'}{item.result_version && !onOpenScene ? ` · Result ${item.result_version}` : ''}{item.result_version && onOpenScene ? <> · <button type="button" className="link-button" title="Open this scene's results" onClick={() => onOpenScene(item.scene_id, 'generate')}>Result {item.result_version}</button></> : null}</span>
       {item.status === 'running' && <button type="button" className="link-button row-cancel" disabled={busy} onClick={() => void cancelRun(item)}>Cancel run</button>}
       <ItemStatus item={item} batch={batch} />
     </li>)}</ol>
@@ -340,4 +340,60 @@ export function GroupDialog({ scenes, token, onClose, onDone }: { scenes: SceneS
         <button type="button" disabled={busy || !groupId || !people.some(usable) || !ready.length} onClick={() => void submit()}>{busy ? 'Saving…' : 'Suggest assignments'}</button></div>
     </div>
   </Dialog>
+}
+
+// The Batches tab (7C review, D038) ---------------------------------------------------------
+
+type History = { batches: Batch[]; total: number }
+type HistoryKind = 'all' | 'analysis' | 'generation'
+const kindWords: Record<HistoryKind, string> = { all: 'All', analysis: 'Analysis', generation: 'Generation' }
+const PAGE = 20
+
+/** Every batch, analysis and generation: running ones first, then the history, with filters. */
+export function BatchHistory({ token, sets, initial, onRoute, onOpenScene }: {
+  token: string; sets: { id: string; name: string }[]; initial: URLSearchParams
+  onRoute: (query: string) => void; onOpenScene: (id: string, step: string) => void
+}) {
+  const [kind, setKind] = useState<HistoryKind>(() => { const k = initial.get('kind'); return k === 'analysis' || k === 'generation' ? k : 'all' })
+  const [setId, setSetId] = useState(() => initial.get('set') ?? '')
+  const [search, setSearch] = useState(() => initial.get('scene') ?? '')
+  const [query, setQuery] = useState(search)
+  const [limit, setLimit] = useState(PAGE)
+  const [data, setData] = useState<History | null>(null)
+  const [error, setError] = useState('')
+  // The scene search waits for a short pause in typing.
+  useEffect(() => { const t = window.setTimeout(() => setQuery(search.trim()), 300); return () => window.clearTimeout(t) }, [search])
+  const params = new URLSearchParams({ ...(kind !== 'all' ? { kind } : {}), ...(setId ? { set: setId } : {}), ...(query ? { scene: query } : {}) }).toString()
+  useEffect(() => { onRoute(params) }, [params, onRoute])
+  const load = useCallback(() => {
+    const api = new URLSearchParams({ limit: String(limit), ...(kind !== 'all' ? { kind } : {}), ...(setId ? { scene_set_id: setId } : {}), ...(query ? { scene: query } : {}) })
+    return request<History>(`/api/batches/history?${api}`).then(d => { setData(d); setError('') }, e => setError(e instanceof Error ? e.message : 'The batches could not be loaded.'))
+  }, [kind, setId, query, limit])
+  useEffect(() => { void load() }, [load])
+  const moving = !!data?.batches.some(b => ['running', 'pausing', 'cancelling'].includes(b.state))
+  useEffect(() => {
+    if (!moving) return
+    const timer = window.setInterval(() => void load(), 2000)
+    return () => window.clearInterval(timer)
+  }, [moving, load])
+  const active = data?.batches.filter(isActive) ?? []
+  const finished = data?.batches.filter(b => !isActive(b)) ?? []
+  const filtered = kind !== 'all' || !!setId || !!query
+  return <section className="batch-history-view" aria-label="Batches">
+    <div className="history-filters">
+      <div className="segmented" role="group" aria-label="Kind of batch">{(['all', 'analysis', 'generation'] as const).map(k => <button key={k} type="button" className={kind === k ? '' : 'secondary'} aria-pressed={kind === k} onClick={() => { setKind(k); setLimit(PAGE) }}>{kindWords[k]}</button>)}</div>
+      <div><label htmlFor="history-set">Scene set</label><select id="history-set" value={setId} onChange={e => { setSetId(e.target.value); setLimit(PAGE) }}>
+        <option value="">All sets</option><option value="none">Not in a set</option>{sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+      <div><label htmlFor="history-scene">Scene</label><input id="history-scene" type="search" value={search} placeholder="Find a scene by title" onChange={e => { setSearch(e.target.value); setLimit(PAGE) }} /></div>
+    </div>
+    {query && <p className="hint">Batches that “{query}” was in; its rows are highlighted.</p>}
+    {error && <p className="frame-error" role="alert">{error}</p>}
+    {data === null && !error ? <p role="status">Loading batches…</p> : data && !data.batches.length ? <div className="empty-library panel"><h2>{filtered ? 'No batches match' : 'No batches yet'}</h2><p>{filtered ? 'Try another kind, set or scene.' : 'Batches appear here when you analyse or generate several scenes at once: Analyse all, Select and Analyse or Generate, Generate approved scenes, or Run everything.'}</p></div> : data && <>
+      {active.length > 0 && <div className="batch-list"><div className="section-title"><h2>Running</h2><span>ONE RUN AT A TIME</span></div>
+        {active.map(b => <BatchCard key={b.id} batch={b} token={token} highlight={query} onChanged={() => void load()} onOpenScene={onOpenScene} />)}</div>}
+      {finished.length > 0 && <div className="batch-list"><div className="section-title"><h2>History</h2><span>{data.total - active.length} {filtered ? 'MATCHING' : 'IN ALL'}</span></div>
+        {finished.map(b => <BatchCard key={b.id} batch={b} token={token} highlight={query} onChanged={() => void load()} onOpenScene={onOpenScene} />)}</div>}
+      {data.total > data.batches.length && <div className="history-more"><button type="button" className="secondary" onClick={() => setLimit(l => l + PAGE)}>Show {Math.min(PAGE, data.total - data.batches.length)} more</button><span className="hint">{data.batches.length} of {data.total} shown</span></div>}
+    </>}
+  </section>
 }

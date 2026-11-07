@@ -1,6 +1,11 @@
 # Session handoff
 
-Checkpoint: 2026-11-07 IST (+05:30), after building 7C-2
+Checkpoint: 2026-11-07 IST (+05:30), after the 7C review fixes
+
+## Latest: 7C review fixes (2026-11-07, D038)
+
+- The user's combined 7C review passed every step but asked (notes) for a Sets view, a batch history and a Generate step. After three questions and "Proceed please": Scenes | Sets | Batches tabs built, Generate step left for 7D. **Next action: wait for `Phase_Checks/Phase7C_Followup_Checklist.html` → `Phase7C_Followup_Report.md`; on "looks good" record 7C accepted; 7D only on "Approve Phase 7D".** Nothing is pushed.
+- Code: `Scenes.tsx` `view` state (`#/scenes/sets`, `#/scenes/batches?kind=&set=&scene=`; `open` ignores review/sets/batches), `historyRoute` callback; `SetsView.tsx` (`SetsView`, `AddToSetDialog`, uses `PUT /api/scene-set-members`); `Batches.tsx` `BatchHistory`, `BatchCard` `highlight` and Result links; `GET /api/batches/history` declared before `/batches/{batch_id}`; `Prepare.tsx` `allApproved`. The Batches tab starts with the Scenes page's set filter when one is chosen (the query is shared).
 
 ## Latest: Phase 7C-2 built; 7C awaiting the combined review (2026-11-07)
 

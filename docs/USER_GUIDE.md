@@ -285,6 +285,14 @@ Under a chosen scene set, **Prepare this set** has a sixth step, **Approve**, wi
 
 **Approve all** shows a thumbnail for every scene that can be approved, with three boxes, all unticked: **Accept uncertain details**, **Accept warnings** and **Extra people may keep their original look** (scenes labelled as a mismatch). A scene whose box is not ticked is left out and says which box it needs; you can also untick any single scene. Scenes that cannot be approved (not analysed, someone unassigned, no prompt, a run in progress) are listed with the reason. Each scene is checked again when you confirm: one that changed since the list was made, or whose Base Image or reference photo file is missing or changed, is skipped and listed, and the others are still approved.
 
+## Sets and Batches tabs (7C review)
+
+The Scenes page has three tabs at the top: **Scenes**, **Sets** and **Batches**; a refresh keeps the one you chose.
+
+**Sets** shows one card per scene set: a few thumbnails, the name, how many scenes it has and how many are at each stage, and when it was created. **Open** shows the set's scenes with its Prepare panel, **Add scenes** puts scenes you already have into it (a scene from another set moves over; nothing else about it changes), and the card's **⋯** menu renames or deletes the set (its scenes stay). **+ New set** creates an empty one.
+
+**Batches** lists every batch, analysis and generation: running ones first, then the history, newest first. Each row is one run for one scene with its status (done, failed with the reason on hover, interrupted, cancelled, waiting, running); an image row links to that scene's results. Filter by **All / Analysis / Generation** and by **Scene set**, or type part of a scene's name to see only the batches that scene was in, with its rows highlighted. The Scenes tab keeps only the batches that are running.
+
 ## Run everything (Phase 7C-2)
 
 **Run everything** in a set's header takes the whole set through every step with one click. You set the rules once in its dialog: who gets the people nobody is assigned to yet (**One character**, optionally also the largest person in scenes with several people; **A group, left to right**; or **Leave them to me**), a **preset** for new drafts, and **images per scene**. The dialog lists the three stages with their counts and engines and warns that a large set can use up your plan's allowance (or your API keys' limits) and stop partway. With a paid engine, starting accepts the charges for the whole run.

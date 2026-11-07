@@ -51,11 +51,14 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
     finally { setBusy(false) }
   }
   // Every step is in exactly one state; the first unfinished step is "Next up" (orange).
+  // Approved scenes are past assigning and drafting, so a set whose analysed scenes are all
+  // approved shows those steps as done, not as waiting (7C review, D038).
+  const allApproved = counts.analysed > 0 && counts.assign === 0
   const raw: Record<'analyse' | 'check' | 'assign' | 'draft', StepState> = {
     analyse: counts.analyse ? (counts.busy ? 'running' : 'todo') : 'done',
     check: counts.uncertain ? 'todo' : counts.analysed ? 'done' : 'waiting',
-    assign: counts.assign_open ? 'todo' : counts.assign ? 'done' : 'waiting',
-    draft: counts.draft ? 'todo' : counts.redraft ? 'done' : 'waiting',
+    assign: counts.assign_open ? 'todo' : counts.assign || allApproved ? 'done' : 'waiting',
+    draft: counts.draft ? 'todo' : counts.redraft || allApproved ? 'done' : 'waiting',
   }
   const firstOpen = (['analyse', 'check', 'assign', 'draft'] as const).find(k => raw[k] === 'todo')
   const stateOf = (k: keyof typeof raw): StepState => k === firstOpen ? 'next' : raw[k]
@@ -78,9 +81,9 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
         btn(stateOf('analyse'), 'Analyse all', 'analyse', !counts.analyse, analysisEngine === 'manual' ? 'Manual analysis is selected in Studio settings' : undefined))}
       {card(stateOf('check'), 2, 'Check details', counts.uncertain ? `${plural(counts.uncertain, 'scene')} with uncertain details` : counts.analysed ? 'Nothing uncertain' : 'Waiting for analyses',
         btn(stateOf('check'), 'Check details', 'check', !counts.uncertain))}
-      {card(stateOf('assign'), 3, 'Assign characters', counts.assign_open ? `${plural(counts.assign_open, 'scene')} still need someone` : counts.assign ? `Everyone is assigned${counts.mismatched ? ` · ${counts.mismatched} labelled mismatch` : ''}` : 'Waiting for analyses',
+      {card(stateOf('assign'), 3, 'Assign characters', counts.assign_open ? `${plural(counts.assign_open, 'scene')} still need someone` : counts.assign || allApproved ? `Everyone is assigned${counts.mismatched ? ` · ${counts.mismatched} labelled mismatch` : ''}` : 'Waiting for analyses',
         btn(stateOf('assign'), 'Open the table', 'assign', !counts.assign))}
-      {card(stateOf('draft'), 4, 'Draft prompts for all', counts.draft ? `${plural(counts.draft, 'scene')} ready for a draft` : counts.redraft ? 'Drafted. You can redraft with a preset' : 'Waiting for assignments',
+      {card(stateOf('draft'), 4, 'Draft prompts for all', counts.draft ? `${plural(counts.draft, 'scene')} ready for a draft` : counts.redraft ? 'Drafted. You can redraft with a preset' : allApproved ? 'Every scene has its approved prompt' : 'Waiting for assignments',
         btn(stateOf('draft'), 'Draft prompts', 'draft', !(counts.draft + counts.redraft)))}
       {card(polishState, 5, <>Polish all <small>optional</small></>, polishing ? `${plural(counts.polish_running, 'run')} running, ${counts.polish_waiting} waiting` : counts.review ? `${plural(counts.review, 'polished prompt')} to review` : counts.polish ? `${plural(counts.polish, 'prompt')} could be polished` : 'Needs saved prompts',
         polishing ? <button type="button" className="secondary compact" disabled={busy} onClick={() => void cancelPolish()}>Cancel waiting</button>

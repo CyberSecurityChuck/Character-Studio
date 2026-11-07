@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-07 — Phase 7C review fixes: Sets and Batches tabs
+
+- From the user's combined 7C review (D038; 14/14 steps, 0 problems, "Needs fixes first", three notes). The Scenes page gets a **Scenes | Sets | Batches** switch. **Sets**: a card per set with thumbnails, stage counts, Open, Add scenes (new dialog), Rename and Delete in a ⋯ menu, + New set. **Batches**: every batch of both kinds, running first, with All / Analysis / Generation, a set filter, a scene search that highlights the scene's rows, Result links and Show more; the Scenes tab keeps only running batches.
+- New `GET /api/batches/history` (kind, scene_set_id incl. "none", scene title search, limit). Fixed: once every scene of a set is approved, Assign characters and Draft prompts show Done instead of "Waiting for analyses". The Generate step stays for 7D (user's choice).
+- New `frontend/src/SetsView.tsx`; `BatchHistory` in `Batches.tsx`. 170 tests pass (1 new in `tests/test_batch_history.py`). Follow-up check: `Phase_Checks/Phase7C_Followup_Checklist.html`.
+
 ## 2026-11-07 — Phase 7C-2: Run everything
 
 - **Run everything** in a set's header (D037): rules set once (one character, optionally the largest person; a group left to right; or leave them to me), a preset and images per scene; analyses in chained batches of 50, then assign, draft and approve every scene (approvals recorded **auto**), then images in chained batches of 20, stage by stage. Scenes with uncertain details or a mismatch stop at Needs your check unless let through (two switches); prompt warnings always stop; an opt-in **Stop before generating** waits with a Generate button. Each scene picks up where it is; hand work is kept.

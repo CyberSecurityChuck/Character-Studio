@@ -261,6 +261,42 @@ def timing(request: Request):
         }
 
 
+@router.get("/batches/history")
+def batch_history(
+    request: Request,
+    kind: str | None = None,
+    scene_set_id: str | None = None,
+    scene: str | None = None,
+    limit: int = 20,
+):
+    """Every batch, newest first (the Batches tab, D038): analysis and generation alike.
+
+    kind keeps one kind; scene_set_id keeps batches with a scene now in that set ("none":
+    a scene in no set); scene keeps batches with a scene whose title contains the text.
+    """
+    limit = max(1, min(limit, 200))
+    query = select(Batch)
+    if kind in ("analysis", "generation"):
+        query = query.where(Batch.kind == kind)
+    if scene_set_id or (scene and scene.strip()):
+        jobs = (
+            select(EngineJob.batch_id)
+            .join(Scene, Scene.id == EngineJob.scene_id)
+            .where(EngineJob.batch_id.is_not(None))
+        )
+        if scene_set_id == "none":
+            jobs = jobs.where(Scene.scene_set_id.is_(None))
+        elif scene_set_id:
+            jobs = jobs.where(Scene.scene_set_id == scene_set_id)
+        if scene and scene.strip():
+            jobs = jobs.where(func.lower(Scene.title).contains(scene.strip().lower()[:120]))
+        query = query.where(Batch.id.in_(jobs))
+    with Session(request.app.state.engine) as session:
+        total = session.scalar(select(func.count()).select_from(query.subquery()))
+        rows = session.scalars(query.order_by(Batch.created_at.desc()).limit(limit))
+        return {"batches": [batch_data(session, b) for b in rows], "total": total}
+
+
 @router.get("/batches/{batch_id}")
 def batch(request: Request, batch_id: str):
     with Session(request.app.state.engine) as session:

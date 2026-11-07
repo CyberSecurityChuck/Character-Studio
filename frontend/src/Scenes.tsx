@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
 import { ChargeDialog, engineNames, generationNames, isApiEngine, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
-import { BatchDialog, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
+import { BatchDialog, BatchHistory, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
 import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
 import { PresetDialog, PresetSelect, appendLines, usePresets } from './Presets'
 import { ReviewQueue } from './Approve'
 import { PipelineCard, RunEverythingDialog } from './Pipeline'
+import { SetsView } from './SetsView'
 import { PreparePanel } from './Prepare'
 import { StatusNote } from './Toast'
 import { GeneratePanel, duration, type ExportPackage, type Result } from './Results'
@@ -710,6 +711,9 @@ const sorters: Record<SortOrder, (a: SceneSummary, b: SceneSummary) => number> =
   title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }),
 }
 
+type SceneView = 'scenes' | 'sets' | 'batches'
+const viewLabels: Record<SceneView, string> = { scenes: 'Scenes', sets: 'Sets', batches: 'Batches' }
+
 export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onDirty: (dirty: boolean) => void; onBusy: (busy: boolean) => void }) {
   const token = data.session_token
   const [scenes, setScenes] = useState<SceneSummary[]>([])
@@ -721,7 +725,9 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const [query, setQuery] = useState('')
   // #/scenes/review?set=<id>&at=<scene> is the review queue (Phase 7C); other second parts are scene ids.
   const [reviewing, setReviewing] = useState<string | null>(() => routeParts()[0] === 'scenes' && routeParts()[1] === 'review' ? routeQuery().get('set') : null)
-  const [open, setOpen] = useState<string | null>(() => routeParts()[0] === 'scenes' && routeParts()[1] !== 'review' ? routeParts()[1] ?? null : null)
+  // #/scenes/sets and #/scenes/batches are the other two tabs of the page (D038).
+  const [view, setView] = useState<SceneView>(() => routeParts()[0] === 'scenes' && (routeParts()[1] === 'sets' || routeParts()[1] === 'batches') ? routeParts()[1] as SceneView : 'scenes')
+  const [open, setOpen] = useState<string | null>(() => routeParts()[0] === 'scenes' && !['review', 'sets', 'batches'].includes(routeParts()[1] ?? '') ? routeParts()[1] ?? null : null)
   const [creating, setCreating] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
@@ -741,6 +747,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const [running, setRunning] = useState(false)
   const [runKey, setRunKey] = useState(0)
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const historyRoute = useCallback((query: string) => { replaceRoute(`scenes/batches${query ? `?${query}` : ''}`) }, [])
 
   const load = useCallback(() => Promise.all([request<SceneSummary[]>('/api/scenes'), request<SceneSet[]>('/api/scene-sets')])
     .then(([list, setList]) => { setScenes(list); setSets(setList); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
@@ -750,9 +757,11 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   useEffect(() => {
     if (open) { if (routeParts()[1] !== open) replaceRoute(`scenes/${open}`); return }
     if (reviewing) return // the queue keeps its own place in the address
+    if (view === 'batches') return // the Batches tab keeps its filters in the address
+    if (view === 'sets') { replaceRoute('scenes/sets'); return }
     const query = new URLSearchParams({ ...(stage !== 'all' ? { stage } : {}), ...(setFilter !== 'all' ? { set: setFilter } : {}), ...(sort !== 'changed' ? { sort } : {}) }).toString()
     replaceRoute(`scenes${query ? `?${query}` : ''}`)
-  }, [open, reviewing, stage, setFilter, sort])
+  }, [open, reviewing, view, stage, setFilter, sort])
   // A set deleted elsewhere falls back to all scenes.
   // Checked only when the list of sets reloads, so a set just created is never reset.
   useEffect(() => { if (!loading) setSetFilter(f => ['all', 'none'].includes(f) || sets.some(s => s.id === f) ? f : 'all') }, [loading, sets])
@@ -815,6 +824,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   }
 
   const setNames = Object.fromEntries(sets.map(s => [s.id, s.name]))
+  const tabs = <div className="library-tabs scene-tabs" aria-label="Scenes sections">{(['scenes', 'sets', 'batches'] as const).map(t => <button key={t} type="button" className={view === t ? '' : 'secondary'} aria-pressed={view === t} disabled={busy} onClick={() => { stopSelecting(); setView(t) }}>{viewLabels[t]}</button>)}</div>
   const currentSet = sets.find(s => s.id === setFilter) ?? null
   // Stage counts follow the set and search; the stage filter is applied last.
   const scoped = scenes.filter(s => (setFilter === 'all' || (setFilter === 'none' ? !s.scene_set_id : s.scene_set_id === setFilter)) && s.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
@@ -824,6 +834,14 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const manualAnalysis = engines?.analysis_engine === 'manual'
   const manualGeneration = engines?.generation_engine === 'manual'
   return <div className="scenes">
+    {tabs}
+    {view === 'sets' ? <><SetsView scenes={scenes} sets={sets} token={token} busy={busy} onOpen={id => { setSetFilter(id); setStage('all'); setView('scenes') }}
+      onRename={item => setNaming(item)} onDelete={item => void deleteSet(item)} onNew={() => setNaming('new')}
+      onMoved={text => { setActionError(''); setNotice(text); void load() }} />
+      {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
+      <StatusNote text={busy ? 'Working…' : notice} /></>
+    : view === 'batches' ? <BatchHistory token={token} sets={sets} initial={routeQuery()} onRoute={historyRoute} onOpenScene={openAt} />
+    : <>
     <div className="library-toolbar filters">
       <div><label htmlFor="scene-search">Search scenes</label><input id="scene-search" type="search" value={query} placeholder="Search by title" onChange={e => setQuery(e.target.value)} /></div>
       <div className="narrow-filter"><label htmlFor="scene-set-filter">Scene set</label>
@@ -881,7 +899,8 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
           ]} />}
         </div>
       })}</div>}
-    <BatchList part="history" token={token} refreshKey={batchKey} onOpenScene={openAt} />
+    <p className="hint batch-history-link">Finished batches are in the <button type="button" className="link-button" onClick={() => setView('batches')}>Batches</button> tab.</p>
+    </>}
     {renaming && <TextDialog title="Rename scene" label="Scene title" initial={renaming.title} maxLength={120} onClose={() => setRenaming(null)}
       onSave={async value => { await send(`/api/scenes/${renaming.id}`, 'PUT', token, { title: value, revision: renaming.revision }); setActionError(''); setNotice('Scene renamed.'); await load() }} />}
     <dialog ref={dialogRef} className="image-dialog new-scene-dialog" aria-labelledby="new-scene-title" onClose={() => setCreating(false)}>
