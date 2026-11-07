@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { request, send } from './api'
 import { ChargeSummary, engineNames, generationNames, isApiEngine, isImageEngine, useApiEngines } from './ApiEngines'
-import { Dialog, plural, MAX_ANALYSIS_RUNS, MAX_GENERATION_RUNS } from './Batches'
+import { Dialog, plural, pauseTitles, MAX_ANALYSIS_RUNS, MAX_GENERATION_RUNS } from './Batches'
 import { type Character, type Group } from './Library'
 import { PresetSelect, usePresets } from './Presets'
 import type { SceneSet } from './SceneSets'
 
-// Phase 7C-2: Run everything - the full auto-pipeline for one scene set (D030, D037).
+// Phase 7C-2: Run everything - the full auto-pipeline for one scene set (D030, D037). Its card
+// also shows Generate all runs (Phase 7D, D039) with their pause summary and buttons.
 
 type Stopped = { scene_id: string; title: string; reason: string }
 type RunBatch = { id: string; kind: 'analysis' | 'generation'; state: string; pause_kind: string | null; total: number; done: number; failed: number; cancelled: number }
+// What a run's images came to (Phase 7D): done, failed, interrupted, not started, and the pause.
+type Summary = { images: number; done: number; failed: number; interrupted: number; running: number; not_started: number; retryable: number; paused: { kind: string | null; details: string | null; at: string } | null }
 export type PipelineRun = {
-  id: string; status: 'running' | 'paused' | 'waiting' | 'cancelled' | 'finished'; stage: 'analysing' | 'generating'; pause_details: string | null
+  id: string; kind: 'everything' | 'generate'; summary: Summary | null
+  status: 'running' | 'paused' | 'waiting' | 'cancelled' | 'finished'; stage: 'analysing' | 'generating'; pause_details: string | null
   rules: { images: number; stop_before_generating: boolean; let_uncertain: boolean; let_mismatch: boolean; generation_engine: string; analysis_engine: string | null; preset: string | null }
   outcome: { analyse?: number; approved?: number; stopped?: Stopped[]; already_done?: number; generate?: number; images?: number; note?: string }
   batches: RunBatch[]; created_at: string; updated_at: string
@@ -129,6 +133,11 @@ export function RunEverythingDialog({ item, token, onClose, onStarted }: { item:
   </Dialog>
 }
 
+const runName = (run: PipelineRun) => run.kind === 'generate' ? 'Generate all' : 'Run everything'
+// A run is paused itself (a restart) or waits on a paused batch (a plan limit, a sign-out, the user).
+const pausedNow = (run: PipelineRun) => run.status === 'paused' || (run.status === 'running' && (!!run.summary?.paused || run.batches.some(b => b.state === 'paused')))
+const formatWhen = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
 const stageWords = (run: PipelineRun) => {
   if (run.status === 'finished') return 'Finished'
   if (run.status === 'cancelled') return 'Cancelled'
@@ -139,57 +148,91 @@ const stageWords = (run: PipelineRun) => {
   return paused ? 'Generating · paused' : 'Generating'
 }
 
-/** The set's latest Run everything: where it stands, what stopped and why, and its buttons. */
-export function PipelineCard({ item, token, version, onChanged, onNotice, onOpenScene }: { item: SceneSet; token: string; version: string; onChanged: () => void; onNotice: (text: string, problem?: string) => void; onOpenScene: (id: string) => void }) {
+/** Why and when the run paused, in words: the batch's pause reason or the run's own. */
+function pauseLine(run: PipelineRun) {
+  const p = run.summary?.paused
+  if (!p) {
+    // Still analysing: an analysis batch of Run everything is paused.
+    const batch = run.status === 'running' ? run.batches.find(b => b.state === 'paused') : undefined
+    if (!batch) return null
+    const engine = run.rules.analysis_engine ?? ''
+    return <div className="run-pause-note" role="status"><strong>{(pauseTitles[batch.pause_kind ?? 'user'] ?? pauseTitles.user)(engineNames[engine] ?? engine, engine)}</strong><span>The analyses that finished are kept.</span></div>
+  }
+  const engine = run.rules.generation_engine
+  const title = (pauseTitles[p.kind ?? 'user'] ?? pauseTitles.user)(generationNames[engine] ?? engine, engine)
+  return <div className="run-pause-note" role="status"><strong>{p.kind === 'engine' ? 'Paused: the generation engine changed' : title}</strong>
+    <span>{formatWhen(p.at)}{p.details ? ` · ${p.details}` : ''}</span></div>
+}
+
+/** The set's latest Run everything or Generate all: where it stands, what is done, failed and
+ *  not started, why and when it paused, what stopped, and its buttons. */
+export function PipelineCard({ item, token, version, onChanged, onNotice, onOpenScene, onResults }: { item: SceneSet; token: string; version: string; onChanged: () => void; onNotice: (text: string, problem?: string) => void; onOpenScene: (id: string) => void; onResults?: () => void }) {
   const [run, setRun] = useState<PipelineRun | null>(null)
   const [busy, setBusy] = useState(false)
   const [hidden, setHidden] = useState(() => window.localStorage.getItem(`character-studio.run-hidden.${item.id}`) ?? '')
   const load = useCallback(() => request<Preview>(`/api/scene-sets/${item.id}/pipeline`).then(p => setRun(p.run), () => undefined), [item.id])
   useEffect(() => { void load() }, [load, version])
-  const moving = run?.status === 'running'
+  const moving = !!run && run.status === 'running' && !pausedNow(run)
   useEffect(() => {
     if (!moving) return
     const timer = window.setInterval(() => { void load(); onChanged() }, 3000)
     return () => window.clearInterval(timer)
   }, [moving, load, onChanged])
   if (!run || hidden === run.id) return null
+  const name = runName(run)
   const open = ['running', 'paused', 'waiting'].includes(run.status)
   const paid = isImageEngine(run.rules.generation_engine) || (!!run.rules.analysis_engine && isApiEngine(run.rules.analysis_engine))
-  async function act(path: 'continue' | 'cancel' | 'generate', question?: string) {
+  const s = run.summary
+  async function act(path: 'continue' | 'cancel' | 'generate' | 'retry', question?: string) {
     if (question && !window.confirm(question)) return
     setBusy(true)
     try {
       const charge = path !== 'cancel' && paid
-      if (charge && !window.confirm('This uses a paid engine. Accept the charges for the remaining runs?')) { setBusy(false); return }
+      if (charge && !window.confirm(path === 'retry' ? 'This uses a paid engine. Accept the charges for the failed images tried again?' : 'This uses a paid engine. Accept the charges for the remaining runs?')) { setBusy(false); return }
       const next = await send<PipelineRun>(`/api/pipelines/${run!.id}/${path}`, 'POST', token, charge ? { confirm_charges: true } : {})
       setRun(next); onChanged()
-      onNotice(path === 'cancel' ? 'Run everything cancelled. Everything that finished is kept.' : path === 'generate' ? 'Generating the approved scenes, one image after another.' : 'Run everything continues.')
+      onNotice(path === 'cancel' ? `${name} cancelled. Everything that finished is kept.` : path === 'generate' ? 'Generating the approved scenes, one image after another.'
+        : path === 'retry' ? `Trying ${plural(s?.retryable ?? 0, 'failed image')} again, one after another.` : `${name} continues.`)
     } catch (e) { onNotice('', e instanceof Error ? e.message : 'That did not work.') }
     finally { setBusy(false) }
   }
   const o = run.outcome
   const stopped = o.stopped ?? []
-  const images = run.batches.filter(b => b.kind === 'generation')
-  const made = images.reduce((n, b) => n + b.done, 0)
   const analyses = run.batches.filter(b => b.kind === 'analysis')
   const analysed = analyses.reduce((n, b) => n + b.done, 0)
   const analysesTotal = analyses.reduce((n, b) => n + b.total, 0)
-  return <section className={`run-card run-${run.status}`} aria-label="Run everything">
+  const waitingWord = run.status === 'running' && !s?.paused ? 'waiting' : 'not started'
+  const parts = [
+    ...(run.kind === 'everything' ? [analysesTotal ? `${analysed} of ${analysesTotal} ${analysesTotal === 1 ? 'analysis' : 'analyses'}` : 'No analyses needed'] : []),
+    ...(o.approved !== undefined ? [`${plural(o.approved, 'scene')} approved automatically`] : []),
+    ...(s ? [`${s.done} of ${plural(s.images, 'image')} made`] : []),
+    ...(stopped.length ? [`${stopped.length} ${run.kind === 'generate' ? 'left out' : 'stopped for you'}`] : []),
+  ]
+  return <section className={`run-card run-${run.status} ${pausedNow(run) ? 'run-is-paused' : ''}`} aria-label={name}>
     <div className="run-head">
       <span className="run-dot" aria-hidden="true">{moving ? <span className="spinner" /> : run.status === 'finished' ? '✓' : run.status === 'cancelled' ? '–' : '❚❚'}</span>
-      <div><strong>Run everything · {stageWords(run)}</strong>
-        <span className="hint">{analysesTotal ? `${analysed} of ${analysesTotal} ${analysesTotal === 1 ? 'analysis' : 'analyses'}` : 'No analyses needed'}{o.approved !== undefined ? ` · ${plural(o.approved, 'scene')} approved automatically` : ''}{o.images ? ` · ${made} of ${plural(o.images, 'image')} made` : ''}{stopped.length ? ` · ${stopped.length} stopped for you` : ''}</span></div>
+      <div><strong>{name} · {stageWords(run)}</strong>
+        <span className="hint">{parts.join(' · ')}{run.kind === 'generate' ? ` · started ${formatWhen(run.created_at)}` : ''}</span></div>
       <span className="run-actions">
         {run.status === 'waiting' && <button type="button" className="compact" disabled={busy} onClick={() => void act('generate')}>Generate {o.generate ? plural(o.generate * run.rules.images, 'image') : 'images'}</button>}
-        {run.status === 'paused' && <button type="button" className="compact" disabled={busy} onClick={() => void act('continue')}>Continue</button>}
-        {open && <button type="button" className="secondary compact" disabled={busy} onClick={() => void act('cancel', 'Cancel Run everything? Runs that have not started never run; everything that finished is kept.')}>Cancel run</button>}
+        {pausedNow(run) && <button type="button" className="compact" disabled={busy} onClick={() => void act('continue')}>Continue</button>}
+        {!!s?.retryable && <button type="button" className="compact" disabled={busy} title="Queue every failed image once more, as new items" onClick={() => void act('retry', `Try ${plural(s.retryable, 'failed image')} again? Each is a new run.`)}>Try failed again</button>}
+        {!!s?.done && onResults && <button type="button" className="secondary compact" onClick={onResults}>View results</button>}
+        {open && <button type="button" className="secondary compact" disabled={busy} onClick={() => void act('cancel', `Cancel ${name}? Runs that have not started never run; everything that finished is kept.`)}>Cancel run</button>}
         {!open && <button type="button" className="secondary compact" onClick={() => { window.localStorage.setItem(`character-studio.run-hidden.${item.id}`, run.id); setHidden(run.id) }}>Hide</button>}
       </span>
     </div>
-    {run.pause_details && <p className="notice-line">{run.pause_details}</p>}
-    {run.status === 'running' && run.batches.some(b => b.state === 'paused') && <p className="notice-line">A batch of this run is paused. Continue it in Batches below when you are ready; the run then goes on.</p>}
+    {s && <dl className="run-figures" aria-label="Images">
+      <div className="fig-done"><dt>Done</dt><dd>{s.done}</dd></div>
+      <div className={`fig-failed ${s.failed ? '' : 'empty'}`}><dt>Failed</dt><dd>{s.failed}</dd></div>
+      <div className={`fig-interrupted ${s.interrupted ? '' : 'empty'}`}><dt>Interrupted</dt><dd>{s.interrupted}</dd></div>
+      <div className={`fig-waiting ${s.not_started + s.running ? '' : 'empty'}`}><dt>{s.running ? `Running · ${waitingWord}` : waitingWord.charAt(0).toUpperCase() + waitingWord.slice(1)}</dt><dd>{s.running ? `${s.running} · ${s.not_started}` : s.not_started}</dd></div>
+    </dl>}
+    {pauseLine(run) ?? (run.pause_details && <p className="notice-line">{run.pause_details}</p>)}
+    {pausedNow(run) && <p className="hint">Nothing continues on its own. Click Continue when you are ready (for example after the plan’s limit resets); every batch of this run then goes on. What finished is kept.</p>}
     {o.note && <p className="hint">{o.note}</p>}
-    {stopped.length > 0 && <details className="run-stopped"><summary>{plural(stopped.length, 'scene')} stopped at Needs your check</summary>
+    {!!s?.interrupted && !open && <p className="hint">Interrupted images were being made when the studio stopped; one may have been saved. Open the scene to look for a saved image or try it again there. Try failed again leaves them alone.</p>}
+    {stopped.length > 0 && <details className="run-stopped"><summary>{plural(stopped.length, 'scene')} {run.kind === 'generate' ? 'not generated' : 'stopped at Needs your check'}</summary>
       <ul>{stopped.slice(0, STOP_LIMIT).map(s => <li key={s.scene_id}><b>{s.title}</b>: {s.reason} <button type="button" className="link-button" onClick={() => onOpenScene(s.scene_id)}>Open scene</button></li>)}{stopped.length > STOP_LIMIT && <li>and {stopped.length - STOP_LIMIT} more</li>}</ul></details>}
   </section>
 }

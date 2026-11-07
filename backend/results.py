@@ -383,6 +383,7 @@ def results(request: Request):
                 approval_boxes(session, approval),
             )
             data["scene_title"] = scene.title
+            data["scene_set_id"] = scene.scene_set_id
             data["scene_image_url"] = f"/api/scenes/{scene.id}/image/original"
             data["scene_width"], data["scene_height"] = scene.width, scene.height
             items.append(data)

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { request, send, type Bootstrap } from './api'
 import { ChargeDialog, engineNames, generationNames, isApiEngine, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
-import { BatchDialog, BatchHistory, BatchList, GroupDialog, MAX_ANALYSIS_RUNS, type BatchStart } from './Batches'
+import { BatchDialog, BatchHistory, BatchList, GroupDialog, MAX_SELECTED, plural, type BatchStart } from './Batches'
+import { GenerateAllDialog, LabelChips, LabelTag, isLabel, type SceneLabels } from './GenerateAll'
 import { CardMenu, Glyph, SelectionBar, TextDialog, sentence } from './Controls'
 import type { Character, Group } from './Library'
 import { MappingPanel, PolishDialog, PromptHistory, ReviewPanel, SubjectCanvas, type BoxDraft } from './Mapping'
@@ -714,7 +715,7 @@ const sorters: Record<SortOrder, (a: SceneSummary, b: SceneSummary) => number> =
 type SceneView = 'scenes' | 'sets' | 'batches'
 const viewLabels: Record<SceneView, string> = { scenes: 'Scenes', sets: 'Sets', batches: 'Batches' }
 
-export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onDirty: (dirty: boolean) => void; onBusy: (busy: boolean) => void }) {
+export default function Scenes({ data, onDirty, onBusy, onResults }: { data: Bootstrap; onDirty: (dirty: boolean) => void; onBusy: (busy: boolean) => void; onResults: (setId: string) => void }) {
   const token = data.session_token
   const [scenes, setScenes] = useState<SceneSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -745,6 +746,10 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const [naming, setNaming] = useState<'new' | SceneSet | null>(null)
   const [findingCopies, setFindingCopies] = useState(false)
   const [running, setRunning] = useState(false)
+  // Phase 7D: Generate all for the chosen set, and its scenes' labels from the last run with images.
+  const [generatingAll, setGeneratingAll] = useState(false)
+  const [labels, setLabels] = useState<SceneLabels | null>(null)
+  const [gen, setGen] = useState<string | null>(() => { const g = routeQuery().get('gen'); return isLabel(g) ? g : null })
   const [runKey, setRunKey] = useState(0)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const historyRoute = useCallback((query: string) => { replaceRoute(`scenes/batches${query ? `?${query}` : ''}`) }, [])
@@ -759,9 +764,17 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     if (reviewing) return // the queue keeps its own place in the address
     if (view === 'batches') return // the Batches tab keeps its filters in the address
     if (view === 'sets') { replaceRoute('scenes/sets'); return }
-    const query = new URLSearchParams({ ...(stage !== 'all' ? { stage } : {}), ...(setFilter !== 'all' ? { set: setFilter } : {}), ...(sort !== 'changed' ? { sort } : {}) }).toString()
+    const query = new URLSearchParams({ ...(stage !== 'all' ? { stage } : {}), ...(setFilter !== 'all' ? { set: setFilter } : {}), ...(gen && !['all', 'none'].includes(setFilter) ? { gen } : {}), ...(sort !== 'changed' ? { sort } : {}) }).toString()
     replaceRoute(`scenes${query ? `?${query}` : ''}`)
-  }, [open, reviewing, view, stage, setFilter, sort])
+  }, [open, reviewing, view, stage, setFilter, gen, sort])
+  // The chosen set's labels follow its scenes: reloaded whenever a state or result count changes.
+  const labelKey = scenes.filter(s => s.scene_set_id === setFilter).map(s => `${s.id}${s.workflow_state}${s.result_count}${s.active_job ? 1 : 0}`).join()
+  useEffect(() => {
+    if (['all', 'none'].includes(setFilter)) { setLabels(null); return }
+    let current = true
+    request<SceneLabels>(`/api/scene-sets/${setFilter}/labels`).then(l => { if (current) setLabels(l) }, () => { if (current) setLabels(null) })
+    return () => { current = false }
+  }, [setFilter, labelKey])
   // A set deleted elsewhere falls back to all scenes.
   // Checked only when the list of sets reloads, so a set just created is never reset.
   useEffect(() => { if (!loading) setSetFilter(f => ['all', 'none'].includes(f) || sets.some(s => s.id === f) ? f : 'all') }, [loading, sets])
@@ -782,8 +795,10 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const startBatch = (kind: 'analysis' | 'generation', chosen: SceneSummary[], all = false) => setBatching({ kind, scenes: chosen, all })
   function started(result: BatchStart) {
     setBatching(null); stopSelecting(); setBatchKey(k => k + 1); setActionError('')
-    const what = result.batch.kind === 'generation' ? `${result.batch.total} ${result.batch.total === 1 ? 'image' : 'images'}` : `${result.batch.total} ${result.batch.total === 1 ? 'analysis' : 'analyses'}`
-    setNotice(`Batch started: ${what}, one after another.${result.skipped.length ? ` Skipped: ${result.skipped.map(s => `${s.title} (${s.reason})`).join(', ')}.` : ''}`)
+    const all = result.batches ?? [result.batch]
+    const total = all.reduce((n, b) => n + b.total, 0)
+    const what = result.batch.kind === 'generation' ? plural(total, 'image') : `${total} ${total === 1 ? 'analysis' : 'analyses'}`
+    setNotice(`${all.length > 1 ? `${all.length} batches` : 'Batch'} started: ${what}, one after another.${result.skipped.length ? ` Skipped: ${result.skipped.map(s => `${s.title} (${s.reason})`).join(', ')}.` : ''}`)
     void load()
   }
 
@@ -828,14 +843,15 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
   const currentSet = sets.find(s => s.id === setFilter) ?? null
   // Stage counts follow the set and search; the stage filter is applied last.
   const scoped = scenes.filter(s => (setFilter === 'all' || (setFilter === 'none' ? !s.scene_set_id : s.scene_set_id === setFilter)) && s.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-  const filtered = scoped.filter(s => inStage(s, stage)).sort(sorters[sort])
+  const labelFilter = currentSet && labels?.run && gen ? gen : null
+  const filtered = scoped.filter(s => inStage(s, stage) && (!labelFilter || labels?.labels[s.id]?.label === labelFilter)).sort(sorters[sort])
   const chosen = scenes.filter(s => picked.includes(s.id))
   const approvedScenes = scenes.filter(s => ['approved', 'generated'].includes(s.workflow_state) && !s.active_job)
   const manualAnalysis = engines?.analysis_engine === 'manual'
   const manualGeneration = engines?.generation_engine === 'manual'
   return <div className="scenes">
     {tabs}
-    {view === 'sets' ? <><SetsView scenes={scenes} sets={sets} token={token} busy={busy} onOpen={id => { setSetFilter(id); setStage('all'); setView('scenes') }}
+    {view === 'sets' ? <><SetsView scenes={scenes} sets={sets} token={token} busy={busy} onOpen={id => { setSetFilter(id); setStage('all'); setGen(null); setView('scenes') }} onResults={onResults}
       onRename={item => setNaming(item)} onDelete={item => void deleteSet(item)} onNew={() => setNaming('new')}
       onMoved={text => { setActionError(''); setNotice(text); void load() }} onImport={id => { setSetFilter(id); setStage('all'); setView('scenes'); setCreating(true) }} />
       {actionError && <div className="error" role="alert"><strong>Could not finish that action.</strong><p>{actionError}</p></div>}
@@ -845,7 +861,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     <div className="library-toolbar filters">
       <div><label htmlFor="scene-search">Search scenes</label><input id="scene-search" type="search" value={query} placeholder="Search by title" onChange={e => setQuery(e.target.value)} /></div>
       <div className="narrow-filter"><label htmlFor="scene-set-filter">Scene set</label>
-        <select id="scene-set-filter" value={setFilter} onChange={e => { if (e.target.value === 'new') setNaming('new'); else { setSetFilter(e.target.value); stopSelecting() } }}>
+        <select id="scene-set-filter" value={setFilter} onChange={e => { if (e.target.value === 'new') setNaming('new'); else { setSetFilter(e.target.value); setGen(null); stopSelecting() } }}>
           <option value="all">All scenes</option><option value="none">Not in a set</option>
           {sets.map(s => <option key={s.id} value={s.id}>{s.name} ({s.scene_count})</option>)}
           <option value="new">New set…</option>
@@ -855,22 +871,25 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
       <span className="toolbar-actions">
         {!selecting && (scenes.length > 1 || (approvedScenes.length > 1 && !manualGeneration)) && <CardMenu label="more scene tools" disabled={busy} items={[
           ...(scenes.length > 1 ? [{ label: 'Find duplicates', onSelect: () => setFindingCopies(true) }] : []),
-          ...(approvedScenes.length > 1 && !manualGeneration ? [{ label: 'Generate approved scenes', onSelect: () => startBatch('generation', approvedScenes, false) }] : []),
+          // Under a set this opens the set's Generate step (Phase 7D); otherwise every approved scene.
+          ...(approvedScenes.length > 1 && !manualGeneration ? [{ label: 'Generate approved scenes', onSelect: () => currentSet ? setGeneratingAll(true) : startBatch('generation', approvedScenes, false) }] : []),
         ]} />}
         {!selecting && !!filtered.length && <button className="secondary" disabled={busy} onClick={() => setSelecting(true)}>Select</button>}
         <button disabled={busy || selecting} onClick={() => setCreating(true)}>+ Add scenes</button>
       </span>
     </div>
-    {currentSet && <div className="set-card"><SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)}
+    {currentSet && <div className="set-card"><SetHeader item={currentSet} disabled={busy} onRename={() => setNaming(currentSet)} onDelete={() => void deleteSet(currentSet)} onResults={() => onResults(currentSet.id)}
       actions={<button type="button" className="secondary compact run-button" disabled={busy || !currentSet.scene_count} title="Analyse, assign, draft, approve and generate the whole set" onClick={() => setRunning(true)}>Run everything</button>} />
       <PipelineCard key={`${currentSet.id}-${runKey}`} item={currentSet} token={token} version={scoped.map(s => `${s.id}${s.workflow_state}${s.active_job ? 1 : 0}`).join()}
-        onChanged={() => { void load(); setBatchKey(k => k + 1) }} onOpenScene={id => setOpen(id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />
+        onChanged={() => { void load(); setBatchKey(k => k + 1) }} onOpenScene={id => setOpen(id)} onResults={() => onResults(currentSet.id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} />
       <PreparePanel item={currentSet} token={token} analysisEngine={engines?.analysis_engine ?? 'claude_cli'} disabled={busy}
       version={scoped.map(s => `${s.id}${s.workflow_state}${s.revision}${s.active_job ? 1 : 0}`).join()}
-      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onReview={() => setReviewing(currentSet.id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} /></div>}
+      onChanged={() => void load()} onBatches={() => setBatchKey(k => k + 1)} onOpenScene={id => setOpen(id)} onReview={() => setReviewing(currentSet.id)}
+      onGenerate={() => setGeneratingAll(true)} onResults={() => onResults(currentSet.id)} onNotice={(text, problem) => { setActionError(problem ?? ''); setNotice(text) }} /></div>}
     {scenes.length > 0 && <StageFilters compact={!!currentSet} scenes={scoped} value={stage} onChange={next => { setStage(next); stopSelecting() }} />}
+    {currentSet && labels && <LabelChips data={labels} value={labelFilter} onChange={next => { setGen(next); stopSelecting() }} />}
     {selecting && <SelectionBar count={picked.length} total={filtered.length} onAll={() => setPicked(filtered.map(s => s.id))} onNone={() => setPicked([])} onDone={stopSelecting}>
-      <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_ANALYSIS_RUNS} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_ANALYSIS_RUNS ? `Choose up to ${MAX_ANALYSIS_RUNS} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>
+      <button type="button" className="secondary" disabled={busy || !picked.length || manualAnalysis || picked.length > MAX_SELECTED} title={manualAnalysis ? 'Manual analysis is selected in Studio settings' : picked.length > MAX_SELECTED ? `Choose up to ${MAX_SELECTED} scenes` : 'Analyse the selected scenes one after another'} onClick={() => startBatch('analysis', chosen)}>Analyse</button>
       <button type="button" className="secondary" disabled={busy || !picked.length} onClick={() => setSuggesting(chosen)}>Suggest from group</button>
       <button type="button" className="secondary" disabled={busy || !picked.length} onClick={() => setMoving(chosen)}>Move to set</button>
       <button type="button" className="secondary" disabled={busy || !picked.length || manualGeneration} title={manualGeneration ? 'Manual generation is selected in Studio settings' : 'Generate the selected approved scenes one after another'} onClick={() => startBatch('generation', chosen, true)}>Generate</button>
@@ -881,7 +900,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
     <StatusNote text={busy ? 'Working…' : notice} />
     <BatchList part="active" token={token} refreshKey={batchKey} onOpenScene={openAt} onProgress={() => void load()} />
     {loading ? <p role="status">Loading your scenes…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">A REFERENCE. A NEW POSSIBILITY.</span><h2>{!scenes.length ? 'Your first scene starts here' : query ? 'No matching scenes' : 'No scenes here'}</h2><p>{!scenes.length ? 'Add a Base Image whose pose, framing and light you want to recreate, or a whole folder of them. The studio analyses each one, you choose who appears, then review and approve the prompt.' : query ? 'Try another title.' : 'No scene in this view is at this stage.'}</p>
-        {scenes.length > 0 && (stage !== 'all' || setFilter !== 'all') && <button type="button" className="secondary" onClick={() => { setStage('all'); setSetFilter('all') }}>Show all scenes</button>}</div>
+        {scenes.length > 0 && (stage !== 'all' || setFilter !== 'all') && <button type="button" className="secondary" onClick={() => { setStage('all'); setSetFilter('all'); setGen(null) }}>Show all scenes</button>}</div>
       : <div className="scene-grid">{filtered.map(s => {
         const isPicked = picked.includes(s.id)
         return <div key={s.id} className={`scene-card ${isPicked ? 'picked' : ''}`}>
@@ -889,7 +908,7 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
             {selecting && <span className="pick-box" aria-hidden="true" />}
             <span className="scene-thumb"><img src={s.thumbnail_url} alt="" loading="lazy" /></span>
             <span className="scene-card-copy"><strong>{s.title}</strong><span className="scene-card-meta"><StageChip state={s.mismatch && s.stage === 'needs_check' && s.workflow_state === 'prompt_saved' ? 'check_needed' : s.workflow_state} /><span>{s.result_count ? `${s.result_count} ${s.result_count === 1 ? 'result' : 'results'} · ` : ''}{new Date(s.updated_at).toLocaleDateString()}</span></span>
-              {(s.problem || s.mismatch || (setFilter === 'all' && s.scene_set_id)) && <span className="scene-card-tags">{s.problem && <span className="tag bad">{problemLabel(s.problem)}</span>}{s.mismatch && <span className="tag warn">{s.mismatch}</span>}{setFilter === 'all' && s.scene_set_id && <span className="tag">{setNames[s.scene_set_id]}</span>}</span>}</span>
+              {(s.problem || s.mismatch || (setFilter === 'all' && s.scene_set_id) || (currentSet && labels?.labels[s.id])) && <span className="scene-card-tags">{currentSet && <LabelTag value={labels?.labels[s.id]} />}{s.problem && <span className="tag bad">{problemLabel(s.problem)}</span>}{s.mismatch && <span className="tag warn">{s.mismatch}</span>}{setFilter === 'all' && s.scene_set_id && <span className="tag">{setNames[s.scene_set_id]}</span>}</span>}</span>
           </button>
           {!selecting && <CardMenu label={s.title} disabled={busy} items={[
             { label: 'Rename', onSelect: () => setRenaming(s) },
@@ -930,6 +949,8 @@ export default function Scenes({ data, onDirty, onBusy }: { data: Bootstrap; onD
         else { await send(`/api/scene-sets/${naming.id}`, 'PUT', token, { name: value, revision: naming.revision }); setNotice('Set renamed.') }
         setActionError(''); await load()
       }} />}
+    {generatingAll && currentSet && <GenerateAllDialog item={currentSet} token={token} onClose={() => setGeneratingAll(false)}
+      onStarted={run => { setGeneratingAll(false); setRunKey(k => k + 1); setBatchKey(k => k + 1); setActionError(''); setNotice(`Generate all started: ${plural(run.outcome.images ?? 0, 'image')} in ${plural(run.batches.length, 'batch')}, one image after another. You can follow it here.`); void load() }} />}
     {running && currentSet && <RunEverythingDialog item={currentSet} token={token} onClose={() => setRunning(false)}
       onStarted={() => { setRunning(false); setRunKey(k => k + 1); setBatchKey(k => k + 1); setActionError(''); setNotice('Run everything started. It goes from one stage to the next; you can follow it here.'); void load() }} />}
     {findingCopies && <DuplicatesDialog onClose={() => { setFindingCopies(false); void load() }} onOpen={id => { setFindingCopies(false); setOpen(id) }} onDelete={deleteOne} />}

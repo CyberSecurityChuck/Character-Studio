@@ -20,10 +20,12 @@ function StageLine({ scenes }: { scenes: SceneSummary[] }) {
   return <ul className="set-stages">{parts.map(([n, id, word]) => <li key={id} className={`stage-${id}`}><b>{n}</b> {word}</li>)}{problems > 0 && <li className="stage-problem"><b>{problems}</b> with problems</li>}</ul>
 }
 
-export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete, onNew, onMoved, onImport }: {
+const results = (members: SceneSummary[]) => members.reduce((n, s) => n + s.result_count, 0)
+
+export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete, onNew, onMoved, onImport, onResults }: {
   scenes: SceneSummary[]; sets: SceneSet[]; token: string; busy: boolean
   onOpen: (setId: string) => void; onRename: (item: SceneSet) => void; onDelete: (item: SceneSet) => void
-  onNew: () => void; onMoved: (text: string) => void; onImport: (setId: string) => void
+  onNew: () => void; onMoved: (text: string) => void; onImport: (setId: string) => void; onResults: (setId: string) => void
 }) {
   const [adding, setAdding] = useState<SceneSet | null>(null)
   const loose = scenes.filter(s => !s.scene_set_id)
@@ -40,6 +42,7 @@ export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete
           <div className="set-tile-copy">
             <div className="set-tile-title"><h3>{item.name}</h3>
               <CardMenu label={`scene set ${item.name}`} disabled={busy} items={[
+                ...(results(members) ? [{ label: 'View results', onSelect: () => onResults(item.id) }] : []),
                 { label: 'Rename set', onSelect: () => onRename(item) },
                 { label: 'Delete set', danger: true, onSelect: () => onDelete(item) },
               ]} /></div>
@@ -48,6 +51,7 @@ export function SetsView({ scenes, sets, token, busy, onOpen, onRename, onDelete
             <div className="set-tile-actions">
               <button type="button" className="secondary compact" disabled={busy} onClick={() => onOpen(item.id)}>Open</button>
               <button type="button" className="secondary compact" disabled={busy} onClick={() => setAdding(item)}>Add scenes</button>
+              {results(members) > 0 && <button type="button" className="secondary compact" disabled={busy} title={`${plural(results(members), 'result')} in this set`} onClick={() => onResults(item.id)}>View results</button>}
             </div>
           </div>
         </article>

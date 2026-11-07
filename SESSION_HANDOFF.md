@@ -1,6 +1,13 @@
 # Session handoff
 
-Checkpoint: 2026-11-07 IST (+05:30), Phase 7C accepted
+Checkpoint: 2026-11-07 IST (+05:30), Phase 7D built, awaiting the user's review
+
+## Latest: Phase 7D built (2026-11-07, D039)
+
+- The user said **"Approve Phase 7D"** and answered four questions one at a time (all recommended options). Built and committed locally as one commit. **Next action:** wait for the user's review (`Phase_Checks/Phase7D_Review_Checklist.html` → `Phase7D_Review_Report.md`); fix what it finds; on "looks good" record 7D (and Phase 7) accepted, then update README for Phase 7 (planned when Phase 7 is complete). Nothing is pushed; pushing needs approval.
+- Backend: `backend/generate_all.py` (preview rows new / more / blocked, `POST` creates a `PipelineRun` with rules kind `generate` and calls `pipeline._queue_generation`, raising 409 when nothing is queued so nothing is stored; `GET …/labels`). `pipeline.py`: `run_data` has `kind` and `summary`; `live_jobs` drops failed items that were retried; `scene_labels` worst-first; `last_generation_run`; `continue_run` accepts a running run with paused batches (`_continuable`) and checks the generation engine; `POST /api/pipelines/{id}/retry` (finished runs only, failed items only). `batches.py`: `chained_stamp`, `chunked`, `_part` (part/of only when split), `MAX_SELECTED = 500`, response `batches` list, `retry_batch(session, batch) -> (added, skipped)`.
+- Frontend: `GenerateAll.tsx` (`GenerateAllDialog`, `LabelChips`, `LabelTag`, `roughly`), `Prepare.tsx` step 7 (`onGenerate`, `onResults`), `Pipeline.tsx` card (`runName`, `pausedNow`, `pauseLine`, figures, Continue / Try failed again / View results; the pause note class is `run-pause-note` because `run-paused` is the card's status class), `Scenes.tsx` (`gen` query, labels fetched per set, ⋯ Generate approved scenes opens the set dialog, `onResults` prop from App), `SetsView.tsx` and `SetHeader` View results, `Results.tsx` gallery (set filter, Group by scene with per-scene Select, `#/results?set=&group=1`). `plural` now adds -es after ch/sh/s/x.
+- Gotchas: Playwright `goto` to the same URL with only a new hash does not reload, so rebuilt assets need `location.reload()`. QA scripts in this session's scratchpad `qa/` (`qa_server.py`, `seed_7d.py`, set "Beach day"); switch `qa/mode.txt` to `limit` mid-run to pause.
 
 ## Latest: Phase 7C accepted (2026-11-07)
 

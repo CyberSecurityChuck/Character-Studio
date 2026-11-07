@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-07 — Phase 7D: Generate all
+
+- **Approved** ("Approve Phase 7D"; D039). **Generate** is the seventh step of Prepare this set: tick approved scenes (not generated yet by default, a switch adds more images for scenes with results), preset, images per scene, New image or Variation; the dialog shows total images, batches of at most 20, an estimated time, the allowance used and that a long run may stop partway (paid engines: estimated cost and one charge confirmation). Any number of images, split into chained batches that run one after another.
+- The run card (Generate all and Run everything) shows Done / Failed / Interrupted / Not started and why and when it paused; **Continue** continues all of its paused batches; **Try failed again** on a finished run (interrupted images left to the scene's recovery); **View results**. Label chips under the stage tiles (Generated, Failed, Not started, Interrupted) filter the cards and stay in the address; cards carry the label.
+- The Results page gets a **Scene set** filter and **Group by scene** (kept in the address); View results links from the Generate step, the run, the set header's ⋯ and the set card. Select → Analyse / Generate split any number into chained batches.
+- New `backend/generate_all.py`, `frontend/src/GenerateAll.tsx`; no migration (runs reuse `pipeline_runs`). 175 tests pass (5 new in `tests/test_generate_all.py`). Review checklist: `Phase_Checks/Phase7D_Review_Checklist.html`.
+
 ## 2026-11-07 — Phase 7C pushed
 
 - Pushed to `origin/main` with the user's approval (`9b91d1a..f3345c1`); CI run 42335480860 passed. Docs only.

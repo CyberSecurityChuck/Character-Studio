@@ -8,6 +8,8 @@ import { EditDialog } from './Edit'
 import { QualityPanel, checkBadge, type QualityCheck } from './Quality'
 import { StatusNote } from './Toast'
 import type { SceneDetail } from './Scenes'
+import type { SceneSet } from './SceneSets'
+import { replaceRoute, routeQuery } from './route'
 
 export type ResultMapping = { subject: string; action: string; character_name: string | null; images: number[]; box?: { x: number; y: number; width: number; height: number } | null }
 export type EditRecord = { option: string; kind: 'fix' | 'replace'; subject: string | null; instruction: string; box: number[]; parent_version: number; shape_changed?: boolean; engine_size?: string }
@@ -20,7 +22,7 @@ export type Result = {
   // Region edits (Phase 6C-2)
   parent_result_id: string | null; edit: EditRecord | null; mask_url: string | null; editable: boolean
   prompt_version: number | null; analysis_version: number | null; is_polished: boolean; mappings: ResultMapping[]
-  scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number
+  scene_title?: string; scene_image_url?: string; scene_width?: number; scene_height?: number; scene_set_id?: string | null
 }
 export type ExportPackage = { id: string; number: number; created_at: string; approval_id: string; approval_current: boolean; result_count: number; photos_removed: number; job_folder: string | null; download_url: string }
 export type Base = { url: string; width: number; height: number }
@@ -445,36 +447,76 @@ function Spark() {
   return <svg className="inline-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="M12 3l1.8 4.6L18.5 9.5l-4.7 1.9L12 16l-1.8-4.6L5.5 9.5l4.7-1.9z" /></svg>
 }
 
-/** The Results page: every result from every scene, newest first. */
+/** The Results page: every result from every scene, newest first. Since Phase 7D (D039) it is
+ *  also each scene set's gallery: a Scene set filter and Group by scene, kept in the address. */
 export default function ResultsGallery({ data, onOpenScene }: { data: Bootstrap; onOpenScene: (sceneId: string) => void }) {
   const [results, setResults] = useState<Result[]>([])
+  const [sets, setSets] = useState<SceneSet[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [query, setQuery] = useState('')
   const [preferred, setPreferred] = useState(false)
+  const [setFilter, setSetFilter] = useState(() => routeQuery().get('set') ?? 'all')
+  const [grouped, setGrouped] = useState(() => routeQuery().get('group') === '1')
   const [viewing, setViewing] = useState<string | null>(null)
   const [selecting, setSelecting] = useState(false)
-  const load = useCallback(() => request<Result[]>('/api/results').then(list => { setResults(list); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
+  // Grouped by scene, each scene's results are selected on their own (Compare needs one scene).
+  const [selectingScene, setSelectingScene] = useState<string | null>(null)
+  const load = useCallback(() => Promise.all([request<Result[]>('/api/results'), request<SceneSet[]>('/api/scene-sets')])
+    .then(([list, setList]) => { setResults(list); setSets(setList); setError('') }, e => setError(e.message)).finally(() => setLoading(false)), [])
   useEffect(() => { void load() }, [load])
-  const filtered = results.filter(r => (r.scene_title ?? '').toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!preferred || r.is_preferred))
+  useEffect(() => {
+    const q = new URLSearchParams({ ...(setFilter !== 'all' ? { set: setFilter } : {}), ...(grouped ? { group: '1' } : {}) }).toString()
+    replaceRoute(`results${q ? `?${q}` : ''}`)
+  }, [setFilter, grouped])
+  // A set deleted elsewhere falls back to every result.
+  useEffect(() => { if (!loading) setSetFilter(f => ['all', 'none'].includes(f) || sets.some(s => s.id === f) ? f : 'all') }, [loading, sets])
+  const inSet = (r: Result) => setFilter === 'all' || (setFilter === 'none' ? !r.scene_set_id : r.scene_set_id === setFilter)
+  const filtered = results.filter(r => inSet(r) && (r.scene_title ?? '').toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!preferred || r.is_preferred))
   const shown = results.find(r => r.id === viewing)
+  const chosenSet = sets.find(s => s.id === setFilter) ?? null
+  // Scenes in the order of their newest result.
+  const groups: { sceneId: string; title: string; items: Result[] }[] = []
+  for (const r of filtered) {
+    const group = groups.find(g => g.sceneId === r.scene_id)
+    if (group) group.items.push(r)
+    else groups.push({ sceneId: r.scene_id, title: r.scene_title ?? 'Scene', items: [r] })
+  }
+  const changed = (_detail: SceneDetail | null, note: string) => { setMessage(note); void load() }
+  const baseOf = (r: Result) => ({ url: r.scene_image_url!, width: r.scene_width!, height: r.scene_height! })
   return <div className="results-page">
     <div className="library-toolbar filters">
       <div><label htmlFor="result-search">Search results</label><input id="result-search" type="search" value={query} placeholder="Search by scene title" onChange={e => setQuery(e.target.value)} /></div>
+      <div className="narrow-filter"><label htmlFor="result-set-filter">Scene set</label>
+        <select id="result-set-filter" value={setFilter} onChange={e => { setSetFilter(e.target.value); setSelecting(false); setSelectingScene(null) }}>
+          <option value="all">All results</option><option value="none">Not in a set</option>
+          {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select></div>
       <label className="checkbox-label"><input type="checkbox" checked={preferred} onChange={e => setPreferred(e.target.checked)} /> Preferred only</label>
-      {!selecting && filtered.length > 0 && <button type="button" className="secondary" onClick={() => setSelecting(true)}>Select</button>}
+      <label className="checkbox-label"><input type="checkbox" checked={grouped} onChange={e => { setGrouped(e.target.checked); setSelecting(false); setSelectingScene(null) }} /> Group by scene</label>
+      {!grouped && !selecting && filtered.length > 0 && <button type="button" className="secondary" onClick={() => setSelecting(true)}>Select</button>}
     </div>
+    {chosenSet && !loading && <div className="gallery-head"><span className="set-icon"><Glyph name="folder" /></span>
+      <div><h2>{chosenSet.name}</h2><p className="hint">{plural(filtered.length, 'result')} from {plural(groups.length, 'scene')} of {plural(chosenSet.scene_count, 'scene')} in this set</p></div></div>}
     {error && <div className="error" role="alert"><strong>Your results could not be loaded.</strong><p>{error}</p><button className="secondary" onClick={() => void load()}>Try again</button></div>}
     <StatusNote text={message} />
     {loading ? <p role="status">Loading your results…</p> : !filtered.length ? <div className="empty-library panel"><span className="tiny-label">EVERY VERSION HAS A HOME.</span>
-      <h2>{results.length ? 'No matching results' : 'Your results will appear here'}</h2>
-      <p>{results.length ? 'Try another title or show all results.' : 'Approve a scene, then generate it with your generation engine or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p></div>
+      <h2>{results.length ? chosenSet ? `No results in “${chosenSet.name}” yet` : 'No matching results' : 'Your results will appear here'}</h2>
+      <p>{results.length ? chosenSet ? 'Generate the set’s approved scenes with the Generate step on the Scenes page, or try another set.' : 'Try another title or show all results.' : 'Approve a scene, then generate it with your generation engine or import an image you made elsewhere. Every result is kept with the exact inputs it was made from.'}</p>
+      {results.length > 0 && (setFilter !== 'all' || preferred || query) && <button type="button" className="secondary" onClick={() => { setSetFilter('all'); setPreferred(false); setQuery('') }}>Show all results</button>}</div>
+      : grouped ? <div className="result-groups">{groups.map(g => <section key={g.sceneId} className="result-group" aria-label={g.title}>
+        <div className="result-group-head"><h3>{g.title}</h3><span className="hint">{plural(g.items.length, 'result')}</span>
+          <span className="toolbar-actions">
+            {selectingScene !== g.sceneId && g.items.length > 0 && <button type="button" className="secondary compact" onClick={() => setSelectingScene(g.sceneId)}>Select</button>}
+            <button type="button" className="secondary compact" onClick={() => onOpenScene(g.sceneId)}>Open scene</button></span></div>
+        <ResultsGrid className="gallery" results={g.items} token={data.session_token} titleOf={r => r.scene_title ?? 'Scene'} selecting={selectingScene === g.sceneId} onSelecting={on => setSelectingScene(on ? g.sceneId : null)} onOpen={setViewing}
+          baseOf={baseOf} onChanged={changed} />
+      </section>)}</div>
       : <ResultsGrid className="gallery" results={filtered} token={data.session_token} titleOf={r => r.scene_title ?? 'Scene'} showTitles selecting={selecting} onSelecting={setSelecting} onOpen={setViewing}
-        baseOf={r => ({ url: r.scene_image_url!, width: r.scene_width!, height: r.scene_height! })}
-        onChanged={(_detail, note) => { setMessage(note); void load() }} />}
-    {shown && <ResultViewer key={shown.id} result={shown} base={{ url: shown.scene_image_url!, width: shown.scene_width!, height: shown.scene_height! }} sceneTitle={shown.scene_title ?? ''} token={data.session_token}
+        baseOf={baseOf} onChanged={changed} />}
+    {shown && <ResultViewer key={shown.id} result={shown} base={baseOf(shown)} sceneTitle={shown.scene_title ?? ''} token={data.session_token}
       others={results.filter(r => r.scene_id === shown.scene_id)}
-      onClose={() => setViewing(null)} onChanged={(_detail, note) => { setMessage(note); void load() }} onCheckDone={() => void load()} onOpenScene={() => onOpenScene(shown.scene_id)} />}
+      onClose={() => setViewing(null)} onChanged={changed} onCheckDone={() => void load()} onOpenScene={() => onOpenScene(shown.scene_id)} />}
   </div>
 }

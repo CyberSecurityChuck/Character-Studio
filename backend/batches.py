@@ -8,6 +8,7 @@ limit or a sign-in problem pauses it. Nothing is retried or continued automatica
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -66,12 +67,15 @@ router = APIRouter(prefix="/api")
 MAX_ANALYSIS_RUNS = 50
 MAX_GENERATION_RUNS = 20
 MAX_IMAGES_PER_SCENE = 10
+# Phase 7D (D030, D039): the sizes above are the size of each batch, no longer a limit on the
+# user. A longer selection is split into chained batches that run one after another.
+MAX_SELECTED = 500
 CANCELLED_WITH_BATCH = "Cancelled with the rest of the batch before it started. Nothing was sent."
 
 
 class AnalysisBatchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scene_ids: list[str] = Field(min_length=1, max_length=MAX_ANALYSIS_RUNS)
+    scene_ids: list[str] = Field(min_length=1, max_length=MAX_SELECTED)
     include_analysed: bool = False
     # API engines: the user confirmed that every run in the batch may be charged.
     confirm_charges: bool = False
@@ -91,7 +95,7 @@ class GenerationItem(BaseModel):
 
 class GenerationBatchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    items: list[GenerationItem] = Field(min_length=1, max_length=MAX_GENERATION_RUNS)
+    items: list[GenerationItem] = Field(min_length=1, max_length=MAX_SELECTED)
     count: int = Field(default=1, ge=1, le=MAX_IMAGES_PER_SCENE)
     mode: str = Field(default="generate", pattern="^(generate|variation)$")
     preset_id: str | None = Field(default=None, max_length=32)
@@ -101,7 +105,7 @@ class GenerationBatchInput(BaseModel):
 
 class GroupSuggestionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scene_ids: list[str] = Field(min_length=1, max_length=MAX_ANALYSIS_RUNS)
+    scene_ids: list[str] = Field(min_length=1, max_length=MAX_SELECTED)
     group_id: str = Field(max_length=32)
     # Group members from left to right, as the user arranged them.
     order: list[str] = Field(min_length=1, max_length=20)
@@ -207,8 +211,21 @@ def require_batch(session, batch_id: str) -> Batch:
     return batch
 
 
-def _new_batch(session, kind: str, engine: str, settings: dict) -> Batch:
-    stamp = now()
+def chained_stamp(base: datetime, index: int) -> str:
+    """Strictly increasing creation times keep the runner on one batch at a time, in order."""
+    return (base + timedelta(microseconds=index)).isoformat()
+
+
+def chunked(items: list, size: int) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _part(index: int, total: int) -> dict:
+    return {"part": index + 1, "of": total} if total > 1 else {}
+
+
+def _new_batch(session, kind: str, engine: str, settings: dict, stamp: str | None = None) -> Batch:
+    stamp = stamp or now()
     batch = Batch(
         id=uuid4().hex,
         kind=kind,
@@ -317,7 +334,6 @@ def analyse_selected(request: Request, body: AnalysisBatchInput):
             )
         run = api_run_settings(request, settings, engine, body.confirm_charges)
         timeout = engine_timeout(settings, engine)
-        batch = _new_batch(session, "analysis", engine, run)
         skipped, queued = [], []
         for scene_id in body.scene_ids:
             scene = session.get(Scene, scene_id)
@@ -331,25 +347,31 @@ def analyse_selected(request: Request, body: AnalysisBatchInput):
                 queued.append(scene)
         if not queued:
             raise _nothing_queued(skipped)
-        for position, scene in enumerate(queued):
-            session.add(
-                EngineJob(
-                    id=uuid4().hex,
-                    kind="analysis",
-                    scene_id=scene.id,
-                    engine=engine,
-                    status="not_started",
-                    settings_json=json.dumps(run) if run else None,
-                    batch_id=batch.id,
-                    batch_position=position,
-                    timeout_seconds=timeout,
-                    created_at=batch.created_at,
+        chunks, base, made = chunked(queued, MAX_ANALYSIS_RUNS), datetime.now(UTC), []
+        for index, chunk in enumerate(chunks):
+            stamp = chained_stamp(base, index)
+            batch = _new_batch(session, "analysis", engine, run | _part(index, len(chunks)), stamp)
+            made.append(batch)
+            for position, scene in enumerate(chunk):
+                session.add(
+                    EngineJob(
+                        id=uuid4().hex,
+                        kind="analysis",
+                        scene_id=scene.id,
+                        engine=engine,
+                        status="not_started",
+                        settings_json=json.dumps(run) if run else None,
+                        batch_id=batch.id,
+                        batch_position=position,
+                        timeout_seconds=timeout,
+                        created_at=stamp,
+                    )
                 )
-            )
         session.flush()
         for scene in queued:
             refresh_workflow(session, scene)
-        result = {"batch": batch_data(session, batch), "skipped": skipped}
+        listed = [batch_data(session, b) for b in made]
+        result = {"batch": listed[0], "batches": listed, "skipped": skipped}
     request.app.state.runner.notify()
     return result
 
@@ -360,7 +382,6 @@ def generate_approved(request: Request, body: GenerationBatchInput):
     from that scene's own valid approval."""
     if len({i.scene_id for i in body.items}) != len(body.items):
         raise HTTPException(422, "A scene was selected twice.")
-    total = len(body.items) * body.count
     with writing(request) as session:
         settings = session.get(EngineSettings, 1)
         engine = settings.generation_engine
@@ -371,29 +392,14 @@ def generate_approved(request: Request, body: GenerationBatchInput):
                 "generate several scenes in a row.",
             )
         api = is_image_engine(engine)
-        if total > MAX_GENERATION_RUNS:
-            why = (
-                "each image is charged"
-                if api
-                else "image generation uses your plan's allowance quickly"
-            )
-            raise HTTPException(
-                422,
-                f"That would be {total} images. A batch makes at most {MAX_GENERATION_RUNS}, "
-                f"because {why}.",
-            )
         run = (
             image_run_settings(request, session, settings, body.confirm_charges, body.preset_id)
             if api
             else {}
         )
         preset = preset_name(session, body.preset_id)
-        batch = _new_batch(
-            session,
-            "generation",
-            engine,
-            {"count": body.count, "mode": body.mode, **run}
-            | ({"preset": preset} if preset else {}),
+        chosen = {"count": body.count, "mode": body.mode, **run} | (
+            {"preset": preset} if preset else {}
         )
         skipped, queued = [], []
         for item in body.items:
@@ -421,24 +427,34 @@ def generate_approved(request: Request, body: GenerationBatchInput):
             queued.append((scene, approval))
         if not queued:
             raise _nothing_queued(skipped)
-        position = 0
-        for scene, approval in queued:
-            for _ in range(body.count):
-                session.add(
-                    _generation_job(
-                        batch,
-                        scene.id,
-                        approval.id,
-                        body.mode,
-                        position,
-                        engine_timeout(settings, engine),
+        # Whole scenes per batch, at most 20 images each, one batch after another.
+        chunks = chunked(queued, max(1, MAX_GENERATION_RUNS // body.count))
+        base, made = datetime.now(UTC), []
+        for index, chunk in enumerate(chunks):
+            stamp = chained_stamp(base, index)
+            batch = _new_batch(
+                session, "generation", engine, chosen | _part(index, len(chunks)), stamp
+            )
+            made.append(batch)
+            position = 0
+            for scene, approval in chunk:
+                for _ in range(body.count):
+                    session.add(
+                        _generation_job(
+                            batch,
+                            scene.id,
+                            approval.id,
+                            body.mode,
+                            position,
+                            engine_timeout(settings, engine),
+                        )
                     )
-                )
-                position += 1
+                    position += 1
         session.flush()
         for scene, _approval in queued:
             refresh_workflow(session, scene)
-        result = {"batch": batch_data(session, batch), "skipped": skipped}
+        listed = [batch_data(session, b) for b in made]
+        result = {"batch": listed[0], "batches": listed, "skipped": skipped}
     request.app.state.runner.notify()
     return result
 
@@ -580,72 +596,84 @@ def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = Non
         batch = require_batch(session, batch_id)
         if is_api_engine(batch.engine) and not (body and body.confirm_charges):
             raise HTTPException(409, charge_confirmation(batch.engine))
-        items = _items(session, batch.id)
-        if any(j.status in ("not_started", "running") for j in items):
-            raise HTTPException(409, "Wait until the batch has finished, then try again.")
-        retried = {json.loads(j.settings_json or "{}").get("retry_of") for j in items}
-        failed = [j for j in items if j.status == "failed" and j.id not in retried]
-        if not failed:
-            raise HTTPException(409, "No failed items are left to try again.")
-        settings = session.get(EngineSettings, 1)
-        if batch.kind == "generation":
-            _require_generation_engine(settings, batch)
-        stamp, position = now(), max(j.batch_position or 0 for j in items) + 1
-        skipped, added, scenes = [], 0, set()
-        for job in failed:
-            scene = session.get(Scene, job.scene_id)
-            if job.scene_id not in scenes and active_job(session, job.scene_id):
-                _skip(skipped, scene, job.scene_id, "Another run is running or waiting for it.")
-                continue
-            if batch.kind == "generation":
-                try:
-                    approval = require_valid_approval(session, scene)
-                except ApprovalError as error:
-                    _skip(skipped, scene, job.scene_id, str(error))
-                    continue
-                mode = json.loads(job.settings_json or "{}").get("mode", "generate")
-                session.add(
-                    _generation_job(
-                        batch,
-                        scene.id,
-                        approval.id,
-                        mode,
-                        position,
-                        engine_timeout(settings, batch.engine),
-                        job.id,
-                        stamp,
-                    )
-                )
-            else:
-                session.add(
-                    EngineJob(
-                        id=uuid4().hex,
-                        kind="analysis",
-                        scene_id=scene.id,
-                        engine=batch.engine,
-                        status="not_started",
-                        # The retry runs with the model the batch was confirmed for.
-                        settings_json=json.dumps(
-                            {**json.loads(batch.settings_json), "retry_of": job.id}
-                        ),
-                        batch_id=batch.id,
-                        batch_position=position,
-                        timeout_seconds=job.timeout_seconds,
-                        created_at=stamp,
-                    )
-                )
-            position, added = position + 1, added + 1
-            scenes.add(job.scene_id)
+        added, skipped = retry_batch(session, batch)
         if not added:
             raise _nothing_queued(skipped)
-        batch.status, batch.pause_kind, batch.pause_details = "running", None, None
-        batch.updated_at = stamp
-        session.flush()
-        for scene_id in scenes:
-            refresh_workflow(session, session.get(Scene, scene_id))
         result = {"batch": batch_data(session, batch), "skipped": skipped}
     request.app.state.runner.notify()
     return result
+
+
+def retry_batch(session, batch: Batch) -> tuple[int, list[dict]]:
+    """Queue the batch's failed items once more as new items; returns (added, skipped).
+
+    Also used by a run's Try failed again (Phase 7D). Interrupted items are not included:
+    they may have made an image before the studio stopped, so their scene offers recovery.
+    """
+    items = _items(session, batch.id)
+    if any(j.status in ("not_started", "running") for j in items):
+        raise HTTPException(409, "Wait until the batch has finished, then try again.")
+    retried = {json.loads(j.settings_json or "{}").get("retry_of") for j in items}
+    failed = [j for j in items if j.status == "failed" and j.id not in retried]
+    if not failed:
+        raise HTTPException(409, "No failed items are left to try again.")
+    settings = session.get(EngineSettings, 1)
+    if batch.kind == "generation":
+        _require_generation_engine(settings, batch)
+    stamp, position = now(), max(j.batch_position or 0 for j in items) + 1
+    skipped, added, scenes = [], 0, set()
+    for job in failed:
+        scene = session.get(Scene, job.scene_id)
+        if job.scene_id not in scenes and active_job(session, job.scene_id):
+            _skip(skipped, scene, job.scene_id, "Another run is running or waiting for it.")
+            continue
+        if batch.kind == "generation":
+            try:
+                approval = require_valid_approval(session, scene)
+            except ApprovalError as error:
+                _skip(skipped, scene, job.scene_id, str(error))
+                continue
+            mode = json.loads(job.settings_json or "{}").get("mode", "generate")
+            session.add(
+                _generation_job(
+                    batch,
+                    scene.id,
+                    approval.id,
+                    mode,
+                    position,
+                    engine_timeout(settings, batch.engine),
+                    job.id,
+                    stamp,
+                )
+            )
+        else:
+            session.add(
+                EngineJob(
+                    id=uuid4().hex,
+                    kind="analysis",
+                    scene_id=scene.id,
+                    engine=batch.engine,
+                    status="not_started",
+                    # The retry runs with the model the batch was confirmed for.
+                    settings_json=json.dumps(
+                        {**json.loads(batch.settings_json), "retry_of": job.id}
+                    ),
+                    batch_id=batch.id,
+                    batch_position=position,
+                    timeout_seconds=job.timeout_seconds,
+                    created_at=stamp,
+                )
+            )
+        position, added = position + 1, added + 1
+        scenes.add(job.scene_id)
+    if not added:
+        return 0, skipped
+    batch.status, batch.pause_kind, batch.pause_details = "running", None, None
+    batch.updated_at = stamp
+    session.flush()
+    for scene_id in scenes:
+        refresh_workflow(session, session.get(Scene, scene_id))
+    return added, skipped
 
 
 @router.delete("/batches/{batch_id}")

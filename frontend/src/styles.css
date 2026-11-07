@@ -1520,3 +1520,68 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
 .set-tile-title .card-menu { position: relative; top: auto; right: auto; flex: none; }
 .add-import { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 12px 0 4px; padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--background); }
 .add-import > div { display: grid; gap: 2px; }
+
+/* Phase 7D (D039): the Generate step, Generate all, labels, the run summary and the set gallery. */
+.prepare-steps { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.prepare-steps li { padding: 0 6px; }
+@media (max-width: 1360px) { .prepare-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 22px; } .prepare-steps li::before, .prepare-steps li::after { display: none; } }
+@media (max-width: 760px) { .prepare-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.label-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -6px 0 18px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.label-row-title { margin-right: 6px; font-size: 12.5px; font-weight: 650; color: var(--text); }
+.label-row-title small { margin-left: 6px; font-weight: 400; color: var(--muted); }
+.label-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 3px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--background); color: var(--text); font-size: 12.5px; font-weight: 600; box-shadow: none; cursor: pointer; }
+.label-chip strong { font-variant-numeric: tabular-nums; }
+.label-chip.empty { color: var(--muted); }
+.label-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.chip-generated .chip-dot { background: var(--success); }
+.chip-failed .chip-dot { background: var(--danger-text); }
+.chip-not_started .chip-dot { background: var(--line-strong); }
+.chip-interrupted .chip-dot { background: var(--warn-text); }
+.tag.gen-generated { background: var(--success-bg); color: var(--success-text); }
+.tag.gen-failed { background: var(--danger-soft); color: var(--danger-text); }
+.tag.gen-not_started { background: var(--welcome); color: var(--muted); }
+.tag.gen-interrupted { background: var(--warn-soft); color: var(--warn-text); }
+.tag.gen-running { background: var(--wait-bg); color: var(--wait-text); }
+
+.generate-dialog .assign-toolbar .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.generate-dialog .assign-toolbar .checkbox-label { margin: 0; font-weight: 400; }
+.generate-choices { list-style: none; margin: 10px 0 0; padding: 8px; max-height: 300px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--background); }
+.generate-choices label { display: grid; grid-template-columns: auto 52px minmax(0, 1fr); gap: 9px; align-items: center; padding: 6px 8px; border: 1px solid transparent; border-radius: 8px; background: var(--surface); cursor: pointer; }
+.generate-choices label:has(input:checked) { border-color: var(--accent-soft); }
+.generate-choices img { width: 52px; height: 40px; object-fit: cover; border-radius: 5px; }
+.generate-choices span { display: grid; min-width: 0; }
+.generate-choices b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.generate-choices small { color: var(--muted); font-size: 11.5px; }
+.generate-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 6px; }
+.generate-figures div, .run-figures div { padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+.generate-figures dt, .run-figures dt { color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.generate-figures dd, .run-figures dd { margin: 2px 0 0; font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.generate-figures dd small { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+
+.run-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 140px)); gap: 8px; margin: 4px 0 2px; }
+.run-figures .fig-done dd { color: var(--success-text); }
+.run-figures .fig-failed:not(.empty) { background: var(--danger-soft); border-color: transparent; }
+.run-figures .fig-failed:not(.empty) dd { color: var(--danger-text); }
+.run-figures .fig-interrupted:not(.empty) { background: var(--warn-soft); border-color: transparent; }
+.run-figures .fig-interrupted:not(.empty) dd { color: var(--warn-text); }
+.run-figures .empty dd { color: var(--muted); }
+.run-pause-note { display: grid; gap: 2px; padding: 9px 12px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); font-size: 13px; }
+.run-pause-note span { color: var(--text); }
+.run-is-paused .run-dot { background: var(--warn-bg); color: var(--warn-text); }
+@media (max-width: 640px) { .run-figures, .generate-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.gallery-head { display: flex; align-items: center; gap: 14px; margin: 0 0 16px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.gallery-head h2 { margin: 0; font-size: 22px; }
+.gallery-head p { margin: 2px 0 0; }
+.result-groups { display: grid; gap: 22px; }
+.result-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.result-group-head h3 { margin: 0; font-size: 17px; }
+.result-group-head .toolbar-actions { margin-left: auto; display: flex; gap: 6px; }
+.generate-choices { align-content: start; }
+.generate-choices li { margin: 0; padding: 0; border: 0; min-height: 0; }
+.generate-dialog .batch-options { align-items: end; }
+.generate-dialog .batch-options .preset-select { display: grid; gap: 6px; margin: 0; }
+.generate-dialog .batch-options .preset-select label { margin: 0; }
+.generate-dialog .generate-choices label { margin: 0; }

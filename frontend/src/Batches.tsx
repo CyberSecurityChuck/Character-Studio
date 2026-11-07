@@ -15,17 +15,20 @@ export type Batch = {
   total: number; scene_count: number; retryable: number; average_seconds: number | null; estimate_seconds: number | null; items: BatchItem[]
 }
 type Skipped = { scene_id: string; title: string; reason: string }
-export type BatchStart = { batch: Batch; skipped: Skipped[] }
+export type BatchStart = { batch: Batch; batches?: Batch[]; skipped: Skipped[] }
 
-// Batch sizes the server accepts (backend/batches.py).
+// The size of each batch (backend/batches.py). Since Phase 7D a longer selection is split into
+// chained batches of these sizes; MAX_SELECTED is the most one click queues.
 export const MAX_ANALYSIS_RUNS = 50
 export const MAX_GENERATION_RUNS = 20
-export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+export const MAX_SELECTED = 500
+// Words ending in ch, sh, s or x take -es (batch, batches).
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : /(ch|sh|s|x)$/.test(word) ? 'es' : 's'}`
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const allowance: Record<string, string> = { claude_cli: 'your Claude plan’s allowance', codex_cli: 'your ChatGPT plan’s allowance', gemini_api: 'your Google API key (may be charged)', anthropic_api: 'your Anthropic API key (charged per use)', openai_api: 'your OpenAI API key (charged per use)' }
 const stateLabels: Record<Batch['state'], string> = { running: 'Running', pausing: 'Pausing after this run', paused: 'Paused', cancelling: 'Stopping', cancelled: 'Cancelled', finished: 'Finished' }
 const itemLabels: Record<string, string> = { not_started: 'Not started', running: 'Running', completed: 'Done', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
-const pauseTitles: Record<string, (name: string, engine: string) => string> = {
+export const pauseTitles: Record<string, (name: string, engine: string) => string> = {
   user: () => 'Paused by you',
   usage_limit: (name, engine) => isApiEngine(engine) ? `Paused: ${name} reports a rate, quota or spending limit` : `Paused: ${name}’s plan limit appears to be reached`,
   key_problem: engine => `Paused: ${engine} did not accept the key`,
@@ -236,7 +239,10 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
   }
   const analysed = kind === 'analysis' ? scenes.filter(s => !s.active_job && s.analysis_version != null).length : 0
   const runs = kind === 'generation' ? queued.length * count : queued.length
-  const limit = kind === 'generation' ? MAX_GENERATION_RUNS : MAX_ANALYSIS_RUNS
+  // Phase 7D: any number, split into chained batches of these sizes (whole scenes per batch).
+  const perBatch = kind === 'generation' ? Math.max(1, Math.floor(MAX_GENERATION_RUNS / count)) : MAX_ANALYSIS_RUNS
+  const parts = Math.ceil(queued.length / perBatch)
+  const tooMany = queued.length > MAX_SELECTED
   const name = (kind === 'generation' ? generationNames[engine] : engineNames[engine]) ?? engine
   const preset = presets.find(p => p.id === presetId)
   const image = kind === 'generation' && charged && imageOptions
@@ -278,15 +284,16 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
         <strong>{kind === 'generation' ? `${plural(runs, 'image')} from ${from}` : `${runs} ${runs === 1 ? 'run' : 'runs'} from ${from}`}</strong>
         <ul>
           <li>{kind === 'generation' ? 'Each run sends one scene’s Base Image and approved reference photos' : 'Each run sends one Base Image'} to {sendsTo[engine]}{charged ? '' : ', using your own sign-in'}.</li>
-          <li>They run one after another, never at the same time{average ? `: about ${duration(average * runs)} in all, going by earlier runs on this computer` : ''}.</li>
-          <li>A failed item is marked Failed and the next one starts. {charged ? 'A refused key or a rate or spending limit' : 'A plan limit or signing out'} pauses the batch until you continue it. Nothing is retried on its own.</li>
+          <li>{parts > 1 ? `The studio splits them into ${parts} batches of at most ${kind === 'generation' ? `${MAX_GENERATION_RUNS} images` : MAX_ANALYSIS_RUNS} and runs them` : 'They run'} one after another, never at the same time{average ? `: about ${duration(average * runs)} in all, going by earlier runs on this computer` : ''}.</li>
+          <li>A failed item is marked Failed and the next one starts. {charged ? 'A refused key or a rate or spending limit' : 'A plan limit or signing out'} pauses {parts > 1 ? 'every batch' : 'the batch'} until you continue. Nothing is retried on its own.</li>
+          {parts > 1 && <li><b>A long run can use up {charged ? 'your key’s limits' : 'your plan’s allowance'} and stop partway.</b> What finished is kept.</li>}
         </ul>
       </div>}
-      {runs > limit && <p className="frame-error" role="alert">A batch makes at most {limit} {kind === 'generation' ? `images, because ${charged ? 'each image is charged' : 'image generation uses your allowance quickly'}` : 'runs'}. Choose fewer.</p>}
+      {tooMany && <p className="frame-error" role="alert">One click queues at most {MAX_SELECTED} scenes. Choose fewer.</p>}
       <SkippedList items={skipped} />
       {error && <p className="frame-error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button>
-        <button type="button" disabled={busy || !runs || runs > limit} onClick={() => void start()}>{busy ? 'Starting…' : kind === 'generation' ? `Generate ${plural(runs, 'image')}${charged ? ' and accept charges' : ''}` : `Analyse ${plural(runs, 'scene')}${charged ? ' and accept charges' : ''}`}</button></div>
+        <button type="button" disabled={busy || !runs || tooMany} onClick={() => void start()}>{busy ? 'Starting…' : kind === 'generation' ? `Generate ${plural(runs, 'image')}${charged ? ' and accept charges' : ''}` : `Analyse ${plural(runs, 'scene')}${charged ? ' and accept charges' : ''}`}</button></div>
     </div>
   </Dialog>
 }

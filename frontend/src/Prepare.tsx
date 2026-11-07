@@ -3,6 +3,7 @@ import { request, send } from './api'
 import { ApproveAllDialog, type ApprovalCounts, type ApprovalList } from './Approve'
 import { ChargeSummary, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { Dialog, plural, MAX_ANALYSIS_RUNS, type Batch } from './Batches'
+import type { GeneratePreview } from './GenerateAll'
 import { Avatar, type Character, type Group } from './Library'
 import { PresetSelect, usePresets } from './Presets'
 import { duration } from './Results'
@@ -26,17 +27,20 @@ type StepState = 'done' | 'next' | 'todo' | 'running' | 'waiting' | 'optional'
 const stateWords: Record<StepState, string> = { done: 'Done', next: 'Next up', todo: 'To do', running: 'Running', waiting: 'Waiting', optional: 'Optional' }
 
 /** "Prepare this set": the preparation steps with how many scenes each would touch, coloured by state. */
-export function PreparePanel({ item, token, analysisEngine, version, disabled, onChanged, onNotice, onBatches, onOpenScene, onReview }: {
+export function PreparePanel({ item, token, analysisEngine, version, disabled, onChanged, onNotice, onBatches, onOpenScene, onReview, onGenerate, onResults }: {
   item: SceneSet; token: string; analysisEngine: string; version: string; disabled: boolean
   onChanged: () => void; onNotice: (text: string, problem?: string) => void; onBatches: () => void; onOpenScene: (id: string) => void; onReview: () => void
+  onGenerate: () => void; onResults: () => void
 }) {
   const [counts, setCounts] = useState<Counts | null>(null)
   const [approval, setApproval] = useState<ApprovalCounts | null>(null)
+  const [generation, setGeneration] = useState<GeneratePreview | null>(null)
   const [open, setOpen] = useState<PrepareAction | null>(null)
   const [busy, setBusy] = useState(false)
   const load = useCallback(() => Promise.all([
     request<Counts>(`/api/scene-sets/${item.id}/preparation`).then(setCounts, () => undefined),
     request<ApprovalList>(`/api/scene-sets/${item.id}/approval`).then(a => setApproval(a.counts), () => undefined),
+    request<GeneratePreview>(`/api/scene-sets/${item.id}/generate-all`).then(setGeneration, () => undefined),
   ]).then(() => undefined), [item.id])
   // Reloaded whenever the page's scenes change (analyses, assignments, prompts, polish runs).
   useEffect(() => { void load() }, [load, version, item.scene_count])
@@ -69,19 +73,26 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
   const approveText = !approval ? '' : ready
     ? `${plural(ready, 'scene')} ready${approval.clean < ready ? ` · ${approval.clean} clean` : ''}`
     : approval.approved ? `${plural(approval.approved, 'scene')} approved${approval.blocked ? ` · ${approval.blocked} not ready` : ''}` : 'Needs saved prompts'
+  // Phase 7D: generating comes last. Scenes without images from their approval are what it is for.
+  const g = generation?.counts
+  const fresh = g?.new ?? 0
+  const generateState: StepState = generation?.open_run ? 'running' : fresh ? (firstOpen || counts.review || approveState === 'next' ? 'todo' : 'next') : g?.more ? 'done' : 'waiting'
+  const generateText = !g ? '' : generation?.open_run ? 'A run is in progress for this set'
+    : fresh ? `${plural(fresh, 'scene')} to generate${g.more ? ` · ${g.more} with images` : ''}`
+      : g.more ? `Every approved scene has images${generation?.results ? ` · ${plural(generation.results, 'result')}` : ''}` : 'Needs approved scenes'
   const card = (state: StepState, n: number, title: React.ReactNode, text: string, action: React.ReactNode) =>
     <li className={`prep-${state}`}><span className="prepare-number" aria-hidden="true">{state === 'done' ? '✓' : state === 'running' ? <span className="spinner" /> : n}</span>
       <strong>{title}</strong><span className="prepare-state">{stateWords[state]}</span><span className="step-text">{text}</span>{action}</li>
   const btn = (state: StepState, label: string, on: PrepareAction, off: boolean, title?: string) =>
     <button type="button" className={`compact ${state === 'next' ? '' : 'secondary'}`} disabled={disabled || off} title={title} onClick={() => setOpen(on)}>{label}</button>
   return <section className="prepare-panel" aria-label={`Prepare ${item.name}`}>
-    <div className="prepare-head"><h3>Prepare this set</h3><span className="hint">One action per step, in order. Each starts only when you click it; nothing here approves or generates anything.</span></div>
+    <div className="prepare-head"><h3>Prepare this set</h3><span className="hint">One action per step, in order. Each starts only when you click it and asks first; nothing is approved or generated on its own.</span></div>
     <ol className="prepare-steps">
       {card(stateOf('analyse'), 1, 'Analyse all', counts.analyse ? `${plural(counts.analyse, 'scene')} not analysed` : 'Every scene is analysed',
         btn(stateOf('analyse'), 'Analyse all', 'analyse', !counts.analyse, analysisEngine === 'manual' ? 'Manual analysis is selected in Studio settings' : undefined))}
       {card(stateOf('check'), 2, 'Check details', counts.uncertain ? `${plural(counts.uncertain, 'scene')} with uncertain details` : counts.analysed ? 'Nothing uncertain' : 'Waiting for analyses',
         btn(stateOf('check'), 'Check details', 'check', !counts.uncertain))}
-      {card(stateOf('assign'), 3, 'Assign characters', counts.assign_open ? `${plural(counts.assign_open, 'scene')} still need someone` : counts.assign || allApproved ? `Everyone is assigned${counts.mismatched ? ` · ${counts.mismatched} labelled mismatch` : ''}` : 'Waiting for analyses',
+      {card(stateOf('assign'), 3, 'Assign characters', counts.assign_open ? `${plural(counts.assign_open, 'scene')} still need${counts.assign_open === 1 ? 's' : ''} someone` : counts.assign || allApproved ? `Everyone is assigned${counts.mismatched ? ` · ${counts.mismatched} labelled mismatch` : ''}` : 'Waiting for analyses',
         btn(stateOf('assign'), 'Open the table', 'assign', !counts.assign))}
       {card(stateOf('draft'), 4, 'Draft prompts for all', counts.draft ? `${plural(counts.draft, 'scene')} ready for a draft` : counts.redraft ? 'Drafted. You can redraft with a preset' : allApproved ? 'Every scene has its approved prompt' : 'Waiting for assignments',
         btn(stateOf('draft'), 'Draft prompts', 'draft', !(counts.draft + counts.redraft)))}
@@ -93,6 +104,12 @@ export function PreparePanel({ item, token, analysisEngine, version, disabled, o
         <div className="step-actions">
           <button type="button" className={`compact ${approveState === 'next' ? '' : 'secondary'}`} disabled={disabled || !ready} title="Look at each scene, then approve it" onClick={onReview}>Review one by one</button>
           <button type="button" className="secondary compact" disabled={disabled || !ready} title="Approve many scenes after one confirmation" onClick={() => setOpen('approve')}>Approve all</button>
+        </div>)}
+      {card(generateState, 7, 'Generate', generateText,
+        <div className="step-actions">
+          <button type="button" className={`compact ${generateState === 'next' ? '' : 'secondary'}`} disabled={disabled || !g || !(g.new + g.more) || !!generation?.open_run || generation?.engine === 'manual'}
+            title={generation?.engine === 'manual' ? 'Manual generation is selected in Studio settings' : 'Generate any number of images, split into batches of 20'} onClick={onGenerate}>Generate</button>
+          {!!generation?.results && <button type="button" className="secondary compact" onClick={onResults}>View results</button>}
         </div>)}
     </ol>
     {ready > 0 && <p className="hint prepare-note"><b>Review one by one</b> shows each scene before you approve it. <b>Approve all</b> approves many scenes from one confirmation, so scenes with uncertain details, warnings or a different number of people and characters are left out until you tick them. Either way every scene gets its own approval and nothing is generated.</p>}

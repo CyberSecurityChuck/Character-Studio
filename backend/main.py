@@ -17,6 +17,7 @@ from backend.batches import router as batches_router
 from backend.bulk_approval import router as bulk_approval_router
 from backend.configuration import Settings, load_settings
 from backend.editing_api import router as editing_router
+from backend.generate_all import router as generate_all_router
 from backend.jobs import JobRunner, reconcile_on_startup
 from backend.keystore import key_info
 from backend.library import backfill_photo_hashes, clean_deleted_files
@@ -161,6 +162,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(preparation_router)
     app.include_router(bulk_approval_router)
     app.include_router(pipeline_router)
+    app.include_router(generate_all_router)
     app.include_router(results_router)
     app.include_router(backups_router)
     app.include_router(batches_router)

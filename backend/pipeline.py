@@ -30,8 +30,10 @@ from backend.batches import (
     MAX_IMAGES_PER_SCENE,
     _check_engine,
     _generation_job,
+    _require_generation_engine,
     batch_state,
     cancel_waiting,
+    retry_batch,
 )
 from backend.generation import MAX_GENERATION_INSTRUCTION, generation_instruction, snapshot_of
 from backend.image_api import is_image_engine, run_label
@@ -81,6 +83,10 @@ from backend.workflow import (
 router = APIRouter(prefix="/api")
 
 OPEN = ("running", "paused", "waiting")
+ALREADY_RUNNING = (
+    "A run is already in progress for this set (Run everything or Generate all). "
+    "Wait for it to finish, or cancel it, first."
+)
 RESTART_MESSAGE = (
     "The studio stopped while Run everything was in progress. Nothing continues on its own: "
     "click Continue when you are ready."
@@ -165,6 +171,8 @@ def run_data(session, run: PipelineRun) -> dict:
         )
     return {
         "id": run.id,
+        # "everything" (Run everything, 7C-2) or "generate" (Generate all, 7D).
+        "kind": rules.get("kind", "everything"),
         "scene_set_id": run.scene_set_id,
         "status": run.status,
         "stage": run.stage,
@@ -172,9 +180,98 @@ def run_data(session, run: PipelineRun) -> dict:
         "rules": {k: v for k, v in rules.items() if k not in ("analysis_run", "image_run")},
         "outcome": json.loads(run.outcome_json or "{}"),
         "batches": batches,
+        "summary": generation_summary(session, run),
         "created_at": run.created_at,
         "updated_at": run.updated_at,
     }
+
+
+# What a run's images came to (Phase 7D) ----------------------------------------------------
+
+# A scene's label after a generation run, worst first: what still needs the user comes first.
+LABELS = ("generated", "failed", "not_started", "interrupted")
+
+
+def live_jobs(session, batches: list[Batch]) -> list[EngineJob]:
+    """The batches' items, leaving out failed items that were tried again (the new item counts)."""
+    if not batches:
+        return []
+    jobs = list(
+        session.scalars(select(EngineJob).where(EngineJob.batch_id.in_([b.id for b in batches])))
+    )
+    retried = {json.loads(j.settings_json or "{}").get("retry_of") for j in jobs}
+    return [j for j in jobs if j.id not in retried]
+
+
+def generation_summary(session, run: PipelineRun) -> dict | None:
+    """Images done, failed, interrupted and not started, and why and when the run paused."""
+    batches = run_batches(session, run.id, "generation")
+    if not batches:
+        return None
+    jobs = live_jobs(session, batches)
+
+    def count(*statuses: str) -> int:
+        return sum(1 for j in jobs if j.status in statuses)
+
+    paused = None
+    if run.status == "paused":
+        kind = "restart" if run.pause_details == RESTART_MESSAGE else "engine"
+        paused = {"kind": kind, "details": run.pause_details, "at": run.updated_at}
+    else:
+        for batch in batches:
+            if batch.status == "paused" and _left(session, batch):
+                paused = {"kind": batch.pause_kind, "details": batch.pause_details,
+                          "at": batch.updated_at}
+                break
+    left = count("running", "not_started")
+    return {
+        "images": len(jobs),
+        "done": count("completed"),
+        "failed": count("failed"),
+        "interrupted": count("interrupted"),
+        "running": count("running"),
+        # Cancelled items never started either.
+        "not_started": count("not_started", "cancelled"),
+        "paused": paused,
+        "retryable": count("failed") if not left and run.status == "finished" else 0,
+    }
+
+
+def scene_labels(session, run: PipelineRun) -> dict[str, dict]:
+    """Generated, Failed, Not started or Interrupted per scene of the run (running while one
+    of its images is being made), with how many of its images were made."""
+    by_scene: dict[str, list[EngineJob]] = {}
+    for job in live_jobs(session, run_batches(session, run.id, "generation")):
+        by_scene.setdefault(job.scene_id, []).append(job)
+    labels = {}
+    for scene_id, jobs in by_scene.items():
+        statuses = {j.status for j in jobs}
+        if "running" in statuses:
+            label = "running"
+        elif "interrupted" in statuses:
+            label = "interrupted"
+        elif "failed" in statuses:
+            label = "failed"
+        elif statuses & {"not_started", "cancelled"}:
+            label = "not_started"
+        else:
+            label = "generated"
+        made = sum(1 for j in jobs if j.status == "completed")
+        labels[scene_id] = {"label": label, "made": made, "total": len(jobs)}
+    return labels
+
+
+def last_generation_run(session, scene_set_id: str) -> PipelineRun | None:
+    """The set's newest run that has queued images (Run everything or Generate all)."""
+    for run in session.scalars(
+        select(PipelineRun)
+        .where(PipelineRun.scene_set_id == scene_set_id)
+        .order_by(PipelineRun.created_at.desc())
+        .limit(20)
+    ):
+        if run_batches(session, run.id, "generation"):
+            return run
+    return None
 
 
 def open_run(session, scene_set_id: str) -> PipelineRun | None:
@@ -240,7 +337,7 @@ def start(request: Request, scene_set_id: str, body: RunInput):
     with writing(request) as session:
         scenes = set_scenes(session, scene_set_id)
         if open_run(session, scene_set_id) is not None:
-            raise HTTPException(409, "Run everything is already in progress for this set.")
+            raise HTTPException(409, ALREADY_RUNNING)
         if body.rule == "one":
             if not body.character_id:
                 raise HTTPException(422, "Choose the character for people nobody is assigned to.")
@@ -475,6 +572,7 @@ def _queue_generation(session, run: PipelineRun, rules: dict, scene_ids: list[st
         )
         return
     api = is_image_engine(engine)
+    mode = rules.get("mode", "generate")  # Generate all may ask for variations (Phase 7D)
     queued, stopped = [], []
     for scene_id in scene_ids:
         scene = session.get(Scene, scene_id)
@@ -486,7 +584,7 @@ def _queue_generation(session, run: PipelineRun, rules: dict, scene_ids: list[st
         else:
             try:
                 approval = require_valid_approval(session, scene)
-                text = generation_instruction(snapshot_of(approval)["inputs"], "generate", api)
+                text = generation_instruction(snapshot_of(approval)["inputs"], mode, api)
                 if len(text) > MAX_GENERATION_INSTRUCTION:
                     reason = f"Its prompt is too long to send to {run_label(engine, 'generation')}."
             except ApprovalError as error:
@@ -510,7 +608,7 @@ def _queue_generation(session, run: PipelineRun, rules: dict, scene_ids: list[st
             settings_json=json.dumps(
                 {
                     "count": images,
-                    "mode": "generate",
+                    "mode": mode,
                     **rules["image_run"],
                     **({"preset": rules["preset"]} if rules.get("preset") else {}),
                     "scene_set_id": run.scene_set_id,
@@ -528,7 +626,7 @@ def _queue_generation(session, run: PipelineRun, rules: dict, scene_ids: list[st
             for _ in range(images):
                 session.add(
                     _generation_job(
-                        batch, scene.id, approval.id, "generate", position, timeout, stamp=stamp
+                        batch, scene.id, approval.id, mode, position, timeout, stamp=stamp
                     )
                 )
                 position += 1
@@ -577,12 +675,15 @@ def generate(request: Request, run_id: str, body: ChargeInput | None = None):
 
 @router.post("/pipelines/{run_id}/continue")
 async def continue_run(request: Request, run_id: str, body: ChargeInput | None = None):
-    """Only the user continues a run that a restart (or an engine change) paused."""
+    """Only the user continues a run that a restart (or an engine change) paused, or a run
+    whose batches a plan limit, a sign-out or the user paused (one click for all of them)."""
     with Session(request.app.state.engine) as session:
         run = require_run(session, run_id)
-        if run.status != "paused":
+        paused = [
+            b for b in run_batches(session, run_id) if b.status == "paused" and _left(session, b)
+        ]
+        if not _continuable(run, paused):
             raise HTTPException(409, "This run is not paused.")
-        paused = [b for b in run_batches(session, run_id) if b.status == "paused"]
         engines = {b.engine for b in paused}
     if any(is_api_engine(e) for e in engines) and not (body and body.confirm_charges):
         raise HTTPException(409, charge_confirmation(next(e for e in engines if is_api_engine(e))))
@@ -590,12 +691,17 @@ async def continue_run(request: Request, run_id: str, body: ChargeInput | None =
         await run_in_threadpool(_check_engine, request, engine)
     with writing(request) as session:
         run = require_run(session, run_id)
-        if run.status != "paused":
+        paused = [
+            b for b in run_batches(session, run_id) if b.status == "paused" and _left(session, b)
+        ]
+        if not _continuable(run, paused):
             raise HTTPException(409, "This run is not paused.")
-        for batch in run_batches(session, run_id):
-            if batch.status == "paused" and _left(session, batch):
-                batch.status, batch.pause_kind, batch.pause_details = "running", None, None
-                batch.updated_at = now()
+        images = [b for b in paused if b.kind == "generation"]
+        if images:
+            _require_generation_engine(session.get(EngineSettings, 1), images[0])
+        for batch in paused:
+            batch.status, batch.pause_kind, batch.pause_details = "running", None, None
+            batch.updated_at = now()
         run.status, run.pause_details, run.updated_at = "running", None, now()
     await run_in_threadpool(
         advance_run, request.app.state.engine, request.app.state.settings, run_id
@@ -603,6 +709,35 @@ async def continue_run(request: Request, run_id: str, body: ChargeInput | None =
     request.app.state.runner.notify()
     with Session(request.app.state.engine) as session:
         return run_data(session, require_run(session, run_id))
+
+
+def _continuable(run: PipelineRun, paused: list[Batch]) -> bool:
+    return run.status == "paused" or (run.status == "running" and bool(paused))
+
+
+@router.post("/pipelines/{run_id}/retry", status_code=202)
+def retry(request: Request, run_id: str, body: ChargeInput | None = None):
+    """Try failed again for a whole run: the user's explicit choice, never automatic. Each
+    failed image is queued once more as a new item in its own batch."""
+    with writing(request) as session:
+        run = require_run(session, run_id)
+        if run.status != "finished":
+            raise HTTPException(409, "Wait until the run has finished, then try again.")
+        engine = json.loads(run.rules_json)["generation_engine"]
+        if is_image_engine(engine) and not (body and body.confirm_charges):
+            raise HTTPException(409, charge_confirmation(engine))
+        added, skipped = 0, []
+        for batch in run_batches(session, run.id, "generation"):
+            if any(j.status == "failed" for j in live_jobs(session, [batch])):
+                more, missed = retry_batch(session, batch)
+                added, skipped = added + more, skipped + missed
+        if not added:
+            reasons = "; ".join(f"{s['title']}: {s['reason']}" for s in skipped[:5])
+            raise HTTPException(409, f"No failed images are left to try again. {reasons}".strip())
+        run.status, run.updated_at = "running", now()
+        result = run_data(session, run) | {"skipped": skipped}
+    request.app.state.runner.notify()
+    return result
 
 
 @router.post("/pipelines/{run_id}/cancel")
