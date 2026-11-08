@@ -8,7 +8,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 
 [![CI](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/CyberSecurityChuck/Character-Studio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-A0442A.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Phases%201--6%20complete-2E7D32.svg)](#-roadmap)
+[![Status](https://img.shields.io/badge/Status-Phases%201--7%20complete-2E7D32.svg)](#-roadmap)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-quick-start)
 <br/>
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -30,7 +30,7 @@ Save your characters once, pick a reference scene, approve the prompt, and let t
 ---
 
 > [!NOTE]
-> **All six planned phases are built and reviewed.** The Character Library, scene analysis, character mapping and approval, generation and results, batch processing, and Phase 6: optional API engines with your own keys, quality checks, comparison and presets, region editing and replacing one person, and password-protected backups. It is a personal project for Windows, developed in small reviewed phases. See the [roadmap](#-roadmap).
+> **All seven planned phases are built and reviewed.** The Character Library, scene analysis, character mapping and approval, generation and results, batch processing, Phase 6 (optional API engines with your own keys, quality checks, comparison and presets, region editing and replacing one person, and password-protected backups) and Phase 7: scene sets that take many scenes from import to finished images through guided steps, a review queue, Approve all, Run everything and Generate all. It is a personal project for Windows, developed in small reviewed phases. See the [roadmap](#-roadmap).
 
 ## ✨ Why Character Studio?
 
@@ -60,6 +60,11 @@ Recreating a photo with different people usually means re-uploading the same ref
 | 🔑 | Optional API engines with your own keys: analysis (Gemini, Anthropic, OpenAI) and image generation (Gemini image, OpenAI Images); keys encrypted for your Windows account, every paid run confirmed | ✅ Available |
 | 🔎 | Quality checks (composition and identity scores), comparison view (side by side, slider, overlay, difference) and generation presets | ✅ Available |
 | ✂️ | Edit area: fix one region or replace one person with their approved photos; only the marked area changes (Codex, OpenAI, Gemini, FLUX) | ✅ Available |
+| 🗂️ | Scenes page and scene sets: import many images at once, stage filters, Sets and Batches tabs with a searchable batch history | ✅ Available |
+| 🧭 | Prepare this set: seven guided steps (Analyse all, Check details, Assign characters, Draft prompts, Polish, Approve, Generate), each started by you | ✅ Available |
+| ✔️ | Approve one by one in a review queue, or Approve all after one confirmation; scenes with doubts are left for you | ✅ Available |
+| ⏩ | Run everything and Generate all: any number of images in batches of 20, an estimate first, a pause summary, Continue and Try failed again only when you click | ✅ Available |
+| 🏷️ | Per-scene labels (Generated, Failed, Not started, Interrupted) and a results gallery per set, grouped by scene | ✅ Available |
 
 ## 🔄 How it works
 
@@ -243,9 +248,14 @@ flowchart TB
         direction LR
         P6A["6A · API<br/>engines"]:::done --> P6B["6B · Checks, presets<br/>& comparison"]:::done --> P6C["6C · API images<br/>& region editing"]:::done --> P6D["6D · Encrypted<br/>backups"]:::done
     end
-    CORE ==> SIX
+    subgraph SEVEN["✅ Phase 7 · Scene sets and bulk work"]
+        direction LR
+        P7A["7A · Scenes page<br/>& import"]:::done --> P7B["7B · Guided<br/>preparation"]:::done --> P7C["7C · Approval modes<br/>& Run everything"]:::done --> P7D["7D · Generate all<br/>& set gallery"]:::done
+    end
+    CORE ==> SIX ==> SEVEN
     style CORE fill:transparent,stroke:#2E7D32,stroke-width:2px
     style SIX fill:transparent,stroke:#2E7D32,stroke-width:2px
+    style SEVEN fill:transparent,stroke:#2E7D32,stroke-width:2px
 
     classDef done fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
     classDef next fill:#F59E0B,stroke:#B45309,color:#1F1300,stroke-width:3px

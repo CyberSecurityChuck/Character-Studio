@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-08 — Phase 7D accepted; Phase 7 complete
+
+- The user's follow-up check passed (`Phase_Checks/Phase7D_Followup_Report.md`: 4/4, 0 problems, "Phase 7D looks good"). Phase 7D (Generate all) is accepted, which completes Phase 7 (scene sets, preparation, approval modes, Generate all). README updated for Phase 7. Docs only; nothing pushed.
+
 ## 2026-11-08 — 7D review fixes: Batches rows and the Generate step
 
 - The user's review (`Phase_Checks/Phase7D_Review_Report.md`: 14/14, 0 problems, "Needs fixes first") asked for three layout fixes. The Generate step's buttons are centred under the step (an older rule pinned narrow button groups to the left). Batches rows use fixed columns, so every row lines up: thumbnail, scene name with "Image · Result N" as a subtitle, a status pill in words (Done, Running, Not started, Failed, Interrupted, Cancelled; the detail still opens on hover or focus) and, while a run is in progress, a column with **Cancel run** as a small outlined red button (it still asks first). Rows no longer shrink in the scrolling list (phone width), and the list reserves scrollbar space so cards line up. Frontend only; 175 tests pass.

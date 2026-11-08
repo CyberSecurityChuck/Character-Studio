@@ -1,6 +1,8 @@
 # Project status
 
-Last checkpoint: 2026-11-08 IST (+05:30), Phase 7D review fixes built, awaiting the user's follow-up check
+Last checkpoint: 2026-11-08 IST (+05:30), Phase 7D accepted; Phase 7 complete
+
+- **Phase 7D is accepted (2026-11-08), which completes Phase 7.** The follow-up check (`Phase7D_Followup_Report.md`: 4/4, 0 problems, "Phase 7D looks good") passed after the review fixes (`4dddf82`). Every phase in PLAN.md (1–7) is built and accepted; README updated for Phase 7. **Not pushed:** `origin/main` is at `f3345c1`; four local commits (`89b34cc`, `a5008ac`, `4dddf82` and the acceptance record) need the user's explicit approval to push. Further work needs a new, explicitly approved phase.
 
 - **7D review fixes built and committed locally (2026-11-08, D039 review note).** The review (`Phase_Checks/Phase7D_Review_Report.md`: 14/14, 0 problems, "Needs fixes first") asked to centre the Generate step's button, give the Batches card a cleaner running layout and make Cancel run a button. Done (fixed-column rows with a subtitle, status pills and Cancel run as an outlined red button). Follow-up check: `Phase_Checks/Phase7D_Followup_Checklist.html` → `Phase7D_Followup_Report.md`. Nothing pushed.
 
