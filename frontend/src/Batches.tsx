@@ -64,9 +64,11 @@ function ItemStatus({ item, batch }: { item: BatchItem; batch: Batch }) {
     window.addEventListener('scroll', hide, true); window.addEventListener('keydown', key)
     return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('keydown', key) }
   }, [at])
+  // A pill with the status in words; the detail (an error's reason, a time) opens on hover, focus or a click.
   return <span className={`item-status is-${item.status}`} onMouseEnter={show} onMouseLeave={hide}>
-    <button ref={button} type="button" className="status-icon" aria-label={detail ? `${label}: ${detail}` : label} aria-describedby={at ? id : undefined} onClick={() => at ? hide() : show()} onFocus={show} onBlur={hide}>
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{itemIcons[item.status]}</svg>
+    <button ref={button} type="button" className={`status-pill${detail ? ' has-detail' : ''}`} aria-label={detail ? `${label}: ${detail}` : label} aria-describedby={at ? id : undefined} onClick={() => at ? hide() : show()} onFocus={show} onBlur={hide}>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{itemIcons[item.status]}</svg>
+      <span>{label}</span>
     </button>
     {at && <span role="tooltip" id={id} className={`copy-pop item-pop is-${item.status}`} style={{ top: at.top, left: at.left }}><b>{label}</b>{detail && <span>{detail}</span>}</span>}
   </span>
@@ -128,12 +130,14 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
     </div>}
     {batch.state === 'pausing' && <p className="hint">The run in progress finishes first; nothing new starts after it.</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
-    <ol className="batch-rows">{batch.items.map(item => <li key={item.job_id} className={`row-${item.status} ${highlight && item.scene_title?.toLocaleLowerCase().includes(highlight.toLocaleLowerCase()) ? 'row-match' : ''}`}>
+    <ol className={`batch-rows${counts.running ? ' has-action' : ''}`}>{batch.items.map(item => <li key={item.job_id} className={`row-${item.status} ${highlight && item.scene_title?.toLocaleLowerCase().includes(highlight.toLocaleLowerCase()) ? 'row-match' : ''}`}>
       <img src={item.thumbnail_url} alt="" loading="lazy" />
+      <div className="row-main">
       {onOpenScene && item.scene_title ? <button type="button" className="link-button row-name" onClick={() => onOpenScene(item.scene_id, step)}>{item.scene_title}</button> : <strong className="row-name">{item.scene_title ?? 'Deleted scene'}</strong>}
       <span className="row-meta">{item.retry_of ? 'Tried again · ' : ''}{batch.kind === 'generation' ? (item.mode === 'variation' ? 'Variation' : 'Image') : 'Analysis'}{item.result_version && !onOpenScene ? ` · Result ${item.result_version}` : ''}{item.result_version && onOpenScene ? <> · <button type="button" className="link-button" title="Open this scene's results" onClick={() => onOpenScene(item.scene_id, 'generate')}>Result {item.result_version}</button></> : null}</span>
-      {item.status === 'running' && <button type="button" className="link-button row-cancel" disabled={busy} onClick={() => void cancelRun(item)}>Cancel run</button>}
+      </div>
       <ItemStatus item={item} batch={batch} />
+      {counts.running > 0 && <span className="row-action">{item.status === 'running' && <button type="button" className="danger secondary compact row-cancel" disabled={busy} onClick={() => void cancelRun(item)}>Cancel run</button>}</span>}
     </li>)}</ol>
     <div className="batch-actions">
       {batch.state === 'running' && <button type="button" className="secondary compact" disabled={busy} onClick={() => void act('/pause')}>Pause</button>}

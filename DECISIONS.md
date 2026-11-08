@@ -412,6 +412,7 @@
 - Acceptance (2026-11-07): the second follow-up check (`Phase_Checks/Phase7C_Followup2_Report.md`: 4/4, 0 problems, "Phase 7C looks good") closes the 7C rounds (combined review of 7C-1 and 7C-2 → D038 Sets and Batches tabs → follow-up → Add scenes import and Remove from history). **Phase 7C (D037, D038) is accepted.** 7D needs the user's go-ahead.
 
 ## D039 — Phase 7D approved; Generate all (2026-11-07)
+- Review note (2026-11-08): the review (14/14, "Needs fixes first") asked for three layout fixes; the user said "Yes, fix all three". Batches rows now use fixed columns with the scene's kind and result as a subtitle, a status pill in words instead of an icon alone, and Cancel run as an outlined red button in its own column shown only while a run is in progress; the Generate step's buttons are centred. Frontend only.
 
 - Approval: the user said **"Approve Phase 7D"** (2026-11-07). 7D delivers Generate all for any number of images (chained batches of 20, analyses of 50), the estimate before starting, the pause summary, per-scene labels and a results gallery per scene set (PLAN.md Phase 7, D030), with the **Generate step as the seventh step** of Prepare this set (D038).
 - User choices (one at a time, 2026-11-07):

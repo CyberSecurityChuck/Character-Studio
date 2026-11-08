@@ -1,6 +1,11 @@
 # Session handoff
 
-Checkpoint: 2026-11-07 IST (+05:30), Phase 7D built, awaiting the user's review
+Checkpoint: 2026-11-08 IST (+05:30), Phase 7D review fixes built, awaiting the user's follow-up check
+
+## Latest: 7D review fixes (2026-11-08)
+
+- The review report (14/14, 0 problems, "Needs fixes first") had three layout notes; the user said "Yes, fix all three". Built and committed locally. **Next action:** wait for `Phase_Checks/Phase7D_Followup_Report.md`; on "Phase 7D looks good" record 7D and Phase 7 accepted (PROJECT_STATUS, D039, CHANGELOG, AGENTS, PLAN header), update the README for Phase 7, and ask before any push.
+- Code: `Batches.tsx` `ItemStatus` renders a `status-pill` (icon + label, tooltip kept); rows are `img | .row-main (name + .row-meta) | status | .row-action` and the list gets `has-action` only while a run is in progress. CSS at the end of `styles.css` ("Phase 7D review fixes"): `.prepare-steps li > .step-actions { align-self: center; }` overrides the older `li > div { align-self: start; }`; `.batch-rows { grid-auto-rows: max-content; scrollbar-gutter: stable; }` stops rows shrinking inside the height-limited list. The old `.item-status .status-icon` rules were removed.
 
 ## Latest: Phase 7D built (2026-11-07, D039)
 

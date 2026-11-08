@@ -1387,17 +1387,9 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
 .batch-rows img { width: 32px; height: 24px; object-fit: cover; border-radius: 4px; background: var(--welcome); }
 .batch-rows .row-name { min-height: 0; padding: 0; justify-self: start; text-align: left; font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
 .batch-rows .row-meta { color: var(--muted); font-size: 12.5px; }
-.batch-rows .row-cancel { min-height: 0; padding: 2px 6px; font-size: 12px; }
-.batch-rows li:not(:has(.row-cancel)) .item-status { grid-column: 5; }
-.item-status .status-icon { width: 30px; height: 30px; }
-.item-status.is-completed .status-icon { color: var(--success); }
-.item-status.is-failed .status-icon, .item-status.is-interrupted .status-icon { color: var(--danger-strong); }
-.item-status.is-running .status-icon { color: var(--accent); }
-.item-status.is-running svg { animation: spin 1s linear infinite; }
-.item-status.is-not_started .status-icon, .item-status.is-cancelled .status-icon { color: var(--faint); }
+
 .item-pop { display: grid; gap: 2px; max-width: min(340px, 70vw); }
 .item-pop b { font-size: 12.5px; }
-@media (max-width: 700px) { .batch-rows li { grid-template-columns: 32px minmax(0, 1fr) auto; } .batch-rows .row-meta { display: none; } .batch-rows li:not(:has(.row-cancel)) .item-status { grid-column: auto; } }
 .batch-history { margin: 28px 0 0; padding-top: 20px; border-top: 1px solid var(--line); }
 .batch-history .batch-card { background: var(--background); }
 
@@ -1585,3 +1577,35 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
 .generate-dialog .batch-options .preset-select { display: grid; gap: 6px; margin: 0; }
 .generate-dialog .batch-options .preset-select label { margin: 0; }
 .generate-dialog .generate-choices label { margin: 0; }
+
+/* Phase 7D review fixes (D039): centred Generate step buttons; Batches rows with fixed columns,
+   a subtitle under the scene name, a status pill and Cancel run as a button. */
+.prepare-steps li > .step-actions { align-self: center; }
+.batch-rows { grid-auto-rows: max-content; scrollbar-gutter: stable; }
+.batch-rows li { grid-template-columns: 36px minmax(0, 1fr) 118px; gap: 14px; padding: 8px 12px; min-height: 52px; }
+.batch-rows.has-action li { grid-template-columns: 36px minmax(0, 1fr) 118px 104px; }
+.batch-rows img { width: 36px; height: 36px; border-radius: 6px; }
+.batch-rows .row-main { min-width: 0; display: grid; gap: 1px; justify-items: start; }
+.batch-rows .row-name { border: 0; font-size: 13.5px; line-height: 1.3; }
+.batch-rows .row-meta { font-size: 12px; line-height: 1.35; }
+.batch-rows .row-meta .link-button { min-height: 0; padding: 0; font-size: 12px; }
+.batch-rows .item-status { justify-self: start; }
+.batch-rows .row-action { display: flex; justify-content: flex-end; }
+.batch-rows .row-cancel { min-height: 30px; padding: 4px 12px; font-size: 12px; }
+.batch-rows li.row-running { background: var(--accent-bg); }
+.status-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 3px 10px 3px 7px; border: 1px solid transparent; border-radius: 999px; background: var(--welcome); color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: default; box-shadow: none; }
+.status-pill.has-detail { cursor: help; }
+.status-pill svg { width: 15px; height: 15px; flex: none; }
+.status-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.item-status.is-completed .status-pill { background: var(--success-bg); border-color: var(--success-line); color: var(--success-text); }
+.item-status.is-running .status-pill { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.item-status.is-running .status-pill svg { animation: spin 1s linear infinite; }
+.item-status.is-failed .status-pill { background: var(--danger-bg); border-color: var(--danger-line); color: var(--danger-text); }
+.item-status.is-interrupted .status-pill { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn-text); }
+.item-status.is-cancelled .status-pill { color: var(--faint); }
+.status-pill:hover { filter: brightness(1.04); }
+@media (max-width: 700px) {
+  .batch-rows li, .batch-rows.has-action li { grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .batch-rows .row-action { grid-column: 2 / -1; justify-content: flex-start; }
+  .batch-rows .row-action:empty { display: none; }
+}
