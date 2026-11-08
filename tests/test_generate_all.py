@@ -162,6 +162,9 @@ def test_a_restart_pauses_generate_all_and_labels_the_running_image_interrupted(
         time.sleep(0.5)
         paused = latest_run(client, holiday)
         assert paused["status"] == "paused" and paused["summary"]["paused"]["kind"] == "restart"
+        # The note names the kind of run that stopped.
+        assert "Generate all was in progress" in paused["summary"]["paused"]["details"]
+        assert "Run everything" not in paused["pause_details"]
         assert (paused["summary"]["interrupted"], paused["summary"]["not_started"]) == (1, 1)
         found = labels(client, holiday)
         assert [label_of(found, x) for x in scenes] == ["interrupted", "not_started"]

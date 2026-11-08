@@ -207,6 +207,7 @@ def test_restart_pauses_the_run_until_the_user_continues(
         time.sleep(0.5)
         paused = latest_run(client, holiday)
         assert paused["status"] == "paused" and "Nothing continues" in paused["pause_details"]
+        assert "Run everything was in progress" in paused["pause_details"]
         assert generation_calls(fake) == []
         post(client, f"/api/pipelines/{run['id']}/continue", {}, expect=200)
         wait_for_batch(client, run["batches"][0]["id"])

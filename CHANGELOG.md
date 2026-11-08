@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-08 — Generate all restart note names the right run
+
+- The docs commit was pushed with the user's approval (`1cea3e2..68a4472`); CI run 42503683459 passed.
+- Fix (user's go-ahead): a Generate all run paused by a restart said "The studio stopped while Run everything was in progress". It now says "Generate all"; Run everything keeps its own wording, and both are still recognised as a restart pause. Tests check both wordings; 175 pass.
+
 ## 2026-11-08 — Phase 7D pushed; docs brought up to date
 
 - Pushed to `origin/main` with the user's approval (`f3345c1..1cea3e2`); CI run 42502990049 passed (privacy guard; Windows tests, lint, build).

@@ -91,6 +91,11 @@ RESTART_MESSAGE = (
     "The studio stopped while Run everything was in progress. Nothing continues on its own: "
     "click Continue when you are ready."
 )
+GENERATE_RESTART_MESSAGE = (
+    "The studio stopped while Generate all was in progress. Nothing continues on its own: "
+    "click Continue when you are ready."
+)
+RESTART_MESSAGES = (RESTART_MESSAGE, GENERATE_RESTART_MESSAGE)
 # Moving a run on happens in one place at a time, whether the runner or a click does it.
 _advancing = threading.Lock()
 
@@ -215,7 +220,7 @@ def generation_summary(session, run: PipelineRun) -> dict | None:
 
     paused = None
     if run.status == "paused":
-        kind = "restart" if run.pause_details == RESTART_MESSAGE else "engine"
+        kind = "restart" if run.pause_details in RESTART_MESSAGES else "engine"
         paused = {"kind": kind, "details": run.pause_details, "at": run.updated_at}
     else:
         for batch in batches:
@@ -758,4 +763,6 @@ def cancel(request: Request, run_id: str):
 def pause_on_restart(session) -> None:
     """At start-up: a run that was moving waits for the user's Continue."""
     for run in session.scalars(select(PipelineRun).where(PipelineRun.status == "running")):
-        run.status, run.pause_details, run.updated_at = "paused", RESTART_MESSAGE, now()
+        kind = json.loads(run.rules_json).get("kind", "everything")
+        message = GENERATE_RESTART_MESSAGE if kind == "generate" else RESTART_MESSAGE
+        run.status, run.pause_details, run.updated_at = "paused", message, now()
