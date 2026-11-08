@@ -152,16 +152,11 @@ Tests use isolated temporary data outside the repository. They do not call exter
 
 Scene analysis, prompt polishing and image generation run through the official CLIs (Phases 3–5) by default, with no automatic retry. Optionally, analysis, quality checks, image generation and region edits can use an **API engine** with your own key: Gemini, Anthropic or OpenAI for analysis; Gemini image or OpenAI Images for images; OpenAI Images, Gemini image or FLUX (Black Forest Labs) for edits (see the Phase 6 sections below). Those runs are billed by that company, separately from your plans, and the studio asks before every run or batch. Engines marked *unverified* have been tested only against a local stand-in.
 
-How it works (DECISIONS.md D009): the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. The Phase 2.5 spike verified both CLIs' flags, output locations and failure modes; the studio uses only those flags.
+How it works: the studio runs `claude -p` (default) or `codex exec` for scene analysis, `claude -p` for optional prompt polishing, and `codex exec` for image generation, each started by your click, with a timeout, cancel and no automatic retry. The manual bridge (export an approved package to Codex/ChatGPT and import the result) is the fallback. The Phase 2.5 spike verified both CLIs' flags, output locations and failure modes; the studio uses only those flags.
 
 Each run uses your plan's allowance and sends data to that provider: **Analyse** sends the Base Image to Anthropic (or to OpenAI if Codex is the analysis engine); **Polish prompt** sends prompt and analysis text to Anthropic; **Generate** sends the Base Image and chosen reference photos to OpenAI. There is no promise of unlimited generation or perfect likeness/pose preservation. See `docs/PROVIDER_FINDINGS.md`.
 
-## Continuity and recovery
-
-- Open a new Codex conversation **in this project folder** and say **Resume Character Studio**.
-- Read AGENTS.md, PLAN.md, PROJECT_STATUS.md and SESSION_HANDOFF.md; compare them with actual Git/files before continuing.
-- Say **Checkpoint Character Studio** before a planned pause. See `docs/CONTINUITY.md` for the exact protocol.
-- Phases 1–6 are approved and accepted. Anything beyond PLAN.md needs a new, explicitly approved phase.
+## Recovery
 
 For data recovery see **Backups and restore** below and `docs/RECOVERY.md`. Git backs up source history, not private application data.
 

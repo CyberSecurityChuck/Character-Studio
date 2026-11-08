@@ -43,6 +43,15 @@ Thumbs.db
 # User's local phase-review checklists and reports (kept out of Git by request)
 Phase_Checks/
 
+# Local development notes for AI work sessions: kept in this folder, never pushed
+# (history in the private ../Character-Studio-Notes.git store; see AGENTS.md)
+/AGENTS.md
+/PLAN.md
+/DECISIONS.md
+/PROJECT_STATUS.md
+/SESSION_HANDOFF.md
+/docs/CONTINUITY.md
+
 # README screenshots (synthetic data only) are the one allowed image location
 !docs/images/
 !docs/images/*.png

@@ -275,7 +275,7 @@ flowchart TB
     classDef later fill:#94A3B8,stroke:#475569,color:#0F172A,stroke-width:2px
 ```
 
-Every planned phase is built and was accepted after a hands-on review. New work beyond PLAN.md needs a new, explicitly approved phase. The full plan, with acceptance criteria for each phase, is in [PLAN.md](PLAN.md); what changed and why is in the [CHANGELOG](CHANGELOG.md) and [DECISIONS.md](DECISIONS.md).
+Every planned phase is built and was accepted after a hands-on review. What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 
 ## 🛠️ Tech stack
 
@@ -296,9 +296,7 @@ backend/      FastAPI app, models, migrations, provider contracts
 frontend/     React + TypeScript UI (Vite)
 tests/        pytest suite (isolated temporary data, no network)
 scripts/      Windows setup / start / stop scripts
-docs/         User guide, provider findings, recovery, continuity, design
-PLAN.md       Authoritative requirements and phased roadmap
-DECISIONS.md  Architecture decision log
+docs/         User guide, provider findings, recovery, design
 ```
 
 ## 🧪 Development
@@ -311,7 +309,7 @@ npm --prefix frontend run build     # type-check + production build
 
 The same checks run in [GitHub Actions](.github/workflows/ci.yml) on every push and pull request, on Windows, together with the privacy guard. Tests never call a real AI service: the CLIs and provider APIs are replaced by local stand-ins.
 
-The project is built in small, approved phases and keeps continuity records ([PROJECT_STATUS](PROJECT_STATUS.md), [SESSION_HANDOFF](SESSION_HANDOFF.md), [CHANGELOG](CHANGELOG.md)), so any work session can be paused and resumed safely. It is developed with the help of AI coding assistants.
+The project is built in small, approved phases, each reviewed by hand before the next starts. It is developed with the help of AI coding assistants.
 
 ## 🤝 Responsible use
 

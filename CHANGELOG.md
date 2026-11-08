@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09 — Development notes kept off GitHub
+
+- With the user's approval, the AI work-session notes (plan, decision log, status and handoff notes, session instructions) no longer live in the repository; they stay on the developer's computer, and CI fails if one is committed again. README and the user guide no longer point to them, and the user guide's "Continuity and recovery" section is now **Recovery**. The continuity test checks those notes only when they are present.
+
 ## 2026-11-08 — Generate all restart note names the right run
 
 - The docs commit was pushed with the user's approval (`1cea3e2..68a4472`); CI run 42503683459 passed.

@@ -28,6 +28,15 @@ jobs:
             echo "::error::Private-looking files are tracked:"; echo "$bad"; exit 1
           fi
           echo "No private-looking files tracked."
+      - name: Fail on tracked development notes
+        shell: bash
+        run: |
+          # The AI work-session notes stay on the developer's computer only.
+          notes=$(git ls-files -- AGENTS.md PLAN.md DECISIONS.md PROJECT_STATUS.md SESSION_HANDOFF.md docs/CONTINUITY.md)
+          if [ -n "$notes" ]; then
+            echo "::error::Local development notes are tracked:"; echo "$notes"; exit 1
+          fi
+          echo "No development notes tracked."
 
   test:
     name: Tests, lint and build (Windows)

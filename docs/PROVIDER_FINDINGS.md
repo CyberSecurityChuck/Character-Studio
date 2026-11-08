@@ -124,7 +124,7 @@ Sources read 2026-10-11: https://ai.google.dev/gemini-api/docs/pricing (page "La
 
 - Endpoints: Gemini `POST /v1beta/models/{model}:generateContent` (`x-goog-api-key`), list `GET /v1beta/models` (filtered to `generateContent`). Anthropic `POST /v1/messages` (`x-api-key`, `anthropic-version: 2023-06-01`) with a forced `save_scene_analysis` tool, list `GET /v1/models`. OpenAI `POST /v1/chat/completions` (`Authorization: Bearer`) with `response_format: json_object`, list `GET /v1/models` (filtered to likely chat models).
 - Usage recorded: Gemini `promptTokenCount` and `candidatesTokenCount + thoughtsTokenCount`; Anthropic `input_tokens`/`output_tokens`; OpenAI `prompt_tokens`/`completion_tokens`.
-- Error mapping and blocked/cut-off replies are described in DECISIONS.md D022. Gemini reports an invalid key as HTTP 400 "API key not valid", which is matched by text.
+- Error mapping and blocked/cut-off replies are handled in `backend/api_engines.py` and `backend/image_api.py` (D022). Gemini reports an invalid key as HTTP 400 "API key not valid", which is matched by text.
 - All of this is tested only against a local fake server. The first real run is the user's, during the Phase 6A review; until then the engines are `unverified` in the provider registry.
 
 ## Phase 6 review: CLI model flags (2026-10-12)
