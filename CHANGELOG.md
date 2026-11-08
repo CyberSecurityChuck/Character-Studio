@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-08 — Phase 7D pushed; docs brought up to date
+
+- Pushed to `origin/main` with the user's approval (`f3345c1..1cea3e2`); CI run 42502990049 passed (privacy guard; Windows tests, lint, build).
+- Docs check across the repository, with the user's approval: the user guide's Batches sections (batches split since 7D, **Remove from history**, status pills and **Cancel run**); a Phase 7 section in `docs/RECOVERY.md` (chained batches, `pipeline_runs`, the restart pause and Continue); theme and Phase 7 notes in `docs/DESIGN.md`; the README's How it works and Architecture diagrams show the scene-set path and the run tracker. Docs only.
+
 ## 2026-11-08 — Phase 7D accepted; Phase 7 complete
 
 - The user's follow-up check passed (`Phase_Checks/Phase7D_Followup_Report.md`: 4/4, 0 problems, "Phase 7D looks good"). Phase 7D (Generate all) is accepted, which completes Phase 7 (scene sets, preparation, approval modes, Generate all). README updated for Phase 7. Docs only; nothing pushed.

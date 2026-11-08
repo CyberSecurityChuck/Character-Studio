@@ -4,7 +4,7 @@ Checkpoint: 2026-11-08 IST (+05:30), Phase 7D accepted; Phase 7 complete
 
 ## Latest: Phase 7D accepted; Phase 7 complete (2026-11-08)
 
-- The follow-up check passed (4/4, 0 problems, "Phase 7D looks good"). Recorded in PROJECT_STATUS, D039, CHANGELOG, AGENTS and the PLAN header; README updated for Phase 7 (badge, note, feature rows, roadmap). **Next action:** ask the user before pushing the 7D commits to `origin/main` (never push without explicit approval). No phase is open; new work needs a new, explicitly approved phase.
+- The follow-up check passed (4/4, 0 problems, "Phase 7D looks good"). Recorded in PROJECT_STATUS, D039, CHANGELOG, AGENTS and the PLAN header; README updated for Phase 7 (badge, note, feature rows, roadmap). Pushed with the user's approval (`f3345c1..1cea3e2`); CI run 42502990049 passed. Then, with approval, the docs were brought up to date (user guide Batches sections, RECOVERY Phase 7 section, DESIGN theme and Phase 7 notes, README diagrams) in a local commit. **Next action:** that docs commit needs the user's approval to push. Known small issue (not fixed, needs approval): a Generate all run paused by a restart shows `RESTART_MESSAGE`, which names Run everything (`backend/pipeline.py`). No phase is open; new work needs a new, explicitly approved phase.
 
 ## Latest: 7D review fixes (2026-11-08)
 

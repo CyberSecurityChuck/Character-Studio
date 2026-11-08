@@ -89,9 +89,18 @@ flowchart TB
         I --> J["🔎 Check & compare<br/>✂️ Edit one area"]:::done
         J -->|new version| I
     end
+    subgraph BULK["③ Many scenes at once: scene sets"]
+        direction LR
+        K["🗂️ Import many<br/>into a scene set"]:::done --> L["🧭 Prepare this set<br/>seven guided steps"]:::done
+        L --> M{"✅ Approve all<br/>or one by one"}:::approve
+        M --> N["⏩ Generate all<br/>batches of 20, Continue"]:::done
+        N --> O["🏷️ Labels &<br/>set gallery"]:::done
+    end
     PREP ==> CREATE
+    CREATE -. "the same steps for a whole set" .-> BULK
     style PREP fill:transparent,stroke:#F59E0B,stroke-width:2px
     style CREATE fill:transparent,stroke:#5C6BC0,stroke-width:2px
+    style BULK fill:transparent,stroke:#2E7D32,stroke-width:2px
 
     classDef done fill:#2E7D32,stroke:#1B5E20,color:#ffffff,stroke-width:2px
     classDef next fill:#F59E0B,stroke:#B45309,color:#1F1300,stroke-width:2px
@@ -142,13 +151,16 @@ flowchart TB
         API["⚙️ FastAPI service<br/>bound to 127.0.0.1 only"]:::core
         DB[("🗄️ SQLite<br/>versioned migrations")]:::store
         FS[("📁 Private data folder<br/>photos · thumbnails · results")]:::store
-        Q["🧵 Job runner<br/>one job at a time"]:::core
+        Q["🧵 Job runner<br/>one job at a time · chained batches"]:::core
+        RT["🔁 Run tracker<br/>Run everything · Generate all<br/>pauses on restart"]:::core
         CL["Claude CLI"]:::cli
         CX["Codex CLI"]:::cli
         UI <-->|"Token-protected local API"| API
         API --> DB
         API --> FS
         API --> Q
+        API --> RT
+        RT -->|"queues batches"| Q
         Q --> CL
         Q --> CX
         Q --> AK["🔑 Optional API engines<br/>your keys, off by default"]:::cli

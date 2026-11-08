@@ -46,6 +46,14 @@ At startup a running item becomes **Interrupted** like any run, waiting single r
 
 Group suggestions are stored as subject mappings whose `subjects_hash` is `suggested`; they never match the subjects fingerprint, so approval stays blocked until the user saves the assignments.
 
+## Phase 7 runs: Run everything and Generate all
+
+Since Phase 7D a selection larger than one batch (50 analyses or 20 images, up to 500 scenes) is split into **chained batches**: ordinary Phase 5.5 batches created in one transaction with strictly increasing creation times, so the runner finishes one before it starts the next. Each carries `part` and `of` in its settings. Each batch keeps the recovery rules above.
+
+**Run everything** (7C-2, D037) and **Generate all** (7D, D039) are stored as one row in `pipeline_runs` (migration 0015; Generate all has `"kind": "generate"` in `rules_json`). Only one open run per set is allowed. A run records the user's intent (`running`, `paused`, `cancelled`, `finished`) and its stage (`analysing`, `generating`); its progress comes from its batches' items, so nothing is counted twice. A run moves on only when every batch of its stage has finished, and only one thread moves a run at a time.
+
+At startup every run that was `running` becomes **paused** with the restart message, on top of the batch rules above: its running item becomes Interrupted and its waiting items stay `not_started`. Nothing resumes until the user clicks **Continue** on the run, which continues every paused batch of the run in one go (checking the engine's sign-in first, and asking to confirm charges for an API engine). A plan limit or sign-out pauses the run's batches as usual; the run shows why and when. **Try failed again** on a finished run makes new items only for failed images; Interrupted images are left out because one may already have been saved, so the scene's **Look for a saved image** stays the way to recover them. Nothing in a run is ever retried or continued on its own.
+
 ## Backups and restore
 
 **Create backup** (Studio settings) writes `backups/character-studio-backup-<UTC time>.zip`. Consistency: inside one write transaction (`BEGIN IMMEDIATE`, so nothing commits meanwhile) the database is copied with SQLite's backup API through a separate read-only connection (WAL lets it read while the lock is held), and every file in the asset folders (`characters`, `scenes`, `generations`, `thumbnails`, `exports`, `jobs`) is hard-linked into a snapshot folder, or copied where links are not possible. The lock is then released and the zip is written from the snapshot, so files deleted afterwards are still included and the zip always matches its database. The manifest records format, schema revision, counts and each file's SHA-256 and size. An interrupted backup leaves only `*.partial` items, which are removed at the next start. Backups exclude the `backups` folder, logs, the launcher record and unmanaged folders.
