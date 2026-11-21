@@ -14,6 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, object_session
 from starlette.concurrency import run_in_threadpool
 
+from backend import cli_accounts
 from backend.analysis_schema import (
     MANUAL_INSTRUCTION,
     SCHEMA_VERSION,
@@ -319,6 +320,13 @@ def recoverable(settings, job: EngineJob) -> bool:
     return not is_image_engine(job.engine) or bool(saved_output(folder))
 
 
+def job_account(job: EngineJob) -> dict | None:
+    if job.engine not in cli_accounts.ACCOUNT_ENGINES:
+        return None
+    account_id, label = cli_accounts.recorded(job.settings_json)
+    return {"id": account_id, "label": label}
+
+
 def job_data(request, job: EngineJob | None):
     if job is None:
         return None
@@ -331,6 +339,8 @@ def job_data(request, job: EngineJob | None):
         if job.kind == "edit"
         else run_label(job.engine, job.kind),
         "model": json.loads(job.settings_json or "{}").get("model"),
+        # The Claude Code or Codex account the run was queued with (Phase 8A).
+        "account": job_account(job),
         "usage": json.loads(job.settings_json or "{}").get("usage"),
         "mode": json.loads(job.settings_json or "{}").get("mode"),
         # A generation that did not finish may still have saved an image in Codex's folder,
@@ -1574,10 +1584,22 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
 
 @router.get("/engines/status")
 async def engines_status(request: Request):
-    overrides = request.app.state.settings.engine_commands
+    settings = request.app.state.settings
+    overrides = settings.engine_commands
+
+    def one(engine: str) -> dict:
+        # The account new runs use (Phase 8A); Default is the CLI's usual sign-in.
+        account = cli_accounts.active(settings, engine)
+        env = cli_accounts.account_env(settings, engine, account["id"])
+        status = engine_status(engine, overrides, env)
+        if status["installed"] and not status["signed_in"] and not account["default"]:
+            status["message"] = (
+                f"Signed out. Sign “{account['label']}” in under Subscription accounts."
+            )
+        return status | {"account_id": account["id"], "account_label": account["label"]}
 
     def check():
         with ThreadPoolExecutor(max_workers=2) as pool:
-            return list(pool.map(lambda e: engine_status(e, overrides), ENGINE_NAMES))
+            return list(pool.map(one, ENGINE_NAMES))
 
     return await run_in_threadpool(check)

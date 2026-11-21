@@ -61,12 +61,15 @@ class EngineError(Exception):
         self.message = message
 
 
-def clean_environment() -> dict[str, str]:
-    return {
+def clean_environment(account: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for a CLI run: no host-session, API-key or endpoint variables, then
+    only the chosen account's profile folder variable (Phase 8A; nothing for Default)."""
+    env = {
         key: value
         for key, value in os.environ.items()
         if not key.upper().startswith(_DROP_PREFIXES) and key.upper() not in _DROP_NAMES
     }
+    return env | (account or {})
 
 
 def resolve_command(engine: str, overrides: dict | None = None) -> list[str] | None:
@@ -117,7 +120,9 @@ def kill_tree(process: subprocess.Popen) -> None:
         pass
 
 
-def _quick(argv: list[str], timeout: float = 20) -> subprocess.CompletedProcess:
+def _quick(
+    argv: list[str], timeout: float = 20, account: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         argv,
         stdin=subprocess.DEVNULL,
@@ -126,13 +131,15 @@ def _quick(argv: list[str], timeout: float = 20) -> subprocess.CompletedProcess:
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
-        env=clean_environment(),
+        env=clean_environment(account),
         check=False,
         **_creation_options(),
     )
 
 
-def engine_status(engine: str, overrides: dict | None = None) -> dict:
+def engine_status(
+    engine: str, overrides: dict | None = None, account: dict[str, str] | None = None
+) -> dict:
     """Found / version / signed in. Raw status output is never returned or stored."""
     name = ENGINE_NAMES[engine]
     status = {
@@ -156,7 +163,7 @@ def engine_status(engine: str, overrides: dict | None = None) -> dict:
             status["message"] = f"{PROGRAMS[engine]} was found but did not start."
             return status
         if engine == "claude_cli":
-            result = _quick([*command, "auth", "status"])
+            result = _quick([*command, "auth", "status"], account=account)
             try:
                 details = json.loads(result.stdout)
             except json.JSONDecodeError:
@@ -165,7 +172,7 @@ def engine_status(engine: str, overrides: dict | None = None) -> dict:
             plan = details.get("subscriptionType")
             status["plan"] = str(plan).capitalize()[:20] if status["signed_in"] and plan else None
         else:
-            result = _quick([*command, "login", "status"])
+            result = _quick([*command, "login", "status"], account=account)
             text = (result.stdout + result.stderr).lower()
             status["signed_in"] = "logged in" in text and "not logged in" not in text
             status["plan"] = "ChatGPT" if status["signed_in"] and "chatgpt" in text else None
@@ -177,9 +184,11 @@ def engine_status(engine: str, overrides: dict | None = None) -> dict:
     return status
 
 
-def require_ready(engine: str, overrides: dict | None = None) -> str | None:
+def require_ready(
+    engine: str, overrides: dict | None = None, account: dict[str, str] | None = None
+) -> str | None:
     """Fail fast with a clear message before launching; returns the CLI version."""
-    status = engine_status(engine, overrides)
+    status = engine_status(engine, overrides, account)
     name = ENGINE_NAMES[engine]
     if not status["installed"]:
         raise EngineError(
@@ -209,6 +218,7 @@ def run_process(
     timeout: float,
     should_stop: Callable[[], bool] = lambda: False,
     on_start: Callable[[subprocess.Popen], None] = lambda _process: None,
+    account: dict[str, str] | None = None,
 ) -> ProcessOutcome:
     """Run with stdin closed, output to files, an external timeout and a stop check."""
     started = time.monotonic()
@@ -216,7 +226,7 @@ def run_process(
         process = subprocess.Popen(
             argv,
             cwd=cwd,
-            env=clean_environment(),
+            env=clean_environment(account),
             stdin=subprocess.DEVNULL,
             stdout=stdout,
             stderr=stderr,

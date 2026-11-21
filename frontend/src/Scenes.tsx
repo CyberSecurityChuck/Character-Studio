@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { accountName, type RunAccount } from './Accounts'
 import { request, send, type Bootstrap } from './api'
 import { ChargeDialog, engineNames, generationNames, isApiEngine, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { BatchDialog, BatchHistory, BatchList, GroupDialog, MAX_SELECTED, plural, type BatchStart } from './Batches'
@@ -32,7 +33,7 @@ export type AnalysisData = {
 type Analysis = { id: string; version: number; source: string; engine_version: string | null; has_raw_output: boolean; based_on_id: string | null; created_at: string; analysis: AnalysisData; confirmed_uncertainties: Uncertainty[] }
 export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
 export type BatchPlace = { id: string; status: string; pause_kind: string | null; position: number; total: number; scene_items: number }
-export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
+export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; account?: RunAccount | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
 export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null
   scene_set_id: string | null; stage: Exclude<StageFilter, 'all' | 'problems'>; problem: { kind: string; status: string; at: string } | null
   mismatch: string | null; import_character_id: string | null }
@@ -192,7 +193,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
       : { failed: `${job.engine_name} could not finish the analysis`, cancelled: 'Analysis cancelled', interrupted: 'The analysis was interrupted' }
   return <div className={`job-notice ${job.status}`} role="alert">
     <strong>{titles[job.status] ?? 'The run did not finish'}</strong>
-    <p>{job.error_details}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' && job.engine === 'codex_cli' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
+    <p>{job.error_details}{job.account && job.account.id !== 'default' ? ` Account: ${job.account.label}.` : ''}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' && job.engine === 'codex_cli' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
     {(job.status === 'interrupted' || (generation && job.recoverable)) && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
     <StatusNote text={note} />
     <div className="notice-actions">
@@ -204,6 +205,9 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
     </div>
   </div>
 }
+
+/** The Claude Code or Codex account a run uses (Phase 8A); nothing for the usual sign-in. */
+const onAccount = (job: Job) => job.account && job.account.id !== 'default' ? ` (${job.account.label})` : ''
 
 function ProgressCard({ job, stopping, busy, onCancel }: { job: Job; stopping: boolean; busy: boolean; onCancel: () => void }) {
   const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : job.kind === 'check' ? 'Checking a result' : job.kind === 'edit' ? 'Editing a result' : 'Analysing'
@@ -221,7 +225,7 @@ function ProgressCard({ job, stopping, busy, onCancel }: { job: Job; stopping: b
   return <div className="progress-card" role="status">
     <span className="spinner" aria-hidden="true" />
     {stopping ? <div><strong>Stopping…</strong><p>Stopping {job.engine_name}. This takes a moment.</p></div>
-      : <div><strong>{job.status === 'not_started' ? `Waiting to start with ${job.engine_name}…` : `${verb} with ${job.engine_name}…`}</strong>
+      : <div><strong>{job.status === 'not_started' ? `Waiting to start with ${job.engine_name}${onAccount(job)}…` : `${verb} with ${job.engine_name}${onAccount(job)}…`}</strong>
         <p><Icon name="clock" /> <Elapsed since={job.started_at} /> · stops after {Math.round(job.timeout_seconds / 60)} min{place ? ` · ${place}` : ''}. You can leave this page; the run continues.</p></div>}
     <button className="secondary" disabled={busy || stopping} onClick={onCancel}>{stopping ? 'Stopping…' : 'Cancel'}</button>
   </div>
@@ -679,7 +683,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         </section>
 
         {scene.jobs.length > 0 && <details className="panel run-history"><summary>Engine runs ({scene.jobs.length})</summary>
-          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}{j.usage?.input_tokens != null ? ` · ${j.usage.input_tokens.toLocaleString()} in, ${(j.usage.output_tokens ?? 0).toLocaleString()} out tokens` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
+          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.account ? ` · ${accountName(j.account)}` : ''}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}{j.usage?.input_tokens != null ? ` · ${j.usage.input_tokens.toLocaleString()} in, ${(j.usage.output_tokens ?? 0).toLocaleString()} out tokens` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
             {j.job_folder && <button type="button" className="link-button" onClick={() => copyText(j.job_folder!, setMessage)}><Icon name="folder" /> Copy folder path</button>}</li>)}</ul>
         </details>}
       </div>

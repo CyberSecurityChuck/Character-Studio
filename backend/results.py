@@ -21,6 +21,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from backend.api_engines import engine_timeout
+from backend.cli_accounts import home_of, recorded
 from backend.configuration import asset_path
 from backend.engines import EngineError
 from backend.generation import (
@@ -312,11 +313,13 @@ def recover_images(request: Request, job_id: str):
         folder = asset_path(settings, job.job_folder)
         api = is_image_engine(job.engine)
         thread_id = None if api else job.provider_request_id or read_run(folder).thread_id
+        # Codex saves in the folder of the account the run used (Phase 8A).
+        home = None if api else home_of(settings, job.engine, recorded(job.settings_json)[0])
         known = known_hashes(session, job.id)
         mode = json.loads(job.settings_json or "{}").get("mode", "generate")
         session.expunge(job)
     found = 0
-    for path in saved_output(folder) if api else saved_images(thread_id):
+    for path in saved_output(folder) if api else saved_images(thread_id, home):
         try:
             payload = read_image_file(path)
         except (EngineError, OSError):

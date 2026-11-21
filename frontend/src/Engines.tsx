@@ -5,7 +5,7 @@ import { InfoTip } from './Controls'
 import { ModelPicker } from './ModelPicker'
 import { notify } from './Toast'
 
-type Status = { engine: string; name: string; installed: boolean; version: string | null; signed_in: boolean; plan: string | null; message: string }
+type Status = { engine: string; name: string; installed: boolean; version: string | null; signed_in: boolean; plan: string | null; message: string; account_id?: string; account_label?: string }
 type Purpose = 'analysis' | 'generation'
 type ImageOptions = { size: string; quality?: string }
 type Settings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number
@@ -77,7 +77,9 @@ const formatDate = (value: string) => new Date(value).toLocaleString(undefined, 
 
 function statusText(status: Status | undefined, checking: boolean) {
   if (!status) return checking ? 'Checking…' : 'Unknown'
-  return !status.installed ? 'Not installed' : status.signed_in ? `Ready${status.plan ? ` · ${status.plan}` : ''}` : 'Signed out'
+  // Phase 8A: the account new runs use, when it is not the usual sign-in.
+  const account = status.account_id && status.account_id !== 'default' ? ` · ${status.account_label}` : ''
+  return !status.installed ? 'Not installed' : status.signed_in ? `Ready${status.plan ? ` · ${status.plan}` : ''}${account}` : `Signed out${account}`
 }
 
 function ChoiceCard({ choice, name, checked, state, ready, onSelect }: { choice: Choice; name: string; checked: boolean; state?: string; ready?: boolean; onSelect: () => void }) {
@@ -101,7 +103,7 @@ function CliStatus({ name, status, checking, onCheck }: { name: string; status?:
   return <div className={`engine-status ${ready ? 'ready' : status ? 'attention' : ''}`}>
     <span className="status-dot" aria-hidden="true" />
     <div><strong>{name}</strong><span className="engine-state">{statusText(status, checking)}</span>
-      <p className="hint">{status?.version ?? (status?.installed === false ? 'Not installed on this PC' : '')}{status?.message ? ` · ${status.message}` : ''}</p></div>
+      <p className="hint">{status?.version ?? (status?.installed === false ? 'Not installed on this PC' : '')}{status?.message ? ` · ${status.message}` : ''}{status?.account_label ? ` · Account: ${status.account_id === 'default' ? 'Default (your usual sign-in)' : status.account_label}. Choose it under Subscription accounts.` : ''}</p></div>
     <button type="button" className="secondary compact" disabled={checking} onClick={onCheck}>{checking ? 'Checking…' : 'Check again'}</button>
   </div>
 }

@@ -1609,3 +1609,35 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
   .batch-rows .row-action { grid-column: 2 / -1; justify-content: flex-start; }
   .batch-rows .row-action:empty { display: none; }
 }
+
+/* Phase 8A: several Claude Code and Codex accounts (D041, D042). The Subscription accounts
+   panel in Studio settings, and the account picker on paused and finished cards. */
+.accounts-panel .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.account-group { margin-top: 20px; }
+.account-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.account-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.account-row.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--accent-soft); }
+.account-use { display: flex; align-items: center; justify-content: center; margin: 0; min-height: 0; cursor: pointer; }
+.account-use input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.account-use:has(input:disabled) { cursor: not-allowed; }
+.account-main { display: grid; gap: 4px; min-width: 0; }
+.account-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; overflow-wrap: anywhere; }
+.account-main .engine-card-state .hint { font-weight: 400; }
+.account-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.engine-tag.neutral { color: var(--muted); background: var(--welcome); border-color: var(--line); }
+.account-add { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.account-add input { flex: 1 1 auto; min-width: 0; max-width: 360px; }
+.account-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; }
+.account-switch > label:first-child { margin: 0; font-size: 13px; font-weight: 600; }
+.account-switch select { width: auto; min-width: 200px; max-width: 100%; }
+.account-switch .checkbox-label { margin: 0; min-height: 36px; font-size: 13px; }
+.account-switch .hint { flex-basis: 100%; }
+.run-card > .account-switch { margin: 4px 0 0; }
+.batch-card > .account-switch { margin: 0; }
+@media (max-width: 700px) {
+  .account-row { grid-template-columns: 22px minmax(0, 1fr); }
+  .account-actions { grid-column: 2; justify-content: flex-start; }
+  .account-add { flex-wrap: wrap; }
+  .account-add input { max-width: none; flex-basis: 100%; }
+}
+.account-switch .account-terms { color: var(--warn-text); }

@@ -308,6 +308,20 @@ Once the set has a run with images, a row of chips under the stage tiles shows h
 
 **View results** (on the Generate step, the run, the set header's ⋯ menu and the set card) opens the Results page with that set chosen. The Results page has a **Scene set** filter and **Group by scene**, which shows each scene's results under its name with Select (for Compare) and Open scene. Both are kept in the address.
 
+## Several Claude and ChatGPT accounts (Phase 8A)
+
+**Studio settings → Subscription accounts** lists your Claude Code and Codex sign-ins. **Default** is your usual sign-in and is always there, so nothing changes until you add another. To add one: type a name (for example "Claude – work") and click **Add account**, then **Sign in**. A window opens with the program's own sign-in; finish it in your browser (Claude Code may ask you to paste a code into the window). The row turns to "Signed in" by itself; if you closed the window, click **Open again**. Only one sign-in window per program at a time.
+
+Choose the account new runs use with its radio button; the choice saves at once and the engine panel's status names it. Every run records the account it was queued with, so changing the choice later does not move runs that are already waiting. Run history, the progress card and batch cards show the account (the Default account is shown in run history only).
+
+When a batch or a Generate all / Run everything run pauses (or you pause it), its card offers **Continue on** with your other signed-in accounts: the items that have not started move to the account you pick, and nothing that already ran is retried. **Also use for future runs** (unticked by default) also makes it the account for new runs. A finished batch or run offers the same choice for **Try failed again**.
+
+**Remove** asks first, then signs the account out with the program's own sign-out and deletes its folder; past runs keep its name. It is refused while runs are waiting on the account. Default cannot be removed.
+
+How it works: each extra account is a private folder in your data folder (`cli-accounts\`), and the studio starts `claude` with `CLAUDE_CONFIG_DIR` or `codex` with `CODEX_HOME` pointing at it. The program keeps its own sign-in there; the studio never opens, copies or stores it, and reads only "signed in" and the plan name from the program's status. These folders are never included in backups, and a restore keeps the ones on this PC (like API keys).
+
+Each account uses its own plan's allowance. Switch when an account is signed out, or to keep work and personal use apart. OpenAI's and Anthropic's terms don't allow using extra accounts just to get around usage limits, and accounts used that way can be restricted; when a limit is reached, waiting for it to reset is the safe choice. See `docs/PROVIDER_FINDINGS.md` (Phase 8 start).
+
 ## API engines (Phase 6A)
 
 **Optional.** Studio settings → **Analysis engine** → under *Pay per use* choose the **Gemini API** (Google AI Studio → Get API key), the **Anthropic API** (console.anthropic.com) or the **OpenAI API** (platform.openai.com). Its settings open below: paste the key and click **Save key**. Keys are stored only on this computer in `keys\` inside the data folder, encrypted for your Windows account. They are never shown again, never included in backups (a restore keeps them) and only sent to their own company. Saving a key also asks the company which models it can use (free) and keeps that list; **Test key** checks the key again and refreshes the list. Nothing is generated.

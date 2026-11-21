@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, getBootstrap, request, savePreferences, type Bootstrap } from './api'
 
+import { AccountsPanel } from './Accounts'
 import Backups from './Backups'
 import { BatchList } from './Batches'
 import Engines from './Engines'
@@ -202,6 +203,7 @@ export default function App() {
               </section>
               <section className="panel storage-panel" aria-labelledby="storage-title"><span className="tiny-label">LOCAL BY DEFAULT</span><h2 id="storage-title">Your files stay with you</h2><p>Application data lives separately from the source code.</p><label>Data folder</label><code>{data.data_directory}</code><p className="hint">Changing this location is a setup task: see the User Guide. Backups below cover everything in this folder that the studio manages.</p></section>
               <Engines token={data.session_token} />
+              <AccountsPanel token={data.session_token} />
               <PresetsPanel token={data.session_token} />
               <Backups token={data.session_token} />
             </div>}

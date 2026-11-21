@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-21 — Phase 8A: several Claude Code and Codex accounts
+
+- **Approved** ("Approve Phase 8"; D041 plan, D042 answers: 8A, 8B, 8C delivered separately; automatic switching in 8C only for unusable accounts or keys). Provider terms re-checked and a short check on this PC with the user signing in recorded in `docs/PROVIDER_FINDINGS.md` (separate `CLAUDE_CONFIG_DIR` / `CODEX_HOME` folders keep separate logins; status, sign-in and sign-out work per folder; the Codex test image was skipped, so images under a second account's folder are assumed until a first real run).
+- **Studio settings → Subscription accounts** (the user chose a separate panel): add, sign in (the CLI's own sign-in in a console window), rename, choose for new runs and remove (asks, signs out, deletes the folder) Claude Code and Codex accounts. Default is the usual sign-in.
+- Every CLI job and batch records the account it was queued with; runs set only that account's folder variable after cleaning the environment; Codex recovery looks in the job's account folder. A limit or sign-out pauses only batches on the same account.
+- **Continue on** another account on paused batch and run cards, and on **Try failed again**: not-started items move, nothing that ran is retried; **Also use for future runs** is unticked by default. A plan-limit pause adds a reminder about the providers' terms.
+- New `backend/cli_accounts.py`, `backend/accounts_api.py`, `frontend/src/Accounts.tsx`; account folders `<data dir>/cli-accounts/` are outside backups and kept on restore. No database migration. 185 tests pass (9 new in `tests/test_cli_accounts.py`). Review checklist: `Phase_Checks/Phase8A_Review_Checklist.html`.
+
 ## 2026-11-09 — Development notes kept off GitHub
 
 - With the user's approval, the AI work-session notes (plan, decision log, status and handoff notes, session instructions) no longer live in the repository; they stay on the developer's computer, and CI fails if one is committed again. README and the user guide no longer point to them, and the user guide's "Continuity and recovery" section is now **Recovery**. The continuity test checks those notes only when they are present.

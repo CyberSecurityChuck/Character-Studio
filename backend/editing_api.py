@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.api_engines import API_ENGINES, charge_confirmation, chosen_model, engine_timeout
+from backend.cli_accounts import home_of, recorded
 from backend.configuration import Settings, asset_path
 from backend.editing import (
     EDIT_OPTIONS,
@@ -211,7 +212,8 @@ def edit_output(settings: Settings, job: EngineJob, folder: Path) -> bytes | Non
     if saved.is_file():
         return saved.read_bytes()
     if job.engine == "codex_cli":
-        for path in saved_images(job.provider_request_id):
+        home = home_of(settings, "codex_cli", recorded(job.settings_json)[0])
+        for path in saved_images(job.provider_request_id, home):
             try:
                 return read_image_file(path)
             except (EngineError, OSError):

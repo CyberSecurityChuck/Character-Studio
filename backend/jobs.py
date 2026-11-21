@@ -29,6 +29,7 @@ from backend.api_engines import (
     run_analysis,
     run_structured,
 )
+from backend.cli_accounts import ACCOUNT_ENGINES, AccountError, account_env, home_of, recorded
 from backend.configuration import Settings, asset_path
 from backend.editing import (
     EDIT_OPTIONS,
@@ -97,13 +98,22 @@ RESTART_PAUSE_MESSAGE = (
 PAUSE_KINDS = ("usage_limit", "signed_out", "not_installed", "key_problem", "model_problem")
 
 
-def pause_batches(session, engine: str, kind: str, details: str, batch_id: str | None) -> None:
-    """Pause the job's own batch and every other running batch that uses the same engine."""
+def pause_batches(
+    session, engine: str, kind: str, details: str, batch_id: str | None, account: str | None = None
+) -> None:
+    """Pause the job's own batch and every other running batch that uses the same engine
+    and (subscription CLIs, Phase 8A) the same account: another account is not affected."""
     for batch in session.scalars(
         select(Batch).where(
             Batch.status == "running", or_(Batch.id == batch_id, Batch.engine == engine)
         )
     ):
+        if (
+            batch.id != batch_id
+            and engine in ACCOUNT_ENGINES
+            and recorded(batch.settings_json)[0] != (account or "default")
+        ):
+            continue
         batch.status = "paused"
         batch.pause_kind = kind
         batch.pause_details = details
@@ -282,7 +292,8 @@ class JobRunner:
         job.error_details = details
         job.finished_at = now()
         if status == "failed" and kind in PAUSE_KINDS:
-            pause_batches(session, job.engine, kind, details, job.batch_id)
+            account = recorded(job.settings_json)[0]
+            pause_batches(session, job.engine, kind, details, job.batch_id, account)
         session.flush()
         scene = session.get(Scene, job.scene_id)
         if scene is not None:
@@ -316,7 +327,8 @@ class JobRunner:
                 self._run_api_analysis(job_id, scene, engine, timeout, run_settings, batch_id)
                 return
             try:
-                version = require_ready(engine, overrides)
+                account, home = self._account(engine, run_settings)
+                version = require_ready(engine, overrides, account)
             except EngineError as error:
                 if batch_id is not None and error.kind in PAUSE_KINDS:
                     raise _NotSent(error) from error
@@ -325,7 +337,7 @@ class JobRunner:
             if self._cancel_requested(job_id):
                 raise _Stopped()
             if kind == "generation":
-                self._run_generation(job_id, timeout)
+                self._run_generation(job_id, timeout, account, home)
                 return
             if kind == "polish":
                 folder = prepare_polish_folder(self.settings, scene.id, instruction)
@@ -354,6 +366,7 @@ class JobRunner:
                 job_dir / output_name,
                 timeout,
                 should_stop=lambda: self._cancel_requested(job_id),
+                account=account,
             )
             if outcome.cancelled:
                 raise _Stopped()
@@ -391,7 +404,10 @@ class JobRunner:
                     self._finish(session, job, "cancelled", "cancelled", NOT_SENT_CANCEL)
                 else:
                     job.status, job.started_at = "not_started", None
-                    pause_batches(session, engine, stop.error.kind, stop.error.message, batch_id)
+                    account = recorded(job.settings_json)[0]
+                    pause_batches(
+                        session, engine, stop.error.kind, stop.error.message, batch_id, account
+                    )
                     scene = session.get(Scene, job.scene_id)
                     if scene is not None:
                         refresh_workflow(session, scene)
@@ -483,7 +499,8 @@ class JobRunner:
             require_key(self.settings, engine)
             version = model
         else:
-            version = require_ready(engine, self.settings.engine_commands)
+            account, _home = self._account(engine, run_settings)
+            version = require_ready(engine, self.settings.engine_commands, account)
         if self._cancel_requested(job_id):
             raise _Stopped()
         with Session(self.engine) as session:
@@ -532,7 +549,9 @@ class JobRunner:
                 images=names,
                 model=run_settings.get("model"),
             )
-            outcome = run_process(argv, job_dir, job_dir / output_name, timeout, should_stop=stop)
+            outcome = run_process(
+                argv, job_dir, job_dir / output_name, timeout, should_stop=stop, account=account
+            )
             if outcome.cancelled:
                 raise _Stopped()
             value = structured_reply(engine, job_dir, outcome, "try again later")
@@ -664,7 +683,8 @@ class JobRunner:
             require_key(self.settings, option.engine)
             version = model
         else:
-            version = require_ready("codex_cli", self.settings.engine_commands)
+            account, home = self._account("codex_cli", run_settings)
+            version = require_ready("codex_cli", self.settings.engine_commands, account)
         if self._cancel_requested(job_id):
             raise _Stopped()
         replace = run_settings["kind"] == "replace"
@@ -706,7 +726,9 @@ class JobRunner:
         usage = None
         try:
             if not option.charged:
-                payload = self._codex_edit(job_id, job_dir, files, instruction, timeout)
+                payload = self._codex_edit(
+                    job_id, job_dir, files, instruction, timeout, account, home
+                )
             elif option.engine == "bfl_api":
                 payload, usage = run_flux(
                     self.settings, option, files, mask, instruction, run_settings, job_dir,
@@ -738,7 +760,23 @@ class JobRunner:
             job.result_id = stored
             self._finish(session, job, "completed")
 
-    def _codex_edit(self, job_id, job_dir: Path, files: list[Path], instruction: str, timeout):
+    def _account(self, engine: str, run_settings: dict) -> tuple[dict[str, str], Path | None]:
+        """The profile folder variable of the account this run was queued with (Phase 8A)."""
+        account_id = run_settings.get("account")
+        try:
+            env = account_env(self.settings, engine, account_id)
+        except AccountError as error:
+            label = run_settings.get("account_label") or "it was queued for"
+            raise EngineError(
+                "signed_out",
+                f"The {ENGINE_NAMES[engine]} account \u201c{label}\u201d was removed, so "
+                "nothing was sent. Continue with another account, or start the run again.",
+            ) from error
+        return env, home_of(self.settings, engine, account_id)
+
+    def _codex_edit(
+        self, job_id, job_dir: Path, files: list[Path], instruction: str, timeout, account, home
+    ):
         """Codex edits from the instruction and the attached images (it takes no mask)."""
         attached = []
         for path in files:
@@ -757,16 +795,17 @@ class JobRunner:
             job_dir / "events.jsonl",
             timeout,
             should_stop=lambda: self._cancel_requested(job_id),
+            account=account,
         )
         thread_id = read_run(job_dir).thread_id
         if thread_id:
             self._update(job_id, provider_request_id=thread_id)
         if outcome.cancelled:
             raise _Stopped()
-        _output, found = interpret_generation(job_dir, outcome)
+        _output, found = interpret_generation(job_dir, outcome, home)
         return read_image_file(found[0])
 
-    def _run_generation(self, job_id: str, timeout: int) -> None:
+    def _run_generation(self, job_id: str, timeout: int, account, home) -> None:
         """One Codex image run from the approval recorded with the job (PLAN.md Phase 5)."""
         folder, images, instruction = self._generation_folder(job_id, api=False)
         self._update(job_id, job_folder=folder)
@@ -780,6 +819,7 @@ class JobRunner:
             job_dir / "events.jsonl",
             timeout,
             should_stop=lambda: self._cancel_requested(job_id),
+            account=account,
         )
         # Keep Codex's thread id whatever happened, so a saved image can be found later.
         thread_id = read_run(job_dir).thread_id
@@ -787,7 +827,7 @@ class JobRunner:
             self._update(job_id, provider_request_id=thread_id)
         if outcome.cancelled:
             raise _Stopped()
-        _output, found = interpret_generation(job_dir, outcome)
+        _output, found = interpret_generation(job_dir, outcome, home)
         with Session(self.engine) as session:
             job = session.get(EngineJob, job_id)
             session.expunge(job)

@@ -383,6 +383,8 @@ def test_manual_engine_setting_and_settings_validation(engine_client):
         "signed_in": True,
         "plan": "Pro",
         "message": "",
+        "account_id": "default",
+        "account_label": "Default",
     }
     assert "private@example.com" not in json.dumps(status)
     assert status["codex_cli"]["plan"] == "ChatGPT"

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AccountChoice, accountName, afterPick, pickBody, useCliAccounts, type AccountPick, type RunAccount } from './Accounts'
 import { request, send } from './api'
 import { ChargeSummary, engineNames, generationNames, isApiEngine, isImageEngine, useApiEngines } from './ApiEngines'
 import { Dialog, plural, pauseTitles, MAX_ANALYSIS_RUNS, MAX_GENERATION_RUNS } from './Batches'
@@ -10,7 +11,7 @@ import type { SceneSet } from './SceneSets'
 // also shows Generate all runs (Phase 7D, D039) with their pause summary and buttons.
 
 type Stopped = { scene_id: string; title: string; reason: string }
-type RunBatch = { id: string; kind: 'analysis' | 'generation'; state: string; pause_kind: string | null; total: number; done: number; failed: number; cancelled: number }
+type RunBatch = { id: string; kind: 'analysis' | 'generation'; engine: string; account: RunAccount | null; state: string; pause_kind: string | null; total: number; done: number; failed: number; cancelled: number }
 // What a run's images came to (Phase 7D): done, failed, interrupted, not started, and the pause.
 type Summary = { images: number; done: number; failed: number; interrupted: number; running: number; not_started: number; retryable: number; paused: { kind: string | null; details: string | null; at: string } | null }
 export type PipelineRun = {
@@ -169,6 +170,8 @@ function pauseLine(run: PipelineRun) {
 export function PipelineCard({ item, token, version, onChanged, onNotice, onOpenScene, onResults }: { item: SceneSet; token: string; version: string; onChanged: () => void; onNotice: (text: string, problem?: string) => void; onOpenScene: (id: string) => void; onResults?: () => void }) {
   const [run, setRun] = useState<PipelineRun | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pick, setPick] = useState<AccountPick>({ account_id: null, make_active: false })
+  const { byEngine } = useCliAccounts(false)
   const [hidden, setHidden] = useState(() => window.localStorage.getItem(`character-studio.run-hidden.${item.id}`) ?? '')
   const load = useCallback(() => request<Preview>(`/api/scene-sets/${item.id}/pipeline`).then(p => setRun(p.run), () => undefined), [item.id])
   useEffect(() => { void load() }, [load, version])
@@ -183,13 +186,22 @@ export function PipelineCard({ item, token, version, onChanged, onNotice, onOpen
   const open = ['running', 'paused', 'waiting'].includes(run.status)
   const paid = isImageEngine(run.rules.generation_engine) || (!!run.rules.analysis_engine && isApiEngine(run.rules.analysis_engine))
   const s = run.summary
+  // Phase 8A: which part of the run another account would take over, and from which account.
+  const pausedBatch = run.batches.find(b => b.state === 'paused')
+  const lastImages = [...run.batches].reverse().find(b => b.kind === 'generation')
+  const switchFrom = pausedNow(run) ? pausedBatch : s?.retryable ? lastImages : undefined
+  const picked = switchFrom && byEngine[switchFrom.engine]?.accounts.find(a => a.id === pick.account_id)
   async function act(path: 'continue' | 'cancel' | 'generate' | 'retry', question?: string) {
+    const moving = (path === 'continue' || path === 'retry') && !!picked
+    if (moving) question = `${question ?? `Continue ${name}?`} The ${path === 'retry' ? 'failed images run again' : 'waiting runs continue'} on ${accountName(picked!)}${pick.make_active ? ', which new runs will use too' : ' (this run only)'}.`
     if (question && !window.confirm(question)) return
     setBusy(true)
     try {
       const charge = path !== 'cancel' && paid
       if (charge && !window.confirm(path === 'retry' ? 'This uses a paid engine. Accept the charges for the failed images tried again?' : 'This uses a paid engine. Accept the charges for the remaining runs?')) { setBusy(false); return }
-      const next = await send<PipelineRun>(`/api/pipelines/${run!.id}/${path}`, 'POST', token, charge ? { confirm_charges: true } : {})
+      const body = { ...(charge ? { confirm_charges: true } : {}), ...(moving ? pickBody(pick, switchFrom!.engine) : {}) }
+      const next = await send<PipelineRun>(`/api/pipelines/${run!.id}/${path}`, 'POST', token, body)
+      if (moving) { afterPick(pick); setPick({ account_id: null, make_active: false }) }
       setRun(next); onChanged()
       onNotice(path === 'cancel' ? `${name} cancelled. Everything that finished is kept.` : path === 'generate' ? 'Generating the approved scenes, one image after another.'
         : path === 'retry' ? `Trying ${plural(s?.retryable ?? 0, 'failed image')} again, one after another.` : `${name} continues.`)
@@ -230,6 +242,7 @@ export function PipelineCard({ item, token, version, onChanged, onNotice, onOpen
     </dl>}
     {pauseLine(run) ?? (run.pause_details && <p className="notice-line">{run.pause_details}</p>)}
     {pausedNow(run) && <p className="hint">Nothing continues on its own. Click Continue when you are ready (for example after the plan’s limit resets); every batch of this run then goes on. What finished is kept.</p>}
+    {switchFrom && <AccountChoice engine={switchFrom.engine} current={switchFrom.account} verb={pausedNow(run) ? 'Continue' : 'Try failed again'} pick={pick} onPick={setPick} limit={pausedNow(run) && (switchFrom.pause_kind === 'usage_limit' || s?.paused?.kind === 'usage_limit')} />}
     {o.note && <p className="hint">{o.note}</p>}
     {!!s?.interrupted && !open && <p className="hint">Interrupted images were being made when the studio stopped; one may have been saved. Open the scene to look for a saved image or try it again there. Try failed again leaves them alone.</p>}
     {stopped.length > 0 && <details className="run-stopped"><summary>{plural(stopped.length, 'scene')} {run.kind === 'generate' ? 'not generated' : 'stopped at Needs your check'}</summary>

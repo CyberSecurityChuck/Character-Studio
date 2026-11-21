@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from backend import cli_accounts
 from backend.api_engines import charge_confirmation, engine_timeout, is_api_engine
 from backend.batches import (
     MAX_GENERATION_RUNS,
@@ -31,10 +32,13 @@ from backend.batches import (
     _check_engine,
     _generation_job,
     _require_generation_engine,
+    account_of,
     batch_state,
     cancel_waiting,
     retry_batch,
+    switch_account,
 )
+from backend.cli_accounts import ACCOUNT_ENGINES, recorded
 from backend.generation import MAX_GENERATION_INSTRUCTION, generation_instruction, snapshot_of
 from backend.image_api import is_image_engine, run_label
 from backend.models import (
@@ -122,6 +126,26 @@ class ChargeInput(BaseModel):
     confirm_charges: bool = False
 
 
+class ContinueInput(ChargeInput):
+    """Continue or Try failed again, optionally on another Claude Code or Codex account
+    (Phase 8A): `account_engine` says which engine's paused part moves to it."""
+
+    account_id: str | None = Field(default=None, min_length=1, max_length=40)
+    account_engine: str | None = Field(default=None, max_length=20)
+    make_active: bool = False
+
+
+def run_accounts(request, *engines: str | None) -> dict:
+    """The account each CLI engine of a new run uses, kept in its rules so the batches it
+    queues later (Run everything's images) use the same one."""
+    chosen = {}
+    for engine in engines:
+        if engine in ACCOUNT_ENGINES:
+            account = cli_accounts.active(request.app.state.settings, engine)
+            chosen[engine] = {"account": account["id"], "account_label": account["label"]}
+    return chosen
+
+
 class Stop(Exception):
     """This scene stops at Needs your check; the message says why."""
 
@@ -166,6 +190,8 @@ def run_data(session, run: PipelineRun) -> dict:
             {
                 "id": batch.id,
                 "kind": batch.kind,
+                "engine": batch.engine,
+                "account": account_of(batch),
                 "state": batch_state(batch, counts),
                 "pause_kind": batch.pause_kind,
                 "total": sum(counts.values()),
@@ -401,6 +427,9 @@ def start(request: Request, scene_set_id: str, body: RunInput):
                     "generation_engine": generation_engine,
                     "analysis_run": analysis_run,
                     "image_run": image_run,
+                    "accounts": run_accounts(
+                        request, analysis_engine if to_analyse else None, generation_engine
+                    ),
                 }
             ),
             outcome_json=json.dumps({"analyse": len(to_analyse)}),
@@ -615,6 +644,7 @@ def _queue_generation(session, run: PipelineRun, rules: dict, scene_ids: list[st
                     "count": images,
                     "mode": mode,
                     **rules["image_run"],
+                    **rules.get("accounts", {}).get(engine, {}),
                     **({"preset": rules["preset"]} if rules.get("preset") else {}),
                     "scene_set_id": run.scene_set_id,
                     "pipeline_id": run.id,
@@ -679,7 +709,7 @@ def generate(request: Request, run_id: str, body: ChargeInput | None = None):
 
 
 @router.post("/pipelines/{run_id}/continue")
-async def continue_run(request: Request, run_id: str, body: ChargeInput | None = None):
+async def continue_run(request: Request, run_id: str, body: ContinueInput | None = None):
     """Only the user continues a run that a restart (or an engine change) paused, or a run
     whose batches a plan limit, a sign-out or the user paused (one click for all of them)."""
     with Session(request.app.state.engine) as session:
@@ -690,10 +720,15 @@ async def continue_run(request: Request, run_id: str, body: ChargeInput | None =
         if not _continuable(run, paused):
             raise HTTPException(409, "This run is not paused.")
         engines = {b.engine for b in paused}
+        moved = _moved_engine(body, engines)
+        accounts = {
+            b.engine: (body.account_id if b.engine == moved else recorded(b.settings_json)[0])
+            for b in paused
+        }
     if any(is_api_engine(e) for e in engines) and not (body and body.confirm_charges):
         raise HTTPException(409, charge_confirmation(next(e for e in engines if is_api_engine(e))))
     for engine in engines:
-        await run_in_threadpool(_check_engine, request, engine)
+        await run_in_threadpool(_check_engine, request, engine, accounts.get(engine))
     with writing(request) as session:
         run = require_run(session, run_id)
         paused = [
@@ -704,6 +739,9 @@ async def continue_run(request: Request, run_id: str, body: ChargeInput | None =
         images = [b for b in paused if b.kind == "generation"]
         if images:
             _require_generation_engine(session.get(EngineSettings, 1), images[0])
+        if moved:
+            switch_account(request, session, [b for b in paused if b.engine == moved], moved, body)
+            _remember_account(run, moved, body.account_id, request)
         for batch in paused:
             batch.status, batch.pause_kind, batch.pause_details = "running", None, None
             batch.updated_at = now()
@@ -720,21 +758,53 @@ def _continuable(run: PipelineRun, paused: list[Batch]) -> bool:
     return run.status == "paused" or (run.status == "running" and bool(paused))
 
 
+def _moved_engine(body: "ContinueInput | None", engines: set[str]) -> str | None:
+    """The engine whose paused batches move to the account the user chose, if any."""
+    if body is None or body.account_id is None:
+        return None
+    engine = body.account_engine or (next(iter(engines)) if len(engines) == 1 else None)
+    if engine not in ACCOUNT_ENGINES or engine not in engines:
+        raise HTTPException(422, "Choose which engine's paused part should use that account.")
+    return engine
+
+
+def _remember_account(run: PipelineRun, engine: str, account_id: str, request) -> None:
+    """Later batches of this run (Run everything's images) use the chosen account too."""
+    account = cli_accounts.find(request.app.state.settings, engine, account_id)
+    if account is None:
+        return
+    rules = json.loads(run.rules_json)
+    rules.setdefault("accounts", {})[engine] = {
+        "account": account["id"],
+        "account_label": account["label"],
+    }
+    run.rules_json = json.dumps(rules)
+
+
 @router.post("/pipelines/{run_id}/retry", status_code=202)
-def retry(request: Request, run_id: str, body: ChargeInput | None = None):
+async def retry(request: Request, run_id: str, body: ContinueInput | None = None):
     """Try failed again for a whole run: the user's explicit choice, never automatic. Each
-    failed image is queued once more as a new item in its own batch."""
+    failed image is queued once more as a new item in its own batch, on the run's account
+    or (Phase 8A) another one the user chose."""
+    with Session(request.app.state.engine) as session:
+        engine = json.loads(require_run(session, run_id).rules_json)["generation_engine"]
+    if is_image_engine(engine) and not (body and body.confirm_charges):
+        raise HTTPException(409, charge_confirmation(engine))
+    moving = body is not None and body.account_id is not None
+    if moving:
+        if engine not in ACCOUNT_ENGINES:
+            raise HTTPException(422, "Only Claude Code and Codex runs can change account.")
+        await run_in_threadpool(_check_engine, request, engine, body.account_id)
     with writing(request) as session:
         run = require_run(session, run_id)
         if run.status != "finished":
             raise HTTPException(409, "Wait until the run has finished, then try again.")
-        engine = json.loads(run.rules_json)["generation_engine"]
-        if is_image_engine(engine) and not (body and body.confirm_charges):
-            raise HTTPException(409, charge_confirmation(engine))
+        if moving:
+            _remember_account(run, engine, body.account_id, request)
         added, skipped = 0, []
         for batch in run_batches(session, run.id, "generation"):
             if any(j.status == "failed" for j in live_jobs(session, [batch])):
-                more, missed = retry_batch(session, batch)
+                more, missed = retry_batch(session, batch, request, body if moving else None)
                 added, skipped = added + more, skipped + missed
         if not added:
             reasons = "; ".join(f"{s['title']}: {s['reason']}" for s in skipped[:5])

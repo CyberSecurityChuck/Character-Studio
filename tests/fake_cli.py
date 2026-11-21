@@ -17,13 +17,24 @@ mode = os.environ.get("FAKE_CLI_MODE", "ok")
 mode_file = os.environ.get("FAKE_CLI_MODE_FILE")
 if mode_file and os.path.isfile(mode_file):
     mode = Path(mode_file).read_text(encoding="utf-8").strip() or mode
+# Phase 8A: an account's profile folder (CLAUDE_CONFIG_DIR / CODEX_HOME inside the studio's
+# cli-accounts folder) is signed in once `auth login` / `login` ran with it; a `fake-mode`
+# file there sets that account's behaviour.
+home = os.environ.get("CLAUDE_CONFIG_DIR" if program == "claude" else "CODEX_HOME")
+profile = Path(home) if home and "cli-accounts" in home else None
+if profile is not None:
+    if (profile / "fake-mode").is_file():
+        mode = (profile / "fake-mode").read_text(encoding="utf-8").strip() or mode
+    elif not (profile / "fake-login").is_file():
+        mode = "signed_out"
 log = os.environ.get("FAKE_CLI_LOG")
 if log:
     with open(log, "a", encoding="utf-8") as file:
         leaked = sorted(
             key
             for key in os.environ
-            if key.startswith(("CLAUDE", "ANTHROPIC")) or key in {"OPENAI_API_KEY", "CODEX_API_KEY"}
+            if (key.startswith(("CLAUDE", "ANTHROPIC")) and key != "CLAUDE_CONFIG_DIR")
+            or key in {"OPENAI_API_KEY", "CODEX_API_KEY"}
         )
         file.write(
             json.dumps(
@@ -32,6 +43,7 @@ if log:
                     "args": args,
                     "cwd": os.getcwd(),
                     "leaked": leaked,
+                    "profile": str(profile) if profile else None,
                     "stdin_closed": sys.stdin.read() == "",
                 }
             )
@@ -58,6 +70,17 @@ def fake_check(instruction: str) -> dict:
 
 if args == ["--version"]:
     print("2.1.296 (Claude Code)" if program == "claude" else "codex-cli 0.162.1")
+    sys.exit(0)
+if args in (["auth", "login"], ["login"]):
+    if profile is not None:
+        profile.mkdir(parents=True, exist_ok=True)
+        (profile / "fake-login").write_text("signed in", encoding="utf-8")
+    print("Login successful.")
+    sys.exit(0)
+if args in (["auth", "logout"], ["logout"]):
+    if profile is not None:
+        (profile / "fake-login").unlink(missing_ok=True)
+    print("Successfully logged out")
     sys.exit(0)
 if args == ["auth", "status"]:
     print(

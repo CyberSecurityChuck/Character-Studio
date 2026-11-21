@@ -44,6 +44,7 @@ from backend.backup_crypto import (
     encrypt_file,
     is_encrypted,
 )
+from backend.cli_accounts import ACCOUNT_DIRECTORY
 from backend.configuration import ASSET_DIRECTORIES, Settings, asset_path
 from backend.keystore import KEY_DIRECTORY
 from backend.models import Character, GenerationResult, ReferencePhoto, Scene
@@ -355,6 +356,9 @@ def restore_backup(path: Path, data_dir: Path) -> tuple[Path, Path | None]:
     if previous is not None and (previous / KEY_DIRECTORY).is_dir():
         # API keys are never in backups (Phase 6A); keep the ones saved on this PC.
         (previous / KEY_DIRECTORY).rename(data_dir / KEY_DIRECTORY)
+    if previous is not None and (previous / ACCOUNT_DIRECTORY).is_dir():
+        # Nor are the CLI accounts' profile folders (Phase 8A): keep this PC's sign-ins.
+        (previous / ACCOUNT_DIRECTORY).rename(data_dir / ACCOUNT_DIRECTORY)
     return data_dir, previous
 
 

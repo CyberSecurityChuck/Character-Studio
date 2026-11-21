@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { AccountChoice, accountName, afterPick, pickBody, useCliAccounts, type AccountPick, type RunAccount } from './Accounts'
 import { request, send } from './api'
 import { ChargeSummary, engineNames, generationNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { PresetSelect, usePresets } from './Presets'
@@ -11,6 +12,7 @@ export type Batch = {
   id: string; kind: 'analysis' | 'generation'; engine: string; engine_name: string; status: string
   state: 'running' | 'pausing' | 'paused' | 'cancelling' | 'cancelled' | 'finished'
   pause_kind: string | null; pause_details: string | null; settings: { count?: number; mode?: string; part?: number; of?: number }
+  account: RunAccount | null
   created_at: string; updated_at: string; counts: Record<'not_started' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted', number>
   total: number; scene_count: number; retryable: number; average_seconds: number | null; estimate_seconds: number | null; items: BatchItem[]
 }
@@ -77,6 +79,9 @@ function ItemStatus({ item, batch }: { item: BatchItem; batch: Batch }) {
 function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { batch: Batch; token: string; onChanged: () => void; onOpenScene?: (id: string, step: string) => void; highlight?: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pick, setPick] = useState<AccountPick>({ account_id: null, make_active: false })
+  const { byEngine } = useCliAccounts(false)
+  const picked = byEngine[batch.engine]?.accounts.find(a => a.id === pick.account_id)
   const { counts } = batch
   const remaining = counts.not_started
   const problems = counts.failed + counts.interrupted
@@ -88,10 +93,18 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
   async function act(path: string, method = 'POST', question?: string) {
     if (question && !window.confirm(question)) return
     setBusy(true); setError('')
-    try { await send(`/api/batches/${batch.id}${path}`, method, token, charged && ['/continue', '/retry'].includes(path) ? { confirm_charges: true } : undefined); onChanged() }
+    const moving = ['/continue', '/retry'].includes(path)
+    const body = moving ? { ...(charged ? { confirm_charges: true } : {}), ...pickBody(pick) } : undefined
+    try {
+      await send(`/api/batches/${batch.id}${path}`, method, token, body && Object.keys(body).length ? body : undefined)
+      if (moving) { afterPick(pick); setPick({ account_id: null, make_active: false }) }
+      onChanged()
+    }
     catch (e) { setError(e instanceof Error ? e.message : 'That did not work. Reload and try again.') }
     finally { setBusy(false) }
   }
+  // Phase 8A: the account the waiting or retried items will use, in the confirmation.
+  const onAccount = picked ? ` They run on ${accountName(picked)}${pick.make_active ? ', which new runs will use too' : ' (this batch only)'}.` : ''
   async function cancelRun(item: BatchItem) {
     if (!window.confirm(`Cancel the ${what} that is running for “${item.scene_title}”? It may already have used some allowance.`)) return
     setBusy(true); setError('')
@@ -105,7 +118,7 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
   return <article className={`batch-card ${batch.state}`} aria-label={`${batch.kind === 'generation' ? 'Generation' : 'Analysis'} batch`}>
     <div className="batch-head">
       <div><strong>{batch.kind === 'generation' ? `Generate ${runs(batch.total)}` : `Analyse ${plural(batch.total, 'scene')}`}</strong>
-        <span className="hint"> · {batch.engine_name}{part} · {batch.kind === 'generation' && batch.scene_count > 1 ? `${plural(batch.scene_count, 'scene')} · ` : ''}{batch.settings.mode === 'variation' ? 'variations · ' : ''}{formatDate(batch.created_at)}</span></div>
+        <span className="hint"> · {batch.engine_name}{batch.account && batch.account.id !== 'default' ? ` · ${accountName(batch.account)}` : ''}{part} · {batch.kind === 'generation' && batch.scene_count > 1 ? `${plural(batch.scene_count, 'scene')} · ` : ''}{batch.settings.mode === 'variation' ? 'variations · ' : ''}{formatDate(batch.created_at)}</span></div>
       <span className={`batch-state ${batch.state}`}>{stateLabels[batch.state]}</span>
     </div>
     <div className="batch-progress">
@@ -126,8 +139,10 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
     {batch.state === 'paused' && batch.pause_kind && <div className="check-box warning batch-paused">
       <strong>{(pauseTitles[batch.pause_kind] ?? pauseTitles.user)(engineNames[batch.engine] ?? batch.engine_name, batch.engine)}</strong>
       {batch.pause_details && <p>{batch.pause_details}</p>}
-      <p>{plural(remaining, 'item')} {remaining === 1 ? 'is' : 'are'} waiting. Nothing continues on its own{batch.pause_kind === 'usage_limit' ? '; wait until your limit resets, then continue' : batch.pause_kind === 'signed_out' ? '; sign in again, then continue' : batch.pause_kind === 'key_problem' || batch.pause_kind === 'model_problem' ? '; check the key and model in Studio settings, then continue' : ''}.</p>
+      <p>{plural(remaining, 'item')} {remaining === 1 ? 'is' : 'are'} waiting. Nothing continues on its own{batch.pause_kind === 'usage_limit' ? '; wait until your limit resets, then continue' : batch.pause_kind === 'signed_out' ? '; sign in again or choose another account, then continue' : batch.pause_kind === 'key_problem' || batch.pause_kind === 'model_problem' ? '; check the key and model in Studio settings, then continue' : ''}.</p>
+      <AccountChoice engine={batch.engine} current={batch.account} verb="Continue" pick={pick} onPick={setPick} limit={batch.pause_kind === 'usage_limit'} />
     </div>}
+    {!isActive(batch) && batch.retryable > 0 && <AccountChoice engine={batch.engine} current={batch.account} verb="Try failed again" pick={pick} onPick={setPick} />}
     {batch.state === 'pausing' && <p className="hint">The run in progress finishes first; nothing new starts after it.</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
     <ol className={`batch-rows${counts.running ? ' has-action' : ''}`}>{batch.items.map(item => <li key={item.job_id} className={`row-${item.status} ${highlight && item.scene_title?.toLocaleLowerCase().includes(highlight.toLocaleLowerCase()) ? 'row-match' : ''}`}>
@@ -142,11 +157,11 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
     <div className="batch-actions">
       {batch.state === 'running' && <button type="button" className="secondary compact" disabled={busy} onClick={() => void act('/pause')}>Pause</button>}
       {batch.state === 'paused' && <button type="button" className="compact" disabled={busy}
-        onClick={() => void act('/continue', 'POST', `Continue the batch? ${runs(remaining)} ${remaining === 1 ? 'runs' : 'run'} one after another, using ${allowance[batch.engine]}.${chargeLine}`)}>Continue</button>}
+        onClick={() => void act('/continue', 'POST', `Continue the batch? ${runs(remaining)} ${remaining === 1 ? 'runs' : 'run'} one after another, using ${allowance[batch.engine]}.${onAccount}${chargeLine}`)}>Continue</button>}
       {['running', 'pausing', 'paused'].includes(batch.state) && remaining > 0 && <button type="button" className="danger secondary compact" disabled={busy}
         onClick={() => void act('/cancel', 'POST', `Cancel the ${plural(remaining, 'item')} that ${remaining === 1 ? 'has' : 'have'} not started? Nothing is sent for them.${counts.running ? ' The run in progress continues; you can cancel it in the list below.' : ''}`)}>Cancel remaining</button>}
       {!isActive(batch) && batch.retryable > 0 && <button type="button" className="secondary compact" disabled={busy}
-        onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.${chargeLine}`)}>Try failed again ({batch.retryable})</button>}
+        onClick={() => void act('/retry', 'POST', `Try the ${plural(batch.retryable, 'failed item')} again? This starts ${plural(batch.retryable, 'new run')}, using ${allowance[batch.engine]}. Earlier attempts and results are kept.${onAccount}${chargeLine}`)}>Try failed again ({batch.retryable})</button>}
       {!isActive(batch) && <button type="button" className="link-button" disabled={busy} onClick={() => void act('', 'DELETE', 'Remove this batch from the history? Its runs, images and each scene’s own run history are kept; only this batch card goes.')}>Remove from history</button>}
     </div>
   </article>

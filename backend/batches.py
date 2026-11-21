@@ -17,12 +17,14 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from backend import cli_accounts
 from backend.api_engines import (
     API_ENGINES,
     charge_confirmation,
     engine_timeout,
     is_api_engine,
 )
+from backend.cli_accounts import ACCOUNT_ENGINES, AccountError
 from backend.engines import ENGINE_NAMES, SIGN_IN_HELP, engine_status
 from backend.generation import (
     MAX_GENERATION_INSTRUCTION,
@@ -84,6 +86,45 @@ class AnalysisBatchInput(BaseModel):
 class ChargeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_charges: bool = False
+    # Continue / Try failed again on another Claude Code or Codex account (Phase 8A). The
+    # not-started items move to it; `make_active` also uses it for new runs (D042).
+    account_id: str | None = Field(default=None, min_length=1, max_length=40)
+    make_active: bool = False
+
+
+def account_of(batch) -> dict | None:
+    """The account a CLI batch runs on, for its card; None for other engines."""
+    if batch.engine not in ACCOUNT_ENGINES:
+        return None
+    account_id, label = cli_accounts.recorded(batch.settings_json)
+    return {"id": account_id, "label": label}
+
+
+def switch_account(request, session, batches: list, engine: str, body: "ChargeInput | None"):
+    """The user's choice of another account for these batches: their not-started items move
+    to it. Nothing that already ran is touched or retried."""
+    if body is None or body.account_id is None:
+        return
+    if engine not in ACCOUNT_ENGINES:
+        raise HTTPException(422, "Only Claude Code and Codex runs can change account.")
+    settings = request.app.state.settings
+    account = cli_accounts.find(settings, engine, body.account_id)
+    if account is None:
+        raise HTTPException(409, "That account no longer exists. Reload the page.")
+    for batch in batches:
+        cli_accounts.move(batch, account)
+        batch.updated_at = now()
+        for job in session.scalars(
+            select(EngineJob).where(
+                EngineJob.batch_id == batch.id, EngineJob.status == "not_started"
+            )
+        ):
+            cli_accounts.move(job, account)
+    if body.make_active:
+        try:
+            cli_accounts.choose(settings, engine, account["id"])
+        except AccountError as error:
+            raise HTTPException(409, str(error)) from error
 
 
 class GenerationItem(BaseModel):
@@ -173,7 +214,12 @@ def batch_data(session, batch: Batch) -> dict:
         "state": batch_state(batch, counts),
         "pause_kind": batch.pause_kind,
         "pause_details": batch.pause_details,
-        "settings": json.loads(batch.settings_json),
+        "account": account_of(batch),
+        "settings": {
+            k: v
+            for k, v in json.loads(batch.settings_json).items()
+            if k not in ("account", "account_label")
+        },
         "created_at": batch.created_at,
         "updated_at": batch.updated_at,
         "counts": counts,
@@ -465,7 +511,7 @@ def _generation_job(
     settings = {"mode": mode} | ({"retry_of": retry_of} if retry_of else {})
     chosen = json.loads(batch.settings_json)
     # API image runs keep the model, size and quality the batch was confirmed with.
-    for name in ("preset", "model", "size", "quality"):
+    for name in ("preset", "model", "size", "quality", "account", "account_label"):
         if chosen.get(name):
             settings[name] = chosen[name]
     return EngineJob(
@@ -507,31 +553,55 @@ def pause(request: Request, batch_id: str):
         return batch_data(session, batch)
 
 
-def _check_engine(request, engine: str) -> None:
+def _check_engine(request, engine: str, account_id: str | None = None) -> None:
+    """Before continuing: a key is saved, or the CLI account the items will use is signed in."""
     if is_api_engine(engine):
         if not key_info(request.app.state.settings, engine)["saved"]:
             raise HTTPException(
                 409, f"No {API_ENGINES[engine].name} key is saved. Add one, then continue."
             )
         return
-    status = engine_status(engine, request.app.state.settings.engine_commands)
+    settings = request.app.state.settings
+    account = cli_accounts.find(settings, engine, account_id)
+    if account is None:
+        raise HTTPException(
+            409,
+            f"The {ENGINE_NAMES[engine]} account this batch used was removed. Choose another "
+            "account to continue.",
+        )
+    env = cli_accounts.account_env(settings, engine, account["id"])
+    status = engine_status(engine, settings.engine_commands, env)
     name = ENGINE_NAMES[engine]
     if not status["installed"]:
         raise HTTPException(409, f"{status['message']} Install it, then continue the batch.")
     if not status["signed_in"]:
+        if not account["default"]:
+            raise HTTPException(
+                409,
+                f"{name} account “{account['label']}” is signed out. Sign it in under "
+                "Studio settings → Subscription accounts, or choose another account.",
+            )
         raise HTTPException(
             409, f"{name} is still signed out. {SIGN_IN_HELP[engine]}, then continue."
         )
+
+
+def target_account(batch, body: "ChargeInput | None") -> str | None:
+    """The account a continued batch will run on: the one chosen now, else its own."""
+    if body is not None and body.account_id:
+        return body.account_id
+    return cli_accounts.recorded(batch.settings_json)[0]
 
 
 @router.post("/batches/{batch_id}/continue")
 async def continue_batch(request: Request, batch_id: str, body: ChargeInput | None = None):
     """Only the user continues a paused batch; sign-in is checked first (nothing is sent)."""
     with Session(request.app.state.engine) as session:
-        engine = require_batch(session, batch_id).engine
+        batch = require_batch(session, batch_id)
+        engine, account_id = batch.engine, target_account(batch, body)
     if is_api_engine(engine) and not (body and body.confirm_charges):
         raise HTTPException(409, charge_confirmation(engine))
-    await run_in_threadpool(_check_engine, request, engine)
+    await run_in_threadpool(_check_engine, request, engine, account_id)
     with writing(request) as session:
         batch = require_batch(session, batch_id)
         if batch.status != "paused":
@@ -544,6 +614,7 @@ async def continue_batch(request: Request, batch_id: str, body: ChargeInput | No
             raise HTTPException(409, "Nothing is left to run in this batch.")
         if batch.kind == "generation":
             _require_generation_engine(session.get(EngineSettings, 1), batch)
+        switch_account(request, session, [batch], engine, body)
         batch.status, batch.pause_kind, batch.pause_details = "running", None, None
         batch.updated_at = now()
         # A batch of Run everything that a restart paused: continuing it continues the run.
@@ -590,13 +661,19 @@ def cancel_waiting(session, batch: Batch) -> None:
 
 
 @router.post("/batches/{batch_id}/retry", status_code=202)
-def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = None):
-    """The user's explicit choice to run failed items once more, as new items."""
+async def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = None):
+    """The user's explicit choice to run failed items once more, as new items, on the
+    batch's account or (Phase 8A) another one the user chose."""
+    with Session(request.app.state.engine) as session:
+        batch = require_batch(session, batch_id)
+        engine, account_id = batch.engine, target_account(batch, body)
+    if is_api_engine(engine) and not (body and body.confirm_charges):
+        raise HTTPException(409, charge_confirmation(engine))
+    if body is not None and body.account_id:
+        await run_in_threadpool(_check_engine, request, engine, account_id)
     with writing(request) as session:
         batch = require_batch(session, batch_id)
-        if is_api_engine(batch.engine) and not (body and body.confirm_charges):
-            raise HTTPException(409, charge_confirmation(batch.engine))
-        added, skipped = retry_batch(session, batch)
+        added, skipped = retry_batch(session, batch, request, body)
         if not added:
             raise _nothing_queued(skipped)
         result = {"batch": batch_data(session, batch), "skipped": skipped}
@@ -604,7 +681,7 @@ def retry_failed(request: Request, batch_id: str, body: ChargeInput | None = Non
     return result
 
 
-def retry_batch(session, batch: Batch) -> tuple[int, list[dict]]:
+def retry_batch(session, batch: Batch, request=None, body=None) -> tuple[int, list[dict]]:
     """Queue the batch's failed items once more as new items; returns (added, skipped).
 
     Also used by a run's Try failed again (Phase 7D). Interrupted items are not included:
@@ -620,6 +697,9 @@ def retry_batch(session, batch: Batch) -> tuple[int, list[dict]]:
     settings = session.get(EngineSettings, 1)
     if batch.kind == "generation":
         _require_generation_engine(settings, batch)
+    if request is not None:
+        # The new items then copy the batch's (possibly new) account.
+        switch_account(request, session, [batch], batch.engine, body)
     stamp, position = now(), max(j.batch_position or 0 for j in items) + 1
     skipped, added, scenes = [], 0, set()
     for job in failed:

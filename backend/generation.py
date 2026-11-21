@@ -228,10 +228,17 @@ def generation_command(command: list[str], job_dir: Path, images: list[Path], in
     ]
 
 
-def codex_images_root() -> Path:
-    """Where Codex saves built-in generations (Phase 2.5): <CODEX_HOME>/generated_images."""
-    home = os.environ.get("CODEX_HOME")
-    return (Path(home) if home else Path.home() / ".codex") / "generated_images"
+def codex_images_root(home: Path | None = None) -> Path:
+    """Where Codex saves built-in generations (Phase 2.5): <CODEX_HOME>/generated_images.
+
+    `home` is the profile folder of the account the run used (Phase 8A); None is the
+    Default account. That Codex saves there for a second account too is assumed, not yet
+    seen in a real run (docs/PROVIDER_FINDINGS.md, Phase 8 start).
+    """
+    if home is None:
+        default = os.environ.get("CODEX_HOME")
+        home = Path(default) if default else Path.home() / ".codex"
+    return home / "generated_images"
 
 
 @dataclass
@@ -263,15 +270,15 @@ def read_run(job_dir: Path) -> RunOutput:
     return RunOutput(thread_id, message, errors)
 
 
-def _thread_folder(thread_id: str | None) -> Path | None:
+def _thread_folder(thread_id: str | None, home: Path | None = None) -> Path | None:
     if not thread_id or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", thread_id):
         return None
-    return (codex_images_root() / thread_id).resolve()
+    return (codex_images_root(home) / thread_id).resolve()
 
 
-def reported_images(output: RunOutput) -> list[Path]:
+def reported_images(output: RunOutput, home: Path | None = None) -> list[Path]:
     """Image paths named in the final message that really are inside this run's folder."""
-    folder = _thread_folder(output.thread_id)
+    folder = _thread_folder(output.thread_id, home)
     if folder is None:
         return []
     found = []
@@ -285,9 +292,9 @@ def reported_images(output: RunOutput) -> list[Path]:
     return found
 
 
-def saved_images(thread_id: str | None) -> list[Path]:
+def saved_images(thread_id: str | None, home: Path | None = None) -> list[Path]:
     """Recovery only: every image in this run's own folder (never the whole directory)."""
-    folder = _thread_folder(thread_id)
+    folder = _thread_folder(thread_id, home)
     if folder is None or not folder.is_dir():
         return []
     return sorted(
@@ -296,11 +303,13 @@ def saved_images(thread_id: str | None) -> list[Path]:
     )
 
 
-def interpret_generation(job_dir: Path, outcome: ProcessOutcome) -> tuple[RunOutput, list[Path]]:
+def interpret_generation(
+    job_dir: Path, outcome: ProcessOutcome, home: Path | None = None
+) -> tuple[RunOutput, list[Path]]:
     """Return the run's output and its images, or raise EngineError. Exit codes are ignored."""
     _check_timeout("codex_cli", outcome, "export the package for manual use")
     output = read_run(job_dir)
-    images = reported_images(output)
+    images = reported_images(output, home)
     if images:
         return output, images
     problem = (output.errors[-1] if output.errors else "") or output.message

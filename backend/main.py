@@ -9,12 +9,14 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from backend.accounts_api import router as accounts_router
 from backend.api_engines import API_ENGINES
 from backend.api_settings import router as api_settings_router
 from backend.backup import BackupRunner, clean_partial
 from backend.backups_api import router as backups_router
 from backend.batches import router as batches_router
 from backend.bulk_approval import router as bulk_approval_router
+from backend.cli_accounts import register as register_accounts
 from backend.configuration import Settings, load_settings
 from backend.editing_api import router as editing_router
 from backend.generate_all import router as generate_all_router
@@ -41,6 +43,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.engine = open_database(settings)
         app.state.settings = settings
+        # New CLI jobs and batches record the account they are queued with (Phase 8A).
+        register_accounts(app.state.engine, settings)
         clean_deleted_files(app.state.engine, settings)
         backfill_photo_hashes(app.state.engine, settings)
         # Runs left over from a previous process are never resumed (DECISIONS.md D010).
@@ -167,6 +171,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(backups_router)
     app.include_router(batches_router)
     app.include_router(api_settings_router)
+    app.include_router(accounts_router)
     app.include_router(quality_router)
     app.include_router(editing_router)
 
