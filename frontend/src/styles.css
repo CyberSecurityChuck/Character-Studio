@@ -1614,8 +1614,10 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
    the accounts sit inside each engine panel's details; the picker on paused and finished
    cards continues a run on another account. */
 .account-picker { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
-.account-head { align-items: center; margin-bottom: 0; }
-.account-head .hint { flex: 1 1 260px; }
+/* 8B review: heading and hint share one text line (the hint's own top margin pushed it down). */
+.account-head { align-items: baseline; margin-bottom: 0; }
+.account-head .hint { flex: 1 1 260px; margin: 0; }
+.account-head .info-tip { align-self: center; }
 .account-picker .account-row { background: var(--surface); }
 .account-picker .account-row.active { background: var(--accent-soft); }
 .account-picker > .hint { margin: 0; }
