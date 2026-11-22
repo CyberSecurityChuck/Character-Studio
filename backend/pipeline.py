@@ -135,15 +135,21 @@ class ContinueInput(ChargeInput):
     make_active: bool = False
 
 
-def run_accounts(request, *engines: str | None) -> dict:
-    """The account each CLI engine of a new run uses, kept in its rules so the batches it
-    queues later (Run everything's images) use the same one."""
+def run_accounts(request, analysis_engine: str | None, generation_engine: str | None) -> dict:
+    """The account each part of a new run uses, per purpose (D044), kept in its rules so the
+    batches it queues later (Run everything's images) use the same one."""
     chosen = {}
-    for engine in engines:
+    for purpose, engine in (("analysis", analysis_engine), ("generation", generation_engine)):
         if engine in ACCOUNT_ENGINES:
-            account = cli_accounts.active(request.app.state.settings, engine)
-            chosen[engine] = {"account": account["id"], "account_label": account["label"]}
+            account = cli_accounts.active(request.app.state.settings, engine, purpose)
+            chosen[purpose] = {"account": account["id"], "account_label": account["label"]}
     return chosen
+
+
+def rules_account(rules: dict, purpose: str, engine: str) -> dict:
+    """The account a run's rules keep for one part; runs from before D044 kept it per engine."""
+    accounts = rules.get("accounts", {})
+    return accounts.get(purpose) or accounts.get(engine) or {}
 
 
 class Stop(Exception):
@@ -644,7 +650,7 @@ def _queue_generation(session, run: PipelineRun, rules: dict, scene_ids: list[st
                     "count": images,
                     "mode": mode,
                     **rules["image_run"],
-                    **rules.get("accounts", {}).get(engine, {}),
+                    **rules_account(rules, "generation", engine),
                     **({"preset": rules["preset"]} if rules.get("preset") else {}),
                     "scene_set_id": run.scene_set_id,
                     "pipeline_id": run.id,
@@ -741,7 +747,8 @@ async def continue_run(request: Request, run_id: str, body: ContinueInput | None
             _require_generation_engine(session.get(EngineSettings, 1), images[0])
         if moved:
             switch_account(request, session, [b for b in paused if b.engine == moved], moved, body)
-            _remember_account(run, moved, body.account_id, request)
+            kinds = {b.kind for b in paused if b.engine == moved}
+            _remember_account(run, moved, body.account_id, request, kinds)
         for batch in paused:
             batch.status, batch.pause_kind, batch.pause_details = "running", None, None
             batch.updated_at = now()
@@ -768,16 +775,19 @@ def _moved_engine(body: "ContinueInput | None", engines: set[str]) -> str | None
     return engine
 
 
-def _remember_account(run: PipelineRun, engine: str, account_id: str, request) -> None:
-    """Later batches of this run (Run everything's images) use the chosen account too."""
+def _remember_account(
+    run: PipelineRun, engine: str, account_id: str, request, kinds: set[str]
+) -> None:
+    """Later batches of this run's moved parts (Run everything's images) use it too."""
     account = cli_accounts.find(request.app.state.settings, engine, account_id)
     if account is None:
         return
     rules = json.loads(run.rules_json)
-    rules.setdefault("accounts", {})[engine] = {
-        "account": account["id"],
-        "account_label": account["label"],
-    }
+    for kind in kinds:
+        rules.setdefault("accounts", {})[kind] = {
+            "account": account["id"],
+            "account_label": account["label"],
+        }
     run.rules_json = json.dumps(rules)
 
 
@@ -800,7 +810,7 @@ async def retry(request: Request, run_id: str, body: ContinueInput | None = None
         if run.status != "finished":
             raise HTTPException(409, "Wait until the run has finished, then try again.")
         if moving:
-            _remember_account(run, engine, body.account_id, request)
+            _remember_account(run, engine, body.account_id, request, {"generation"})
         added, skipped = 0, []
         for batch in run_batches(session, run.id, "generation"):
             if any(j.status == "failed" for j in live_jobs(session, [batch])):

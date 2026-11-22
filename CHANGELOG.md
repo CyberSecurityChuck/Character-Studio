@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-22 — 8A review fixes: accounts inside the engine panels
+
+- The user's review (`Phase_Checks/Phase8A_Review_Report.md`: 11/11, one problem, "Needs fixes first") asked for **Rename** as a real button and for the accounts to sit inside the engine panels instead of a separate panel, with separate Codex accounts for analysis and generation if possible. Done (D044): the separate Subscription accounts panel is gone; the Analysis and Generation engine panels show **Account** under Claude Code or Codex. The choice is per engine and purpose (Claude Code for analysis; Codex for analysis and, separately, for generation) and is saved with the panel's Save button (the user's choice); adding, signing in, renaming and removing stay immediate. "Also use for future runs" on a card sets the choice for that kind of run. Run everything keeps the account per part of the run.
+- `GET/PUT /api/engines/settings` carry `accounts` (`claude_cli:analysis`, `codex_cli:analysis`, `codex_cli:generation`); a choice saved before this change still counts for both Codex purposes. The fake CLI now locks its log while writing a line (parallel status checks could garble it on Windows). 186 tests pass (1 new). Follow-up check: `Phase_Checks/Phase8A_Followup_Checklist.html`.
+
 ## 2026-11-21 — Phase 8A: several Claude Code and Codex accounts
 
 - **Approved** ("Approve Phase 8"; D041 plan, D042 answers: 8A, 8B, 8C delivered separately; automatic switching in 8C only for unusable accounts or keys). Provider terms re-checked and a short check on this PC with the user signing in recorded in `docs/PROVIDER_FINDINGS.md` (separate `CLAUDE_CONFIG_DIR` / `CODEX_HOME` folders keep separate logins; status, sign-in and sign-out work per folder; the Codex test image was skipped, so images under a second account's folder are assumed until a first real run).

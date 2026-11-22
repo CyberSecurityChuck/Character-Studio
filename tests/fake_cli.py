@@ -29,26 +29,35 @@ if profile is not None:
         mode = "signed_out"
 log = os.environ.get("FAKE_CLI_LOG")
 if log:
-    with open(log, "a", encoding="utf-8") as file:
-        leaked = sorted(
-            key
-            for key in os.environ
-            if (key.startswith(("CLAUDE", "ANTHROPIC")) and key != "CLAUDE_CONFIG_DIR")
-            or key in {"OPENAI_API_KEY", "CODEX_API_KEY"}
-        )
-        file.write(
-            json.dumps(
-                {
-                    "program": program,
-                    "args": args,
-                    "cwd": os.getcwd(),
-                    "leaked": leaked,
-                    "profile": str(profile) if profile else None,
-                    "stdin_closed": sys.stdin.read() == "",
-                }
-            )
-            + "\n"
-        )
+    leaked = sorted(
+        key
+        for key in os.environ
+        if (key.startswith(("CLAUDE", "ANTHROPIC")) and key != "CLAUDE_CONFIG_DIR")
+        or key in {"OPENAI_API_KEY", "CODEX_API_KEY"}
+    )
+    line = json.dumps(
+        {
+            "program": program,
+            "args": args,
+            "cwd": os.getcwd(),
+            "leaked": leaked,
+            "profile": str(profile) if profile else None,
+            "stdin_closed": sys.stdin.read() == "",
+        }
+    )
+    # Status checks run in parallel (Phase 8A), and appends from several processes are not
+    # atomic on Windows: hold a lock on the log's first byte while writing one line.
+    with open(log, "ab") as file:
+        if os.name == "nt":
+            import msvcrt
+
+            file.seek(0)
+            msvcrt.locking(file.fileno(), msvcrt.LK_LOCK, 1)
+        file.write((line + "\n").encode("utf-8"))
+        file.flush()
+        if os.name == "nt":
+            file.seek(0)
+            msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
 
 analysis = json.loads(Path(os.environ["FAKE_CLI_ANALYSIS"]).read_text(encoding="utf-8"))
 

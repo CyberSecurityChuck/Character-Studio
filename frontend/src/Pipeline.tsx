@@ -242,7 +242,7 @@ export function PipelineCard({ item, token, version, onChanged, onNotice, onOpen
     </dl>}
     {pauseLine(run) ?? (run.pause_details && <p className="notice-line">{run.pause_details}</p>)}
     {pausedNow(run) && <p className="hint">Nothing continues on its own. Click Continue when you are ready (for example after the plan’s limit resets); every batch of this run then goes on. What finished is kept.</p>}
-    {switchFrom && <AccountChoice engine={switchFrom.engine} current={switchFrom.account} verb={pausedNow(run) ? 'Continue' : 'Try failed again'} pick={pick} onPick={setPick} limit={pausedNow(run) && (switchFrom.pause_kind === 'usage_limit' || s?.paused?.kind === 'usage_limit')} />}
+    {switchFrom && <AccountChoice engine={switchFrom.engine} purpose={switchFrom.kind} current={switchFrom.account} verb={pausedNow(run) ? 'Continue' : 'Try failed again'} pick={pick} onPick={setPick} limit={pausedNow(run) && (switchFrom.pause_kind === 'usage_limit' || s?.paused?.kind === 'usage_limit')} />}
     {o.note && <p className="hint">{o.note}</p>}
     {!!s?.interrupted && !open && <p className="hint">Interrupted images were being made when the studio stopped; one may have been saved. Open the scene to look for a saved image or try it again there. Try failed again leaves them alone.</p>}
     {stopped.length > 0 && <details className="run-stopped"><summary>{plural(stopped.length, 'scene')} {run.kind === 'generate' ? 'not generated' : 'stopped at Needs your check'}</summary>

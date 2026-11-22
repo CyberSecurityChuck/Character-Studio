@@ -9,8 +9,10 @@ sign-out before the folder is deleted. The only exception is Codex's
 `generated_images/<thread_id>/`, read for "Look for a saved image" as before.
 
 The Default account is the CLI's usual login (no folder variable set), so nothing
-changes until a second account is added. The list of accounts and the account each
-engine uses for new runs live in `accounts.json` next to the folders. Like `keys/`,
+changes until a second account is added. The list of accounts and the account new runs
+use live in `accounts.json` next to the folders. The choice is kept per engine and
+purpose (8A review, D044): Claude Code for analysis, and Codex separately for analysis
+and for generation, each saved with its engine panel in Studio settings. Like `keys/`,
 the folder is outside the repository and outside backups, and a restore keeps the
 one on this PC.
 
@@ -42,6 +44,17 @@ DEFAULT_LABEL = "Default"
 # The variable that points each CLI at a profile folder (confirmed on this PC, Phase 8A).
 FOLDER_VARIABLES = {"claude_cli": "CLAUDE_CONFIG_DIR", "codex_cli": "CODEX_HOME"}
 ACCOUNT_ENGINES = tuple(FOLDER_VARIABLES)
+# Which runs each choice covers: analysis also covers Polish prompt and quality checks;
+# generation also covers region edits.
+PURPOSES = {"claude_cli": ("analysis",), "codex_cli": ("analysis", "generation")}
+CHOICES = tuple(f"{engine}:{purpose}" for engine, kinds in PURPOSES.items() for purpose in kinds)
+PURPOSE_OF_KIND = {
+    "analysis": "analysis",
+    "polish": "analysis",
+    "check": "analysis",
+    "generation": "generation",
+    "edit": "generation",
+}
 MAX_ACCOUNTS = 10
 MAX_LABEL = 40
 _ID = re.compile(r"^[0-9a-f]{32}$")
@@ -103,10 +116,24 @@ def find(settings: Settings, engine: str, account_id: str | None) -> dict | None
     return next((a for a in accounts(settings, engine) if a["id"] == account_id), None)
 
 
-def active(settings: Settings, engine: str) -> dict:
-    """The account new runs use; Default when none is chosen or the chosen one was removed."""
-    chosen = _read(settings)["active"].get(engine)
-    return find(settings, engine, chosen) or _default(engine)
+def purpose_of(engine: str, kind: str | None) -> str:
+    """The choice a run of this kind uses (Claude Code has only the analysis choice)."""
+    purpose = PURPOSE_OF_KIND.get(kind or "", "analysis")
+    allowed = PURPOSES.get(engine, ("analysis",))
+    return purpose if purpose in allowed else allowed[0]
+
+
+def active(settings: Settings, engine: str, purpose: str = "analysis") -> dict:
+    """The account new runs of this purpose use; Default when none is chosen or the
+    chosen one was removed. A choice saved before the 8A review (per engine) still counts."""
+    chosen = _read(settings)["active"]
+    account_id = chosen.get(f"{engine}:{purpose}") or chosen.get(engine)
+    return find(settings, engine, account_id) or _default(engine)
+
+
+def choices(settings: Settings) -> dict[str, str]:
+    """Every engine-and-purpose choice, as saved with the engine panels."""
+    return {key: active(settings, *key.split(":"))["id"] for key in CHOICES}
 
 
 def folder(settings: Settings, engine: str, account_id: str) -> Path:
@@ -194,15 +221,21 @@ def rename(settings: Settings, engine: str, account_id: str, label: str) -> dict
     return {**account, "default": False}
 
 
-def choose(settings: Settings, engine: str, account_id: str) -> dict:
-    """Use this account for new runs. Runs already queued keep their own account."""
+def choose(settings: Settings, engine: str, account_id: str, purpose: str | None = None) -> dict:
+    """Use this account for new runs of one purpose (None: every purpose of the engine).
+    Runs already queued keep their own account."""
+    purposes = (purpose,) if purpose else PURPOSES[engine]
     with _LOCK:
         if find(settings, engine, account_id) is None:
             raise AccountError("That account no longer exists. Reload the page.")
         data = _read(settings)
-        data["active"][engine] = account_id
+        data["active"].pop(engine, None)  # the older per-engine choice
+        for each in purposes:
+            if each not in PURPOSES[engine]:
+                raise AccountError("That engine has no such choice.")
+            data["active"][f"{engine}:{each}"] = account_id
         _write(settings, data)
-    return active(settings, engine)
+    return active(settings, engine, purposes[0])
 
 
 def forget(settings: Settings, engine: str, account_id: str) -> None:
@@ -218,8 +251,8 @@ def forget(settings: Settings, engine: str, account_id: str) -> None:
         ]
         if len(data["accounts"]) == before:
             raise AccountError("That account no longer exists. Reload the page.")
-        if data["active"].get(engine) == account_id:
-            data["active"].pop(engine)
+        for key in [k for k, v in data["active"].items() if v == account_id]:
+            data["active"].pop(key)
         _write(settings, data)
     root = (_root(settings) / engine).resolve()
     target = path.resolve()
@@ -237,11 +270,11 @@ def register(database, settings: Settings) -> None:
     _SETTINGS[database] = settings
 
 
-def stamp(settings: Settings, engine: str, values: dict) -> dict:
-    """`values` with the account an engine's new runs use, unless one is already set."""
+def stamp(settings: Settings, engine: str, values: dict, kind: str | None = None) -> dict:
+    """`values` with the account an engine's new runs of this kind use, unless one is set."""
     if engine not in ACCOUNT_ENGINES or "account" in values:
         return values
-    chosen = active(settings, engine)
+    chosen = active(settings, engine, purpose_of(engine, kind))
     return {**values, "account": chosen["id"], "account_label": chosen["label"]}
 
 
@@ -255,7 +288,7 @@ def _record_account(session, _context, _instances) -> None:
             continue
         values = json.loads(item.settings_json or "{}")
         if "account" not in values:
-            item.settings_json = json.dumps(stamp(settings, item.engine, values))
+            item.settings_json = json.dumps(stamp(settings, item.engine, values, item.kind))
 
 
 def recorded(settings_json: str | None) -> tuple[str, str]:

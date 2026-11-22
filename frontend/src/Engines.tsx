@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { AccountPicker, accountName, useCliAccounts } from './Accounts'
 import { ApiError, request, send } from './api'
 import { ApiKeyBox, isApiEngine, isImageEngine, useApiEngines, type ApiEngine } from './ApiEngines'
 import { InfoTip } from './Controls'
@@ -9,7 +10,9 @@ type Status = { engine: string; name: string; installed: boolean; version: strin
 type Purpose = 'analysis' | 'generation'
 type ImageOptions = { size: string; quality?: string }
 type Settings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number
-  models: Record<string, { analysis?: string; generation?: string }>; image_options: Record<string, ImageOptions>; revision: number }
+  models: Record<string, { analysis?: string; generation?: string }>; image_options: Record<string, ImageOptions>
+  // Phase 8A review (D044): the Claude Code / Codex account per engine and purpose, e.g. "codex_cli:generation".
+  accounts: Record<string, string>; revision: number }
 type Choice = { id: string; name: string; tag?: string; line: string }
 type Group = { title: string; hint: string; items: Choice[] }
 
@@ -56,8 +59,9 @@ const panelFields: Record<Purpose, readonly (keyof Settings)[]> = {
 function modelsFor(s: Settings, purpose: Purpose) {
   return Object.fromEntries(Object.keys(s.models).sort().map(id => [id, s.models[id]?.[purpose] ?? '']).filter(([, v]) => v))
 }
+const accountsFor = (s: Settings, purpose: Purpose) => Object.entries(s.accounts ?? {}).filter(([k]) => k.endsWith(`:${purpose}`)).sort()
 function panelView(s: Settings, purpose: Purpose) {
-  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose)])
+  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose), accountsFor(s, purpose)])
 }
 const same = (a: Settings, b: Settings, purpose: Purpose) => panelView(a, purpose) === panelView(b, purpose)
 /** `target` with `source`'s choices for one panel; the other panel's choices are kept. */
@@ -71,7 +75,9 @@ function applyPanel(target: Settings, source: Settings, purpose: Purpose): Setti
     if (Object.keys(entry).length) models[id] = entry
   }
   const fields = Object.fromEntries(panelFields[purpose].map(f => [f, source[f]]))
-  return { ...target, ...fields, models }
+  // Each panel saves only its own account choices (Codex has one per panel).
+  const accounts = { ...target.accounts, ...Object.fromEntries(accountsFor(source, purpose)) }
+  return { ...target, ...fields, models, accounts }
 }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -103,7 +109,7 @@ function CliStatus({ name, status, checking, onCheck }: { name: string; status?:
   return <div className={`engine-status ${ready ? 'ready' : status ? 'attention' : ''}`}>
     <span className="status-dot" aria-hidden="true" />
     <div><strong>{name}</strong><span className="engine-state">{statusText(status, checking)}</span>
-      <p className="hint">{status?.version ?? (status?.installed === false ? 'Not installed on this PC' : '')}{status?.message ? ` · ${status.message}` : ''}{status?.account_label ? ` · Account: ${status.account_id === 'default' ? 'Default (your usual sign-in)' : status.account_label}. Choose it under Subscription accounts.` : ''}</p></div>
+      <p className="hint">{status?.version ?? (status?.installed === false ? 'Not installed on this PC' : '')}{status?.message ? ` · ${status.message}` : ''}{status?.account_label && status.account_id !== 'default' ? ` · Account: ${status.account_label}` : ''}</p></div>
     <button type="button" className="secondary compact" disabled={checking} onClick={onCheck}>{checking ? 'Checking…' : 'Check again'}</button>
   </div>
 }
@@ -127,12 +133,14 @@ export default function Engines({ token }: { token: string }) {
   const [errors, setErrors] = useState({ analysis: '', generation: '' })
   const [messages, setMessages] = useState({ analysis: '', generation: '' })
   const api = useApiEngines()
+  const accounts = useCliAccounts(true)
 
+  const reloadAccounts = accounts.reload
   const check = useCallback(async () => {
     setChecking(true)
-    try { setStatuses(await request<Status[]>('/api/engines/status')) } catch { /* shown as Unknown */ }
+    try { const [s] = await Promise.all([request<Status[]>('/api/engines/status'), reloadAccounts(true)]); setStatuses(s) } catch { /* shown as Unknown */ }
     finally { setChecking(false) }
-  }, [])
+  }, [reloadAccounts])
   useEffect(() => {
     request<Settings>('/api/engines/settings').then(s => { setSaved(s); setForm(s) }, e => setErrors({ analysis: e.message, generation: '' }))
     void check()
@@ -142,7 +150,11 @@ export default function Engines({ token }: { token: string }) {
     if (!form || !saved) return
     setBusy(panel); setErrors(e => ({ ...e, [panel]: '' })); setMessages(m => ({ ...m, [panel]: '' }))
     try {
-      const next = await send<Settings>('/api/engines/settings', 'PUT', token, { ...applyPanel(saved, form, panel), revision: saved.revision })
+      const body = applyPanel(saved, form, panel)
+      // An account removed since the page loaded falls back to Default (the server does too).
+      const known = (key: string, id: string) => accounts.byEngine[key.split(':')[0]]?.accounts.some(a => a.id === id) !== false
+      body.accounts = Object.fromEntries(Object.entries(body.accounts ?? {}).map(([key, id]) => [key, known(key, id) ? id : 'default']))
+      const next = await send<Settings>('/api/engines/settings', 'PUT', token, { ...body, revision: saved.revision })
       setSaved(next)
       // Keep the other panel's unsaved edits.
       setForm(f => f && { ...applyPanel(f, next, panel), revision: next.revision })
@@ -155,13 +167,34 @@ export default function Engines({ token }: { token: string }) {
   }
   if (!form || !saved) return <section className="panel provider-panel"><p role="status">{errors.analysis || 'Loading engine settings…'}</p></section>
 
-  const byStatus = Object.fromEntries(statuses.map(s => [s.engine, s]))
+  const programs = Object.fromEntries(statuses.map(s => [s.engine, s]))
+  // The account a panel's runs use, if it still exists (a removed one falls back to Default).
+  const chosenAccount = (s: Settings, id: string, purpose: Purpose) => {
+    const value = s.accounts?.[`${id}:${purpose}`] ?? 'default'
+    return accounts.byEngine[id]?.accounts.some(a => a.id === value) === false ? 'default' : value
+  }
+  /** The program's status with the sign-in of the account this panel would use. */
+  const statusFor = (id: string, purpose: Purpose): Status | undefined => {
+    const program = programs[id]
+    const account = accounts.byEngine[id]?.accounts.find(a => a.id === chosenAccount(form, id, purpose))
+    if (!program || !account?.status) return program
+    const own = !account.default
+    return { ...program, signed_in: account.status.signed_in, plan: account.status.plan, account_id: account.id, account_label: account.label,
+      message: account.status.signed_in ? '' : own ? `Signed out. Sign “${account.label}” in below.` : program.message }
+  }
+  const byStatus = Object.fromEntries(statuses.map(s => [s.engine, statusFor(s.engine, 'analysis')]))
+  const setAccount = (id: string, purpose: Purpose, value: string) => setForm({ ...form, accounts: { ...form.accounts, [`${id}:${purpose}`]: value } })
+  const accountBlocked = (id: string, purpose: Purpose) => {
+    if (id !== 'claude_cli' && id !== 'codex_cli') return undefined
+    const account = accounts.byEngine[id]?.accounts.find(a => a.id === chosenAccount(form, id, purpose))
+    return account && !account.default && account.status && !account.status.signed_in ? `Sign in to ${accountName(account)} first, or choose another account` : undefined
+  }
   const engine = form.analysis_engine
   const model = form.models[engine]?.analysis ?? ''
   const setModel = (id: string, value: string, purpose: Purpose = 'analysis') => setForm({ ...form, models: { ...form.models, [id]: { ...form.models[id], [purpose]: value } } })
   const inUse = (id: string) => saved.analysis_engine === id || saved.generation_engine === id
   const apiItem: ApiEngine | undefined = isApiEngine(engine) ? api.byId[engine] : undefined
-  const blocked = apiItem && !apiItem.key.saved ? `Add your ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : undefined
+  const blocked = apiItem && !apiItem.key.saved ? `Add your ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : accountBlocked(engine, 'analysis')
   const choiceState = (id: string) => isApiEngine(id) ? (api.byId[id]?.key.saved ? 'Key saved' : 'Needs a key') : id === 'manual' ? undefined : statusText(byStatus[id], checking)
   const choiceReady = (id: string) => isApiEngine(id) ? !!api.byId[id]?.key.saved : !!byStatus[id]?.signed_in
 
@@ -169,7 +202,8 @@ export default function Engines({ token }: { token: string }) {
   if (engine === 'claude_cli' || engine === 'codex_cli') {
     const claude = engine === 'claude_cli'
     details = <>
-      <CliStatus name={claude ? "Claude Code" : "Codex"} status={byStatus[engine]} checking={checking} onCheck={() => void check()} />
+      <CliStatus name={claude ? "Claude Code" : "Codex"} status={statusFor(engine, 'analysis')} checking={checking} onCheck={() => void check()} />
+      <AccountPicker engine={engine} purpose="analysis" token={token} chosen={chosenAccount(form, engine, 'analysis')} saved={chosenAccount(saved, engine, 'analysis')} onChoose={id => setAccount(engine, 'analysis', id)} />
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="cli-model">Model</label><InfoTip label="Model">{claude ? 'Default uses your Claude plan’s standard model. Opus, Sonnet and Fable always mean the latest version of that model. The same model is used for Polish prompt and quality checks.' : 'Default uses the model your ChatGPT plan gives Codex. Type a model name only if you know your plan offers it.'}</InfoTip></div>
           <ModelPicker id="cli-model" value={model} defaultLabel="Default (your plan’s choice)" options={claude ? claudeModels.map(m => ({ value: m })) : []}
@@ -203,11 +237,12 @@ export default function Engines({ token }: { token: string }) {
   const imageModel = form.models[generator]?.generation ?? ''
   const options = form.image_options[generator] ?? defaultOptions(generator)
   const setOptions = (change: Partial<ImageOptions>) => setForm({ ...form, image_options: { ...form.image_options, [generator]: { ...options, ...change } } })
-  const generationBlocked = imageItem && !imageItem.key.saved ? `Add your ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : undefined
+  const generationBlocked = imageItem && !imageItem.key.saved ? `Add your ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : accountBlocked(generator, 'generation')
   let generationDetails: ReactNode
   if (generator === 'codex_cli') {
     generationDetails = <>
-      <CliStatus name="Codex" status={byStatus.codex_cli} checking={checking} onCheck={() => void check()} />
+      <CliStatus name="Codex" status={statusFor('codex_cli', 'generation')} checking={checking} onCheck={() => void check()} />
+      <AccountPicker engine="codex_cli" purpose="generation" token={token} chosen={chosenAccount(form, 'codex_cli', 'generation')} saved={chosenAccount(saved, 'codex_cli', 'generation')} onChoose={id => setAccount('codex_cli', 'generation', id)} />
       <div className="engine-fields"><TimeLimit id="generation-timeout" label="Time limit" value={form.codex_timeout}
         tip="A Codex run that reaches this limit is stopped. One image took about 70 seconds in testing. Shared with Codex analysis." onChange={v => setForm({ ...form, codex_timeout: v })} /></div>
       <p className="hint">Codex always uses its built-in image model; there is no model to choose here.</p>
@@ -240,8 +275,8 @@ export default function Engines({ token }: { token: string }) {
   } else {
     generationDetails = <p className="hint">The Generate step offers <b>Export for manual use</b> and <b>Import result</b>. Nothing is sent from the studio.</p>
   }
-  const generationState = (id: string) => id === 'codex_cli' ? statusText(byStatus.codex_cli, checking) : choiceState(id)
-  const generationReady = (id: string) => id === 'codex_cli' ? !!byStatus.codex_cli?.signed_in : choiceReady(id)
+  const generationState = (id: string) => id === 'codex_cli' ? statusText(statusFor('codex_cli', 'generation'), checking) : choiceState(id)
+  const generationReady = (id: string) => id === 'codex_cli' ? !!statusFor('codex_cli', 'generation')?.signed_in : choiceReady(id)
 
   return <>
     <section className="panel provider-panel engines-panel" aria-labelledby="analysis-engine-title">

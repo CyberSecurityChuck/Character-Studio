@@ -59,7 +59,7 @@ def test_default_only_changes_nothing_and_accounts_are_isolated(
 ):
     client = engine_client
     claude = accounts_of(client, "claude_cli")
-    assert claude["active"] == "default"
+    assert claude["active"] == {"analysis": "default"}
     assert [(a["id"], a["label"], a["default"]) for a in claude["accounts"]] == [
         ("default", "Default", True)
     ]
@@ -82,7 +82,7 @@ def test_default_only_changes_nothing_and_accounts_are_isolated(
     folder = profile_folder(engine_settings, "claude_cli", account["id"])
     assert folder.is_dir() and not any(folder.iterdir())
     listed = accounts_of(client, "claude_cli")
-    assert listed["active"] == "default"  # adding does not switch
+    assert listed["active"]["analysis"] == "default"  # adding does not switch
     assert listed["accounts"][1]["status"]["signed_in"] is False
     assert "Sign in" in listed["accounts"][1]["status"]["message"]
     for label in ("Default", "claude – WORK", ""):
@@ -163,7 +163,7 @@ def test_continue_with_another_account_moves_only_not_started_items(
     assert [c["profile"] for c in analysis_calls(fake)[calls:]] == [home_folder, home_folder]
     failed = client.get(f"/api/jobs/{done['items'][0]['job_id']}").json()
     assert failed["account"]["label"] == "Work"  # what ran keeps its account
-    assert accounts_of(client, "claude_cli")["active"] == work["id"]
+    assert accounts_of(client, "claude_cli")["active"]["analysis"] == work["id"]
 
     # Try failed again offers the account choice too; "Also use for future runs" switches.
     retried = post(
@@ -175,7 +175,7 @@ def test_continue_with_another_account_moves_only_not_started_items(
     finished = wait_for_batch(client, batch["id"])
     assert finished["items"][3]["status"] == "completed"
     assert analysis_calls(fake)[-1]["profile"] is None
-    assert accounts_of(client, "claude_cli")["active"] == "default"
+    assert accounts_of(client, "claude_cli")["active"]["analysis"] == "default"
 
 
 def test_a_limit_on_one_account_does_not_pause_another_accounts_batch(
@@ -223,7 +223,8 @@ def test_removing_an_account_signs_it_out_and_deletes_its_folder(
     assert removed.json()["signed_out"] is True
     assert not folder.exists()
     listed = accounts_of(client, "codex_cli")
-    assert listed["active"] == "default" and len(listed["accounts"]) == 1
+    assert listed["active"] == {"analysis": "default", "generation": "default"}
+    assert len(listed["accounts"]) == 1
     calls = [json.loads(line) for line in fake.read_text(encoding="utf-8").splitlines()]
     assert ["logout"] in [c["args"] for c in calls if c["profile"] == str(folder)]
     # Past runs keep the account's name.
@@ -306,7 +307,7 @@ def test_generate_all_continues_on_another_account_for_the_whole_run(
     assert (done["summary"]["done"], done["summary"]["retryable"]) == (2, 1)
     folder = str(profile_folder(engine_settings, "codex_cli", second["id"]))
     assert [c["profile"] for c in generation_calls(fake)[1:]] == [folder, folder]
-    assert accounts_of(client, "codex_cli")["active"] == first["id"]
+    assert accounts_of(client, "codex_cli")["active"]["generation"] == first["id"]
 
 
 def test_profile_folders_are_never_backed_up_and_survive_a_restore(
@@ -330,3 +331,57 @@ def test_profile_folders_are_never_backed_up_and_survive_a_restore(
     folder = profile_folder(engine_settings, "codex_cli", account["id"])
     assert folder.is_dir() and (restored / "cli-accounts" / "accounts.json").is_file()
     assert cli_accounts.find(engine_settings, "codex_cli", account["id"])["label"] == "Kept"
+
+
+def test_codex_can_use_one_account_for_analysis_and_another_for_images(
+    engine_client, engine_settings, fake, monkeypatch
+):
+    """8A review (D044): each engine panel saves its own account choice."""
+    from tests.test_scenes import set_engine
+
+    client = engine_client
+    reads = signed_in_account(client, "codex_cli", "Reads", monkeypatch)
+    draws = signed_in_account(client, "codex_cli", "Draws", monkeypatch)
+    defaults = client.get("/api/engines/settings").json()["accounts"]
+    assert defaults == {
+        "claude_cli:analysis": "default",
+        "codex_cli:analysis": "default",
+        "codex_cli:generation": "default",
+    }
+    unknown, removed = {"codex_cli:edit": reads["id"]}, {"codex_cli:analysis": "0" * 32}
+    for bad, status in ((unknown, 422), (removed, 409)):
+        current = client.get("/api/engines/settings").json()
+        refused = client.put(
+            "/api/engines/settings",
+            headers=authorization(client),
+            json={**current, "accounts": bad},
+        )
+        assert refused.status_code == status, refused.text
+    saved = set_engine(
+        client,
+        "codex_cli",
+        accounts={"codex_cli:analysis": reads["id"], "codex_cli:generation": draws["id"]},
+    )
+    assert saved["accounts"]["codex_cli:generation"] == draws["id"]
+    assert accounts_of(client, "codex_cli")["active"] == {
+        "analysis": reads["id"],
+        "generation": draws["id"],
+    }
+
+    _ada, scene = approved_scene(client)
+    image = generate(client, scene)["active_job"]
+    assert wait_for_job(client, image["id"])["account"]["label"] == "Draws"
+    analysis = post(client, f"/api/scenes/{scene['id']}/analyse")
+    if analysis.get("active_job"):
+        done = wait_for_job(client, analysis["active_job"]["id"])
+        assert done["account"]["label"] == "Reads"
+    folders = {
+        name: str(profile_folder(engine_settings, "codex_cli", account["id"]))
+        for name, account in (("reads", reads), ("draws", draws))
+    }
+    calls = [json.loads(line) for line in fake.read_text(encoding="utf-8").splitlines()]
+    runs = [c for c in calls if c["args"][:1] == ["exec"]]
+    images = [c["profile"] for c in runs if "--output-schema" not in c["args"]]
+    analyses = [c["profile"] for c in runs if "--output-schema" in c["args"]]
+    assert images == [folders["draws"]]
+    assert analyses[-1:] == [folders["reads"]]

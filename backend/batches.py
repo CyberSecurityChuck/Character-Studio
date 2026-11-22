@@ -121,8 +121,10 @@ def switch_account(request, session, batches: list, engine: str, body: "ChargeIn
         ):
             cli_accounts.move(job, account)
     if body.make_active:
+        # "Also use for future runs" sets the choice this kind of run uses (D044).
+        purpose = cli_accounts.purpose_of(engine, batches[0].kind if batches else None)
         try:
-            cli_accounts.choose(settings, engine, account["id"])
+            cli_accounts.choose(settings, engine, account["id"], purpose)
         except AccountError as error:
             raise HTTPException(409, str(error)) from error
 
@@ -578,8 +580,8 @@ def _check_engine(request, engine: str, account_id: str | None = None) -> None:
         if not account["default"]:
             raise HTTPException(
                 409,
-                f"{name} account “{account['label']}” is signed out. Sign it in under "
-                "Studio settings → Subscription accounts, or choose another account.",
+                f"{name} account “{account['label']}” is signed out. Sign it in under Account "
+                f"in the {name} engine panel in Studio settings, or choose another account.",
             )
         raise HTTPException(
             409, f"{name} is still signed out. {SIGN_IN_HELP[engine]}, then continue."

@@ -140,9 +140,9 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
       <strong>{(pauseTitles[batch.pause_kind] ?? pauseTitles.user)(engineNames[batch.engine] ?? batch.engine_name, batch.engine)}</strong>
       {batch.pause_details && <p>{batch.pause_details}</p>}
       <p>{plural(remaining, 'item')} {remaining === 1 ? 'is' : 'are'} waiting. Nothing continues on its own{batch.pause_kind === 'usage_limit' ? '; wait until your limit resets, then continue' : batch.pause_kind === 'signed_out' ? '; sign in again or choose another account, then continue' : batch.pause_kind === 'key_problem' || batch.pause_kind === 'model_problem' ? '; check the key and model in Studio settings, then continue' : ''}.</p>
-      <AccountChoice engine={batch.engine} current={batch.account} verb="Continue" pick={pick} onPick={setPick} limit={batch.pause_kind === 'usage_limit'} />
+      <AccountChoice engine={batch.engine} purpose={batch.kind} current={batch.account} verb="Continue" pick={pick} onPick={setPick} limit={batch.pause_kind === 'usage_limit'} />
     </div>}
-    {!isActive(batch) && batch.retryable > 0 && <AccountChoice engine={batch.engine} current={batch.account} verb="Try failed again" pick={pick} onPick={setPick} />}
+    {!isActive(batch) && batch.retryable > 0 && <AccountChoice engine={batch.engine} purpose={batch.kind} current={batch.account} verb="Try failed again" pick={pick} onPick={setPick} />}
     {batch.state === 'pausing' && <p className="hint">The run in progress finishes first; nothing new starts after it.</p>}
     {error && <p className="frame-error" role="alert">{error}</p>}
     <ol className={`batch-rows${counts.running ? ' has-action' : ''}`}>{batch.items.map(item => <li key={item.job_id} className={`row-${item.status} ${highlight && item.scene_title?.toLocaleLowerCase().includes(highlight.toLocaleLowerCase()) ? 'row-match' : ''}`}>

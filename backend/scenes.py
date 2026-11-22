@@ -223,6 +223,9 @@ class EngineSettingsUpdate(BaseModel):
         default_factory=dict
     )
     image_options: dict[str, ImageOptions] = Field(default_factory=dict)
+    # Phase 8A review (D044): the Claude Code / Codex account new runs use, per engine and
+    # purpose, e.g. {"codex_cli:generation": "<account id>"}; missing keys stay as they are.
+    accounts: dict[str, str] = Field(default_factory=dict)
     revision: int = Field(ge=1)
 
     @field_validator("image_options")
@@ -1532,7 +1535,8 @@ def withdraw_approval(request: Request, scene_id: str, body: WithdrawInput):
         return scene_detail(request, session, scene)
 
 
-def settings_data(item: EngineSettings):
+def settings_data(item: EngineSettings, settings=None):
+    accounts = cli_accounts.choices(settings) if settings is not None else {}
     return {
         "analysis_engine": item.analysis_engine,
         "generation_engine": item.generation_engine,
@@ -1541,6 +1545,7 @@ def settings_data(item: EngineSettings):
         "api_timeout": item.api_timeout,
         "models": models_of(item),
         "image_options": image_options_of(item),
+        "accounts": accounts,
         "revision": item.revision,
     }
 
@@ -1548,7 +1553,7 @@ def settings_data(item: EngineSettings):
 @router.get("/engines/settings")
 def engine_settings(request: Request):
     with Session(request.app.state.engine) as session:
-        return settings_data(session.get(EngineSettings, 1))
+        return settings_data(session.get(EngineSettings, 1), request.app.state.settings)
 
 
 @router.put("/engines/settings")
@@ -1571,15 +1576,28 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
                 raise HTTPException(422, f"Choose an image model for {name} before selecting it.")
             if not key_info(request.app.state.settings, engine)["saved"]:
                 raise HTTPException(422, f"Save your {API_ENGINES[engine].name} key first.")
-        for key, value in body.model_dump(exclude={"revision", "models", "image_options"}).items():
+        studio = request.app.state.settings
+        for key, account_id in body.accounts.items():
+            if key not in cli_accounts.CHOICES:
+                raise HTTPException(422, "Unknown account choice.")
+            if cli_accounts.find(studio, key.split(":")[0], account_id) is None:
+                raise HTTPException(409, "That account no longer exists. Reload the page.")
+        excluded = {"revision", "models", "image_options", "accounts"}
+        for key, value in body.model_dump(exclude=excluded).items():
             setattr(item, key, value)
         item.api_models_json = json.dumps(body.models, sort_keys=True)
         item.image_options_json = json.dumps(
             {k: v.model_dump(exclude_none=True) for k, v in body.image_options.items()},
             sort_keys=True,
         )
+        # Only changed choices are written; runs already queued keep their account.
+        current = cli_accounts.choices(studio)
+        for key, account_id in body.accounts.items():
+            if current[key] != account_id:
+                engine, purpose = key.split(":")
+                cli_accounts.choose(studio, engine, account_id, purpose)
         item.revision += 1
-        return settings_data(item)
+        return settings_data(item, studio)
 
 
 @router.get("/engines/status")
@@ -1589,12 +1607,12 @@ async def engines_status(request: Request):
 
     def one(engine: str) -> dict:
         # The account new runs use (Phase 8A); Default is the CLI's usual sign-in.
-        account = cli_accounts.active(settings, engine)
+        account = cli_accounts.active(settings, engine, "analysis")
         env = cli_accounts.account_env(settings, engine, account["id"])
         status = engine_status(engine, overrides, env)
         if status["installed"] and not status["signed_in"] and not account["default"]:
             status["message"] = (
-                f"Signed out. Sign “{account['label']}” in under Subscription accounts."
+                f"Signed out. Sign “{account['label']}” in under Account in this panel."
             )
         return status | {"account_id": account["id"], "account_label": account["label"]}
 

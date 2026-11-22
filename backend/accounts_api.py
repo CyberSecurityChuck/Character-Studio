@@ -31,6 +31,8 @@ class LabelInput(BaseModel):
 class ChooseInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     account_id: str = Field(min_length=1, max_length=40)
+    # analysis or generation; none chooses it for every purpose of the engine.
+    purpose: str | None = Field(default=None, max_length=20)
 
 
 def require_engine(engine: str) -> str:
@@ -78,7 +80,11 @@ def engine_accounts(request, engine: str, with_status: bool = True) -> dict:
     return {
         "engine": engine,
         "name": "Claude Code" if engine == "claude_cli" else ENGINE_NAMES[engine],
-        "active": cli_accounts.active(settings, engine)["id"],
+        # The account new runs use, per purpose (Codex: analysis and generation; D044).
+        "active": {
+            purpose: cli_accounts.active(settings, engine, purpose)["id"]
+            for purpose in cli_accounts.PURPOSES[engine]
+        },
         "accounts": [
             {
                 "id": a["id"],
@@ -121,7 +127,7 @@ def choose_account(request: Request, engine: str, body: ChooseInput):
     """Use this account for new runs. Runs already queued keep the account they have."""
     require_engine(engine)
     try:
-        cli_accounts.choose(request.app.state.settings, engine, body.account_id)
+        cli_accounts.choose(request.app.state.settings, engine, body.account_id, body.purpose)
     except AccountError as error:
         raise _problem(error) from error
     return engine_accounts(request, engine, with_status=False)
