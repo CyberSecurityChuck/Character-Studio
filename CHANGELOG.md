@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-22 — Phase 8C accepted; Phase 8 complete
+
+- The user's review passed (`Phase_Checks/Phase8C_Review_Report.md`: 13/13, 0 problems, "Phase 8C looks good"), including a refused key moving the waiting runs to a real key and a signed-out Claude Code account moving to Default before anything was sent. Phase 8C (automatic switching for accounts or keys that cannot be used) is accepted, which completes Phase 8. Docs only; nothing pushed.
+
 ## 2026-11-22 — Phase 8C: automatic switching for accounts or keys that cannot be used
 
 - **Started** at the user's word ("Start 8C"). The user first confirmed the change to D009: the studio may move a run to another account or key by itself, only when its own account is signed out or its key is refused, never because of a usage limit (D046). Three build questions, one at a time: an ordered list per engine panel, saved with the panel; all runs, single clicks included; the account or key that worked becomes the panel's choice.
