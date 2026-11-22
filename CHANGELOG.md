@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-22 — Phase 8B accepted
+
+- The user's follow-up check passed (`Phase_Checks/Phase8B_Followup_Report.md`: 3/3, 0 problems, "Phase 8B looks good") after the heading alignment fix. Phase 8B (several API keys per provider) is accepted. Next in Phase 8: 8C, optional automatic switching for accounts or keys that cannot be used, only when the user says so and after its D009 change is confirmed. Docs only; nothing pushed.
+
 ## 2026-11-22 — 8B review fix: heading alignment
 
 - The user's review (`Phase_Checks/Phase8B_Review_Report.md`: 10/10, 0 problems, "Needs fixes first") noted that the hint next to **Account** sat lower than the heading in both engine panels. The hint's own top margin pushed it down in a row centred vertically; the row now lines up on the text, which also fixes the new **API keys** heading. CSS only. Follow-up check: `Phase_Checks/Phase8B_Followup_Checklist.html`.
