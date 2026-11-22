@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-22 — Phase 8A accepted
+
+- The user's follow-up check passed (`Phase_Checks/Phase8A_Followup_Report.md`: 6/6, 0 problems, "Phase 8A looks good"), including a Codex analysis on the Analysis panel's account and an image on the Generation panel's account. Phase 8A (several Claude Code and Codex accounts) is accepted. Next in Phase 8: 8B, several API keys per provider. Docs only; nothing pushed.
+
 ## 2026-11-22 — 8A review fixes: accounts inside the engine panels
 
 - The user's review (`Phase_Checks/Phase8A_Review_Report.md`: 11/11, one problem, "Needs fixes first") asked for **Rename** as a real button and for the accounts to sit inside the engine panels instead of a separate panel, with separate Codex accounts for analysis and generation if possible. Done (D044): the separate Subscription accounts panel is gone; the Analysis and Generation engine panels show **Account** under Claude Code or Codex. The choice is per engine and purpose (Claude Code for analysis; Codex for analysis and, separately, for generation) and is saved with the panel's Save button (the user's choice); adding, signing in, renaming and removing stay immediate. "Also use for future runs" on a card sets the choice for that kind of run. Run everything keeps the account per part of the run.
