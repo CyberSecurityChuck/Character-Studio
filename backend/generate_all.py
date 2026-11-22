@@ -51,7 +51,7 @@ class GenerateAllInput(BaseModel):
     # Paid image engines: the user confirmed the charges for every image of this run.
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 def _reason(session, scene: Scene, api: bool, engine: str) -> str | None:

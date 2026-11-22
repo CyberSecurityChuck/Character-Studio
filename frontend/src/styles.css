@@ -1656,3 +1656,22 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
 .key-add input[type="password"] { flex: 1 1 260px; max-width: none; }
 .region-key-head + .key-picker { border-top: 0; padding-top: 0; }
 .engine-details > .key-picker:first-child { border-top: 0; padding-top: 0; }
+
+/* Phase 8C: "Switch automatically" under Account / API keys in each engine panel (D046). */
+.fallback-picker { display: grid; gap: 6px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.fallback-head { display: flex; align-items: center; gap: 8px; }
+.fallback-head .checkbox-label { margin: 0; min-height: 36px; }
+.fallback-picker > .hint { margin: 0; }
+.fallback-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fallback-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.fallback-row.on { border-color: var(--accent-line); background: var(--accent-soft); }
+.fallback-rank { font-size: 12px; font-weight: 700; color: var(--accent); text-align: center; font-variant-numeric: tabular-nums; }
+.fallback-row .checkbox-label { margin: 0; min-height: 36px; flex-wrap: wrap; gap: 4px 10px; }
+.fallback-row .engine-card-state { font-size: 12px; }
+.fallback-order { display: flex; gap: 6px; }
+.fallback-order button { width: 34px; min-width: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.fallback-order svg { width: 16px; height: 16px; }
+/* Each automatic switch, on batch and run cards. */
+.switch-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; color: var(--muted); }
+.switch-note svg { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 1px; color: var(--accent); }
+.fallback-order button:disabled { opacity: 0.35; cursor: not-allowed; }

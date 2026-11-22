@@ -55,7 +55,7 @@ class EditInput(BaseModel):
     # API engines only: the user confirmed that this edit may be charged.
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 def option_state(settings: Settings, row: EngineSettings, option: EditOption) -> dict:

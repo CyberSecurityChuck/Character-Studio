@@ -82,14 +82,14 @@ class AnalysisBatchInput(BaseModel):
     # API engines: the user confirmed that every run in the batch may be charged.
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 class ChargeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
     # Continue / Try failed again on another Claude Code or Codex account (Phase 8A) or,
     # for API engines, another API key (Phase 8B). The not-started items move to it;
     # `make_active` also uses it for new runs (D042). A key must be in `charge_keys`.
@@ -196,7 +196,7 @@ class GenerationBatchInput(BaseModel):
     # API image engines (Phase 6C): the user confirmed that every run may be charged.
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 class GroupSuggestionInput(BaseModel):
@@ -272,10 +272,12 @@ def batch_data(session, batch: Batch) -> dict:
         "account": account_of(batch),
         # Phase 8B: the API key the batch is charged to (its id and name, never the key).
         "key": key_of(batch),
+        # Phase 8C: each automatic switch (from, to, reason, time), oldest first.
+        "switches": json.loads(batch.settings_json).get("switches", []),
         "settings": {
             k: v
             for k, v in json.loads(batch.settings_json).items()
-            if k not in ("account", "account_label", "key", "key_label")
+            if k not in ("account", "account_label", "key", "key_label", "switches")
         },
         "created_at": batch.created_at,
         "updated_at": batch.updated_at,
@@ -569,7 +571,7 @@ def _generation_job(
     chosen = json.loads(batch.settings_json)
     # API image runs keep the model, size and quality the batch was confirmed with.
     for name in ("preset", "model", "size", "quality", "account", "account_label", "key",
-                 "key_label"):
+                 "key_label", "fallback_keys"):
         if chosen.get(name):
             settings[name] = chosen[name]
     return EngineJob(

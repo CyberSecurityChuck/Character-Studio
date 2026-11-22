@@ -208,6 +208,15 @@ class ImageOptions(BaseModel):
     quality: Literal[QUALITIES] | None = None
 
 
+class FallbackInput(BaseModel):
+    """Phase 8C: "Switch automatically" in an engine panel and the accounts or keys it may
+    move a run to, in order."""
+
+    model_config = ConfigDict(extra="forbid")
+    on: bool = False
+    order: list[str] = Field(default_factory=list, max_length=10)
+
+
 class EngineSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     analysis_engine: AnalysisEngine
@@ -228,6 +237,9 @@ class EngineSettingsUpdate(BaseModel):
     # Phase 8B: the API key new runs use, per provider and purpose, e.g.
     # {"openai_api:generation": "<key id>"}; missing keys stay as they are.
     keys: dict[str, str | None] = Field(default_factory=dict)
+    # Phase 8C: the fallback list per account or key choice, e.g. {"codex_cli:generation":
+    # {"on": true, "order": ["<account id>", "default"]}}; missing keys stay as they are.
+    fallbacks: dict[str, FallbackInput] = Field(default_factory=dict)
     revision: int = Field(ge=1)
 
     @field_validator("image_options")
@@ -263,7 +275,7 @@ class AnalyseInput(BaseModel):
     # API engines only: the user confirmed that this run may be charged (PLAN.md §12.3).
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 def writing(request):
@@ -358,6 +370,8 @@ def job_data(request, job: EngineJob | None):
         "account": job_account(job),
         # The API key it was queued with (Phase 8B).
         "key": job_key(job),
+        # Phase 8C: set when the studio moved this run to another account or key by itself.
+        "switched": json.loads(job.settings_json or "{}").get("switched"),
         "usage": json.loads(job.settings_json or "{}").get("usage"),
         "mode": json.loads(job.settings_json or "{}").get("mode"),
         # A generation that did not finish may still have saved an image in Codex's folder,
@@ -1195,7 +1209,8 @@ def save_scene_mappings(request: Request, scene_id: str, body: MappingsInput):
 
 
 def charged_key(request, engine: str, purpose: str, body) -> dict:
-    """The key a paid run will be charged to (Phase 8B): the one the engine panel chose.
+    """The key a paid run will be charged to (Phase 8B): the one the engine panel chose,
+    plus (Phase 8C) the fallback keys the confirmation named.
 
     The user's confirmation covers only the keys it names (`charge_keys`), so a key changed
     in another window since the confirmation was shown is refused, not charged.
@@ -1205,9 +1220,15 @@ def charged_key(request, engine: str, purpose: str, body) -> dict:
         raise HTTPException(
             409, f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings."
         )
-    if key["id"] not in (getattr(body, "charge_keys", None) or []):
+    named = getattr(body, "charge_keys", None) or []
+    if key["id"] not in named:
         raise HTTPException(409, charge_confirmation(engine, key["label"]))
-    return keystore.stamp(key)
+    stamped = keystore.stamp(key)
+    # Phase 8C: the panel's fallback keys this confirmation also named, in the panel's order.
+    # A run moves only to these when its key is refused; any other key is never charged.
+    chain = keystore.fallback_of(request.app.state.settings, engine, purpose)
+    confirmed = [i for i in chain["order"] if i in named and i != key["id"]] if chain["on"] else []
+    return stamped | ({"fallback_keys": confirmed} if confirmed else {})
 
 
 def _confirmed(body) -> bool:
@@ -1569,6 +1590,11 @@ def withdraw_approval(request: Request, scene_id: str, body: WithdrawInput):
 def settings_data(item: EngineSettings, settings=None):
     accounts = cli_accounts.choices(settings) if settings is not None else {}
     keys = keystore.choices(settings) if settings is not None else {}
+    fallbacks = (
+        {**cli_accounts.fallbacks(settings), **keystore.fallbacks(settings)}
+        if settings is not None
+        else {}
+    )
     return {
         "analysis_engine": item.analysis_engine,
         "generation_engine": item.generation_engine,
@@ -1579,6 +1605,7 @@ def settings_data(item: EngineSettings, settings=None):
         "image_options": image_options_of(item),
         "accounts": accounts,
         "keys": keys,
+        "fallbacks": fallbacks,
         "revision": item.revision,
     }
 
@@ -1628,7 +1655,15 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
                 raise HTTPException(422, "Unknown account choice.")
             if cli_accounts.find(studio, key.split(":")[0], account_id) is None:
                 raise HTTPException(409, "That account no longer exists. Reload the page.")
-        excluded = {"revision", "models", "image_options", "accounts", "keys"}
+        current_fallbacks = {**cli_accounts.fallbacks(studio), **keystore.fallbacks(studio)}
+        for key, value in body.fallbacks.items():
+            if key not in current_fallbacks:
+                raise HTTPException(422, "Unknown fallback choice.")
+            owner = cli_accounts if key in cli_accounts.CHOICES else keystore
+            if any(owner.find(studio, key.split(":")[0], i) is None for i in value.order):
+                kind = "account" if owner is cli_accounts else "key"
+                raise HTTPException(409, f"That {kind} no longer exists. Reload the page.")
+        excluded = {"revision", "models", "image_options", "accounts", "keys", "fallbacks"}
         for key, value in body.model_dump(exclude=excluded).items():
             setattr(item, key, value)
         item.api_models_json = json.dumps(body.models, sort_keys=True)
@@ -1647,6 +1682,12 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
             if current_keys[key] != key_id:
                 provider, purpose = key.split(":")
                 keystore.choose_key(studio, provider, key_id, purpose)
+        # Phase 8C: the fallback lists, also only where they changed.
+        for key, value in body.fallbacks.items():
+            if current_fallbacks[key] != value.model_dump():
+                engine, purpose = key.split(":")
+                owner = cli_accounts if key in cli_accounts.CHOICES else keystore
+                owner.set_fallback(studio, engine, purpose, value.on, value.order)
         item.revision += 1
         return settings_data(item, studio)
 

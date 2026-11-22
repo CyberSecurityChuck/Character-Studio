@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { request, send } from './api'
-import { ChargeSummary, chargeFields, chargeKey, generationNames, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
+import { ChargeSummary, chargeFields, runKeys, generationNames, isImageEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { Dialog, plural, MAX_GENERATION_RUNS } from './Batches'
 import type { PipelineRun } from './Pipeline'
 import { PresetSelect, usePresets } from './Presets'
@@ -64,7 +64,7 @@ export function GenerateAllDialog({ item, token, onClose, onStarted }: { item: S
     setBusy(true); setError('')
     try {
       const run = await send<PipelineRun>(`/api/scene-sets/${item.id}/generate-all`, 'POST', token, {
-        scene_ids: chosen.map(r => r.scene_id), count, mode, ...(presetId ? { preset_id: presetId } : {}), ...(charged ? chargeFields(chargeKey(apiEngines.byId[engine], 'generation')) : {}),
+        scene_ids: chosen.map(r => r.scene_id), count, mode, ...(presetId ? { preset_id: presetId } : {}), ...(charged ? chargeFields(...runKeys(apiEngines.byId[engine], 'generation')) : {}),
       })
       onStarted(run)
     } catch (e) { setError(e instanceof Error ? e.message : 'Generate all could not be started.'); setBusy(false) }

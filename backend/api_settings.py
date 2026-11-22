@@ -122,6 +122,11 @@ def engine_data(request: Request, engine: str, models_error: str | None = None) 
             purpose: (keystore.active(settings, engine, purpose) or {}).get("id")
             for purpose in keystore.PURPOSES[engine]
         },
+        # Phase 8C: each panel's fallback list, so a charge confirmation can name its keys.
+        "fallback": {
+            purpose: keystore.fallback_of(settings, engine, purpose)
+            for purpose in keystore.PURPOSES[engine]
+        },
         "typical_usage": typical,
         # Phase 6C: engines that can also make images, and their own figures and models.
         "makes_images": image is not None,

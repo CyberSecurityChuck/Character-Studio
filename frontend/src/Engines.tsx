@@ -3,6 +3,7 @@ import { AccountPicker, accountName, useCliAccounts } from './Accounts'
 import { ApiError, request, send } from './api'
 import { KeyPicker, isApiEngine, isImageEngine, keysChanged, useApiEngines, type ApiEngine } from './ApiEngines'
 import { InfoTip } from './Controls'
+import { FallbackPicker, fallbackOff, type Fallback, type FallbackItem } from './Fallback'
 import { ModelPicker } from './ModelPicker'
 import { notify } from './Toast'
 
@@ -14,7 +15,9 @@ type Settings = { analysis_engine: string; generation_engine: string; claude_tim
   // Phase 8A review (D044): the Claude Code / Codex account per engine and purpose, e.g. "codex_cli:generation".
   accounts: Record<string, string>
   // Phase 8B: the API key per provider and purpose, e.g. "openai_api:generation" (null: no key yet).
-  keys: Record<string, string | null>; revision: number }
+  keys: Record<string, string | null>
+  // Phase 8C: "Switch automatically" and its accounts or keys in order, per choice.
+  fallbacks: Record<string, Fallback>; revision: number }
 type Choice = { id: string; name: string; tag?: string; line: string }
 type Group = { title: string; hint: string; items: Choice[] }
 
@@ -64,8 +67,10 @@ function modelsFor(s: Settings, purpose: Purpose) {
 const accountsFor = (s: Settings, purpose: Purpose) => Object.entries(s.accounts ?? {}).filter(([k]) => k.endsWith(`:${purpose}`)).sort()
 // Phase 8B: each panel saves only its own key choices (bfl_api has no panel and saves at once).
 const keysFor = (s: Settings, purpose: Purpose) => Object.entries(s.keys ?? {}).filter(([k, v]) => k.endsWith(`:${purpose}`) && !k.startsWith('bfl_api:') && v).sort()
+// Phase 8C: each panel saves only its own fallback lists (FLUX has none).
+const fallbacksFor = (s: Settings, purpose: Purpose) => Object.entries(s.fallbacks ?? {}).filter(([k]) => k.endsWith(`:${purpose}`) && !k.startsWith('bfl_api:')).sort()
 function panelView(s: Settings, purpose: Purpose) {
-  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose), accountsFor(s, purpose), keysFor(s, purpose)])
+  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose), accountsFor(s, purpose), keysFor(s, purpose), fallbacksFor(s, purpose)])
 }
 const same = (a: Settings, b: Settings, purpose: Purpose) => panelView(a, purpose) === panelView(b, purpose)
 /** `target` with `source`'s choices for one panel; the other panel's choices are kept. */
@@ -82,7 +87,8 @@ function applyPanel(target: Settings, source: Settings, purpose: Purpose): Setti
   // Each panel saves only its own account choices (Codex has one per panel).
   const accounts = { ...target.accounts, ...Object.fromEntries(accountsFor(source, purpose)) }
   const keys = { ...target.keys, ...Object.fromEntries(keysFor(source, purpose)) }
-  return { ...target, ...fields, models, accounts, keys }
+  const fallbacks = { ...target.fallbacks, ...Object.fromEntries(fallbacksFor(source, purpose)) }
+  return { ...target, ...fields, models, accounts, keys, fallbacks }
 }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -161,6 +167,13 @@ export default function Engines({ token }: { token: string }) {
       body.accounts = Object.fromEntries(Object.entries(body.accounts ?? {}).map(([key, id]) => [key, known(key, id) ? id : 'default']))
       // A key removed since the page loaded is left out (the server keeps its own choice).
       body.keys = Object.fromEntries(Object.entries(body.keys ?? {}).filter(([key, id]) => !key.startsWith('bfl_api:') && id && api.byId[key.split(':')[0]]?.keys.some(k => k.id === id)))
+      // Phase 8C: only this panel's lists, without accounts or keys removed since the page loaded.
+      const exists = (key: string, id: string) => {
+        const engine = key.split(':')[0]
+        const group = accounts.byEngine[engine]
+        return group ? group.accounts.some(a => a.id === id) : !!api.byId[engine]?.keys.some(k => k.id === id)
+      }
+      body.fallbacks = Object.fromEntries(fallbacksFor(body, panel).map(([key, value]) => [key, { on: value.on, order: value.order.filter(id => exists(key, id)) }]))
       const next = await send<Settings>('/api/engines/settings', 'PUT', token, { ...body, revision: saved.revision })
       setSaved(next)
       // Keep the other panel's unsaved edits.
@@ -213,6 +226,13 @@ export default function Engines({ token }: { token: string }) {
     return keys.find(k => k.id === value)?.id ?? keys[0]?.id ?? null
   }
   const setKey = (id: string, purpose: Purpose, value: string) => setForm({ ...form, keys: { ...form.keys, [`${id}:${purpose}`]: value } })
+  // Phase 8C: the fallback list under Account or API keys.
+  const fallbackOf = (id: string, purpose: Purpose) => form.fallbacks?.[`${id}:${purpose}`] ?? fallbackOff
+  const setFallback = (id: string, purpose: Purpose, value: Fallback) => setForm({ ...form, fallbacks: { ...form.fallbacks, [`${id}:${purpose}`]: value } })
+  const accountItems = (id: string): FallbackItem[] => (accounts.byEngine[id]?.accounts ?? []).map(a => ({ id: a.id, label: a.label, state: a.status ? (a.status.installed && a.status.signed_in ? 'Signed in' : 'Signed out') : undefined, ready: !!a.status?.signed_in }))
+  const keyItems = (id: string): FallbackItem[] => (api.byId[id]?.keys ?? []).map(k => ({ id: k.id, label: k.label }))
+  const accountFallback = (id: string, purpose: Purpose) => <FallbackPicker kind="account" items={accountItems(id)} chosen={chosenAccount(form, id, purpose)} value={fallbackOf(id, purpose)} onChange={v => setFallback(id, purpose, v)} />
+  const keyFallback = (id: string, purpose: Purpose) => <FallbackPicker kind="key" items={keyItems(id)} chosen={chosenKey(form, id, purpose)} value={fallbackOf(id, purpose)} onChange={v => setFallback(id, purpose, v)} />
   const keyCount = (id: string) => api.byId[id]?.keys.length ?? 0
   const engine = form.analysis_engine
   const model = form.models[engine]?.analysis ?? ''
@@ -231,6 +251,7 @@ export default function Engines({ token }: { token: string }) {
     details = <>
       <CliStatus name={claude ? "Claude Code" : "Codex"} status={statusFor(engine, 'analysis')} checking={checking} onCheck={() => void check()} />
       <AccountPicker engine={engine} purpose="analysis" token={token} chosen={chosenAccount(form, engine, 'analysis')} saved={chosenAccount(saved, engine, 'analysis')} onChoose={id => setAccount(engine, 'analysis', id)} />
+      {accountFallback(engine, 'analysis')}
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="cli-model">Model</label><InfoTip label="Model">{claude ? 'Default uses your Claude plan’s standard model. Opus, Sonnet and Fable always mean the latest version of that model. The same model is used for Polish prompt and quality checks.' : 'Default uses the model your ChatGPT plan gives Codex. Type a model name only if you know your plan offers it.'}</InfoTip></div>
           <ModelPicker id="cli-model" value={model} defaultLabel="Default (your plan’s choice)" options={claude ? claudeModels.map(m => ({ value: m })) : []}
@@ -245,6 +266,7 @@ export default function Engines({ token }: { token: string }) {
     if (apiItem.suggested_model && !apiItem.models.includes(apiItem.suggested_model)) options.unshift({ value: apiItem.suggested_model, tag: 'Recommended' })
     details = <>
       <KeyPicker engine={apiItem} purpose="analysis" token={token} chosen={chosenKey(form, engine, 'analysis')} saved={chosenKey(saved, engine, 'analysis')} onChoose={id => setKey(engine, 'analysis', id)} onChanged={() => void api.reload()} shared={shared(apiItem)} />
+      {keyFallback(engine, 'analysis')}
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="api-model">Model</label><InfoTip label="Model">The models your key can use, listed when you saved or tested the key.{apiItem.suggested_model ? ` ${apiItem.suggested_model} is on Google’s free tier for analysis (October 2026).` : ''}</InfoTip></div>
           <ModelPicker id="api-model" value={model} options={options} disabled={!apiItem.keys.length} placeholder={apiItem.keys.length ? 'Choose a model' : 'Add a key to list models'}
@@ -270,6 +292,7 @@ export default function Engines({ token }: { token: string }) {
     generationDetails = <>
       <CliStatus name="Codex" status={statusFor('codex_cli', 'generation')} checking={checking} onCheck={() => void check()} />
       <AccountPicker engine="codex_cli" purpose="generation" token={token} chosen={chosenAccount(form, 'codex_cli', 'generation')} saved={chosenAccount(saved, 'codex_cli', 'generation')} onChoose={id => setAccount('codex_cli', 'generation', id)} />
+      {accountFallback('codex_cli', 'generation')}
       <div className="engine-fields"><TimeLimit id="generation-timeout" label="Time limit" value={form.codex_timeout}
         tip="A Codex run that reaches this limit is stopped. One image took about 70 seconds in testing. Shared with Codex analysis." onChange={v => setForm({ ...form, codex_timeout: v })} /></div>
       <p className="hint">Codex always uses its built-in image model; there is no model to choose here.</p>
@@ -280,6 +303,7 @@ export default function Engines({ token }: { token: string }) {
     const qualities = imageQualities[generator]
     generationDetails = <>
       <KeyPicker engine={imageItem} purpose="generation" token={token} chosen={chosenKey(form, generator, 'generation')} saved={chosenKey(saved, generator, 'generation')} onChoose={id => setKey(generator, 'generation', id)} onChanged={() => void api.reload()} shared={shared(imageItem)} />
+      {keyFallback(generator, 'generation')}
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="image-model">Image model</label><InfoTip label="Image model">The image models your key can use, listed when you saved or tested the key. {imageItem.suggested_image_model} is what {imageItem.company} recommends (October 2026).</InfoTip></div>
           <ModelPicker id="image-model" value={imageModel} options={choices} disabled={!imageItem.keys.length} placeholder={imageItem.keys.length ? 'Choose an image model' : 'Add a key to list models'}

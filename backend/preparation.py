@@ -162,7 +162,7 @@ class AnalyseAllInput(BaseModel):
     # API engines: the user confirmed that every run may be charged (once for the whole run).
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 @router.post("/scene-sets/{scene_set_id}/analyse-all", status_code=202)

@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from backend import fallback
 from backend.configuration import Settings
 
 KEY_DIRECTORY = "keys"
@@ -179,6 +180,8 @@ def _read(settings: Settings) -> dict:
                 and isinstance(k.get("label"), str)
             ],
             "active": raw.get("active") if isinstance(raw.get("active"), dict) else {},
+            # Phase 8C: each panel's fallback list (off unless the user turned it on).
+            "fallback": fallback.clean(raw.get("fallback")),
         }
         if _migrate(settings, data):
             _write(settings, data)
@@ -335,6 +338,37 @@ def choose_key(settings: Settings, provider: str, key_id: str, purpose: str | No
     return active(settings, provider, purposes[0])
 
 
+def fallback_of(settings: Settings, provider: str, purpose: str) -> dict:
+    """The panel's fallback list (Phase 8C): {"on": bool, "order": [key ids]}."""
+    existing = [k["id"] for k in keys(settings, provider)]
+    return fallback.read(_read(settings), f"{provider}:{purpose}", existing)
+
+
+def fallbacks(settings: Settings) -> dict[str, dict]:
+    return {choice: fallback_of(settings, *choice.split(":")) for choice in CHOICES}
+
+
+def set_fallback(settings: Settings, provider: str, purpose: str, on: bool, order: list[str]):
+    """Save a panel's fallback list (with the panel's Save)."""
+    with _LOCK:
+        known = {k["id"] for k in keys(settings, provider)}
+        if any(i not in known for i in order):
+            raise KeyStoreError("That key no longer exists. Reload the page.")
+        data = _read(settings)
+        fallback.write(data, f"{provider}:{purpose}", on, order)
+        _write(settings, data)
+
+
+def promote(settings: Settings, provider: str, purpose: str, old: str, new: str) -> None:
+    """After an automatic switch: the key that worked becomes the panel's choice (D046)."""
+    with _LOCK:
+        if find(settings, provider, new) is None:
+            return
+        data = _read(settings)
+        fallback.promote(data, f"{provider}:{purpose}", old, new)
+        _write(settings, data)
+
+
 def delete_key(settings: Settings, provider: str, key_id: str) -> None:
     """Remove the key from this PC. It stays valid at the provider until revoked there."""
     with _LOCK:
@@ -349,6 +383,7 @@ def delete_key(settings: Settings, provider: str, key_id: str) -> None:
         chosen = [c for c, v in data["active"].items() if c.startswith(prefix) and v == key_id]
         for choice in chosen:
             data["active"].pop(choice)
+        fallback.forget(data, prefix, key_id)
         _key_file(settings, provider, key_id).unlink(missing_ok=True)
         _write(settings, data)
 

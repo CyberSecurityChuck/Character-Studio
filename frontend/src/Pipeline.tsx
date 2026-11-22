@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AccountChoice, accountName, afterPick, pickBody, useCliAccounts, type AccountPick, type RunAccount } from './Accounts'
 import { request, send } from './api'
-import { ChargeSummary, KeyChoice, chargeFields, chargeKey, engineNames, generationNames, isApiEngine, isImageEngine, keyName, keysChanged, useApiEngines } from './ApiEngines'
+import { ChargeSummary, KeyChoice, chargeFields, runKeys, engineNames, generationNames, isApiEngine, isImageEngine, keyName, keysChanged, useApiEngines } from './ApiEngines'
 import { Dialog, plural, pauseTitles, MAX_ANALYSIS_RUNS, MAX_GENERATION_RUNS } from './Batches'
 import { type Character, type Group } from './Library'
 import { PresetSelect, usePresets } from './Presets'
 import type { SceneSet } from './SceneSets'
+import { SwitchNotes, type SwitchRecord } from './Fallback'
 
 // Phase 7C-2: Run everything - the full auto-pipeline for one scene set (D030, D037). Its card
 // also shows Generate all runs (Phase 7D, D039) with their pause summary and buttons.
@@ -18,7 +19,7 @@ export type PipelineRun = {
   id: string; kind: 'everything' | 'generate'; summary: Summary | null
   status: 'running' | 'paused' | 'waiting' | 'cancelled' | 'finished'; stage: 'analysing' | 'generating'; pause_details: string | null
   rules: { images: number; stop_before_generating: boolean; let_uncertain: boolean; let_mismatch: boolean; generation_engine: string; analysis_engine: string | null; preset: string | null }
-  outcome: { analyse?: number; approved?: number; stopped?: Stopped[]; already_done?: number; generate?: number; images?: number; note?: string }
+  outcome: { analyse?: number; approved?: number; stopped?: Stopped[]; already_done?: number; generate?: number; images?: number; note?: string; switches?: SwitchRecord[] }
   batches: RunBatch[]; created_at: string; updated_at: string
   // Phase 8B: the API key the run’s images are charged to (Generate now).
   image_key: RunAccount | null
@@ -79,7 +80,7 @@ export function RunEverythingDialog({ item, token, onClose, onStarted }: { item:
         preset_id: presetId || null, images, let_uncertain: letUncertain, let_mismatch: letMismatch,
         stop_before_generating: pauseFirst,
         // Phase 8B: the confirmation names the key of each paid part.
-        ...(charged ? chargeFields(analysisPaid ? chargeKey(apiEngines.byId[analysis], 'analysis') : null, imagePaid ? chargeKey(apiEngines.byId[generation], 'generation') : null) : {}),
+        ...(charged ? chargeFields(...(analysisPaid ? runKeys(apiEngines.byId[analysis], 'analysis') : []), ...(imagePaid ? runKeys(apiEngines.byId[generation], 'generation') : [])) : {}),
       })
       onStarted(started)
     } catch (e) { setError(e instanceof Error ? e.message : 'Run everything could not be started.'); setBusy(false) }
@@ -257,6 +258,7 @@ export function PipelineCard({ item, token, version, onChanged, onNotice, onOpen
       <div className={`fig-waiting ${s.not_started + s.running ? '' : 'empty'}`}><dt>{s.running ? `Running · ${waitingWord}` : waitingWord.charAt(0).toUpperCase() + waitingWord.slice(1)}</dt><dd>{s.running ? `${s.running} · ${s.not_started}` : s.not_started}</dd></div>
     </dl>}
     {pauseLine(run) ?? (run.pause_details && <p className="notice-line">{run.pause_details}</p>)}
+    <SwitchNotes switches={o.switches} />
     {pausedNow(run) && <p className="hint">Nothing continues on its own. Click Continue when you are ready (for example after the plan’s limit resets); every batch of this run then goes on. What finished is kept.</p>}
     {switchFrom && <AccountChoice engine={switchFrom.engine} purpose={switchFrom.kind} current={switchFrom.account} verb={pausedNow(run) ? 'Continue' : 'Try failed again'} pick={pick} onPick={setPick} limit={pausedNow(run) && (switchFrom.pause_kind === 'usage_limit' || s?.paused?.kind === 'usage_limit')} />}
     {switchFrom && <KeyChoice engine={switchFrom.engine} purpose={switchFrom.kind} current={switchFrom.key} verb={pausedNow(run) ? 'Continue' : 'Try failed again'} pick={pick} onPick={setPick} />}

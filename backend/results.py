@@ -79,7 +79,7 @@ class GenerateInput(BaseModel):
     # API image engines only: the user confirmed that this run may be charged (Phase 6C).
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 class ExportInput(BaseModel):

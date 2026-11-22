@@ -88,6 +88,8 @@ class FakeProviders:
         self.requests: list[dict] = []
         self.next: dict[str, tuple[int, dict]] = {}
         self.delay = 0.0
+        # Keys answered with 401 (Phase 8C tests).
+        self.refused: set[str] = set()
         # Black Forest Labs (Phase 6C-2): statuses returned by successive polls, then the image.
         self.bfl_statuses: list[str] = ["Pending", "Ready"]
         self.bfl_sample: bytes = b""
@@ -145,7 +147,11 @@ class FakeProviders:
                 )
                 if engine == "bfl_api":
                     return self._bfl(body)
-                if body is None:
+                sent = " ".join(self.headers.values())
+                if any(key in sent for key in fake.refused):
+                    # Phase 8C: a key the provider no longer accepts, on every call.
+                    status, payload = 401, {"error": {"message": "invalid api key"}}
+                elif body is None:
                     status, payload = 200, MODEL_LISTS[prefix]
                 else:
                     time.sleep(fake.delay)

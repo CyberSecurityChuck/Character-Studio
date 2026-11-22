@@ -35,6 +35,7 @@ from uuid import uuid4
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from backend import fallback
 from backend.configuration import Settings
 from backend.models import Batch, EngineJob
 
@@ -88,7 +89,9 @@ def _read(settings: Settings) -> dict:
         and isinstance(a.get("label"), str)
     ]
     active = data.get("active") if isinstance(data.get("active"), dict) else {}
-    return {"accounts": accounts, "active": active}
+    # Phase 8C: each panel's fallback list (off unless the user turned it on).
+    chains = fallback.clean(data.get("fallback"))
+    return {"accounts": accounts, "active": active, "fallback": chains}
 
 
 def _write(settings: Settings, data: dict) -> None:
@@ -238,6 +241,41 @@ def choose(settings: Settings, engine: str, account_id: str, purpose: str | None
     return active(settings, engine, purposes[0])
 
 
+def fallback_of(settings: Settings, engine: str, purpose: str) -> dict:
+    """The panel's fallback list (Phase 8C): {"on": bool, "order": [account ids]}."""
+    existing = [a["id"] for a in accounts(settings, engine)]
+    return fallback.read(_read(settings), f"{engine}:{purpose}", existing)
+
+
+def fallbacks(settings: Settings) -> dict[str, dict]:
+    return {key: fallback_of(settings, *key.split(":")) for key in CHOICES}
+
+
+def set_fallback(settings: Settings, engine: str, purpose: str, on: bool, order: list[str]):
+    """Save a panel's fallback list (with the panel's Save)."""
+    with _LOCK:
+        known = {a["id"] for a in accounts(settings, engine)}
+        if any(i not in known for i in order):
+            raise AccountError("That account no longer exists. Reload the page.")
+        data = _read(settings)
+        fallback.write(data, f"{engine}:{purpose}", on, order)
+        _write(settings, data)
+
+
+def promote(settings: Settings, engine: str, purpose: str, old: str, new: str) -> None:
+    """After an automatic switch: the account that worked becomes the panel's choice (D046)."""
+    with _LOCK:
+        if find(settings, engine, new) is None:
+            return
+        data = _read(settings)
+        older = data["active"].pop(engine, None)  # the per-engine choice from before D044
+        if older:
+            for each in PURPOSES[engine]:
+                data["active"].setdefault(f"{engine}:{each}", older)
+        fallback.promote(data, f"{engine}:{purpose}", old, new)
+        _write(settings, data)
+
+
 def forget(settings: Settings, engine: str, account_id: str) -> None:
     """Remove the account from the list and delete its folder (sign-out comes first)."""
     if account_id == DEFAULT:
@@ -253,6 +291,7 @@ def forget(settings: Settings, engine: str, account_id: str) -> None:
             raise AccountError("That account no longer exists. Reload the page.")
         for key in [k for k, v in data["active"].items() if v == account_id]:
             data["active"].pop(key)
+        fallback.forget(data, f"{engine}:", account_id)
         _write(settings, data)
     root = (_root(settings) / engine).resolve()
     target = path.resolve()

@@ -13,6 +13,8 @@ export type ApiEngine = {
   suggested_model: string | null; charge_note: string
   key: { saved: boolean; saved_at: string | null }
   keys: ApiKey[]; active: Partial<Record<KeyPurpose, string | null>>
+  // Phase 8C: "Switch automatically" per panel and its keys in order.
+  fallback?: Partial<Record<KeyPurpose, Fallback>>
   typical_usage: Usage | null
   models: string[]; models_checked_at: string | null; models_listed_by: string | null; models_error: string | null
   // Phase 6C: engines whose key can also make images, with their own models and figures.
@@ -20,6 +22,7 @@ export type ApiEngine = {
   image_charge_note: string | null; typical_image_usage: Usage | null; image_models: string[]
 }
 type Usage = { runs: number; input_tokens: number; output_tokens: number }
+export type Fallback = { on: boolean; order: string[] }
 
 export const apiEngineIds = ['gemini_api', 'anthropic_api', 'openai_api']
 export const isApiEngine = (engine: string) => apiEngineIds.includes(engine)
@@ -60,6 +63,19 @@ export function chargeKey(engine: ApiEngine | undefined, purpose: KeyPurpose): A
   if (!engine) return undefined
   return engine.keys.find(k => k.id === engine.active[purpose]) ?? engine.keys[0]
 }
+/** Phase 8C: the keys a panel's new runs may move to if their key is refused, in order. */
+export function fallbackKeys(engine: ApiEngine | undefined, purpose: KeyPurpose): ApiKey[] {
+  const chain = engine?.fallback?.[purpose]
+  const key = chargeKey(engine, purpose)
+  if (!engine || !chain?.on) return []
+  return chain.order.map(id => engine.keys.find(k => k.id === id)).filter((k): k is ApiKey => !!k && k.id !== key?.id)
+}
+/** Every key a new run may be charged to: the panel's key, then its fallback keys. */
+export const runKeys = (engine: ApiEngine | undefined, purpose: KeyPurpose): ApiKey[] => {
+  const key = chargeKey(engine, purpose)
+  return key ? [key, ...fallbackKeys(engine, purpose)] : []
+}
+const listNames = (keys: { label: string }[]) => keys.map(keyName).join(', then ')
 /** The request fields that accept charges to the named key(s) only (Phase 8B). */
 export const chargeFields = (...keys: (ApiKey | RunAccount | null | undefined)[]) =>
   ({ confirm_charges: true, charge_keys: keys.filter((k): k is ApiKey | RunAccount => !!k).map(k => k.id) })
@@ -74,10 +90,12 @@ export function ChargeSummary({ engine, model, runs, what, image, costLine, purp
   const typical = image ? engine.typical_image_usage : what ? null : engine.typical_usage
   const settings = image ? `, ${image.size}${image.quality ? `, ${image.quality} quality` : ''}` : ''
   const key = chargeKey(engine, purpose ?? (image ? 'generation' : 'analysis'))
+  const fallbacks = fallbackKeys(engine, purpose ?? (image ? 'generation' : 'analysis'))
   return <div className="check-box warning charge-box">
     <strong>{runs === 1 ? 'This run may be charged' : `These ${runs} runs may be charged`} to your {engine.company} account{key ? ` through the key ${keyName(key)}` : ''}</strong>
     <ul>
       {key && engine.keys.length > 1 && <li>The {engine.company} account that owns the key {keyName(key)} is billed. Another key can be chosen in Studio settings.</li>}
+      {key && fallbacks.length > 0 && <li>Switch automatically is on: if {engine.company} refuses the key {keyName(key)}, the runs that have not started move to {listNames(fallbacks)} and are charged there. Nothing that ran is sent again, and no other key is used.</li>}
       <li>Sends {what ?? 'the Base Image (without location data) and the analysis instruction'} to {engine.company}{model ? `, model ${model}` : ''}{settings}, once per run. Character names are never sent.</li>
       <li>{costLine ? costLine : typical ? `Earlier runs here used about ${thousands(typical.input_tokens)} input and ${thousands(typical.output_tokens)} output tokens each (${typical.runs} ${typical.runs === 1 ? 'run' : 'runs'}).`
         : image ? `${engine.company} charges per image; larger sizes${image.quality ? ' and higher quality' : ''} cost more. The studio records the reported figures after each run.`
@@ -102,7 +120,7 @@ export function ChargeDialog({ engine, model, runs, note, title, action = 'Analy
       {note && <p className="hint">{note}</p>}
       <ChargeSummary engine={engine} model={model} runs={runs} what={what} image={image} costLine={costLine} purpose={purpose} />
       <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button>
-        <button type="button" autoFocus disabled={!key} onClick={() => { onConfirm(chargeFields(key)); onClose() }}>{action} and accept charges</button></div>
+        <button type="button" autoFocus disabled={!key} onClick={() => { onConfirm(chargeFields(...runKeys(engine, purpose ?? (image ? 'generation' : 'analysis')))); onClose() }}>{action} and accept charges</button></div>
     </div>
   </dialog>
 }

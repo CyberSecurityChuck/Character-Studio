@@ -19,12 +19,14 @@ from PIL import Image, ImageOps
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
+from backend import auto_switch, cli_accounts
 from backend.analysis_schema import ENGINE_INSTRUCTION, JSON_SCHEMA, AnalysisFormatError
 from backend.api_engines import (
     API_ENGINES,
     ApiCancelled,
     StructuredTask,
     is_api_engine,
+    list_models,
     require_key,
     run_analysis,
     run_structured,
@@ -66,7 +68,9 @@ from backend.generation import (
 )
 from backend.image_api import is_image_engine, run_image
 from backend.keystore import PURPOSES as KEY_PURPOSES
+from backend.keystore import purpose_of as key_purpose
 from backend.keystore import recorded as recorded_key
+from backend.keystore import stamp as key_stamp
 from backend.models import (
     Batch,
     EngineJob,
@@ -111,17 +115,25 @@ def runs_on(engine: str, settings_json: str | None) -> str | None:
 
 
 def pause_batches(
-    session, engine: str, kind: str, details: str, batch_id: str | None, where: str | None = None
+    session,
+    engine: str,
+    kind: str,
+    details: str,
+    batch_id: str | None,
+    where: str | None = None,
+    keep: frozenset[str] | set[str] = frozenset(),
 ) -> None:
     """Pause the job's own batch and every other running batch that uses the same engine
     and the same account (Phase 8A) or key (Phase 8B): another account or key is not
-    affected."""
+    affected, and neither is a batch that switched automatically (Phase 8C, `keep`)."""
     for batch in session.scalars(
         select(Batch).where(
             Batch.status == "running", or_(Batch.id == batch_id, Batch.engine == engine)
         )
     ):
-        if batch.id != batch_id and runs_on(engine, batch.settings_json) != where:
+        if batch.id in keep or (
+            batch.id != batch_id and runs_on(engine, batch.settings_json) != where
+        ):
             continue
         batch.status = "paused"
         batch.pause_kind = kind
@@ -295,14 +307,14 @@ class JobRunner:
                 refresh_workflow(session, scene)
             return job.id
 
-    def _finish(self, session, job, status, kind=None, details=None) -> None:
+    def _finish(self, session, job, status, kind=None, details=None, keep=frozenset()) -> None:
         job.status = status
         job.error_kind = kind
         job.error_details = details
         job.finished_at = now()
         if status == "failed" and kind in PAUSE_KINDS:
             where = runs_on(job.engine, job.settings_json)
-            pause_batches(session, job.engine, kind, details, job.batch_id, where)
+            pause_batches(session, job.engine, kind, details, job.batch_id, where, keep)
         session.flush()
         scene = session.get(Scene, job.scene_id)
         if scene is not None:
@@ -336,8 +348,7 @@ class JobRunner:
                 self._run_api_analysis(job_id, scene, engine, timeout, run_settings, batch_id)
                 return
             try:
-                account, home = self._account(engine, run_settings)
-                version = require_ready(engine, overrides, account)
+                account, home, version = self._ready(job_id, engine, run_settings)
             except EngineError as error:
                 if batch_id is not None and error.kind in PAUSE_KINDS:
                     raise _NotSent(error) from error
@@ -429,9 +440,11 @@ class JobRunner:
                     message = stop.args[0] if stop.args else "You cancelled this run."
                     self._finish(session, job, "cancelled", "cancelled", message)
         except EngineError as error:
+            # Phase 8C: a refused key moves the batch's waiting items, never this run.
+            keep = self._after_refusal(job_id) if error.kind == "key_problem" else set()
             with writing_session(self.engine) as session:
                 job = session.get(EngineJob, job_id)
-                self._finish(session, job, "failed", error.kind, error.message)
+                self._finish(session, job, "failed", error.kind, error.message, keep)
         except Exception:
             # Never record internals or private paths; the job folder keeps the CLI's output.
             with writing_session(self.engine) as session:
@@ -455,7 +468,7 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this run, so nothing was sent."
                 )
-            require_key(self.settings, engine, run_settings)
+            self._key(job_id, engine, run_settings)
         except EngineError as error:
             if batch_id is not None and error.kind in PAUSE_KINDS:
                 raise _NotSent(error) from error
@@ -506,11 +519,10 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this run, so nothing was sent."
                 )
-            require_key(self.settings, engine, run_settings)
+            self._key(job_id, engine, run_settings)
             version = model
         else:
-            account, _home = self._account(engine, run_settings)
-            version = require_ready(engine, self.settings.engine_commands, account)
+            account, _home, version = self._ready(job_id, engine, run_settings)
         if self._cancel_requested(job_id):
             raise _Stopped()
         with Session(self.engine) as session:
@@ -625,7 +637,7 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this run, so nothing was sent."
                 )
-            require_key(self.settings, engine, run_settings)
+            self._key(job_id, engine, run_settings)
         except EngineError as error:
             if batch_id is not None and error.kind in PAUSE_KINDS:
                 raise _NotSent(error) from error
@@ -691,11 +703,10 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this edit, so nothing was sent."
                 )
-            require_key(self.settings, option.engine, run_settings)
+            self._key(job_id, option.engine, run_settings)
             version = model
         else:
-            account, home = self._account("codex_cli", run_settings)
-            version = require_ready("codex_cli", self.settings.engine_commands, account)
+            account, home, version = self._ready(job_id, "codex_cli", run_settings)
         if self._cancel_requested(job_id):
             raise _Stopped()
         replace = run_settings["kind"] == "replace"
@@ -784,6 +795,134 @@ class JobRunner:
                 "nothing was sent. Continue with another account, or start the run again.",
             ) from error
         return env, home_of(self.settings, engine, account_id)
+
+    # Phase 8C: automatic switching (auto_switch.py) ---------------------------------------
+
+    def _kind_of(self, job_id: str) -> tuple[str, str | None]:
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            return job.kind, job.batch_id
+
+    def _ready(self, job_id: str, engine: str, run_settings: dict):
+        """The run's account, checked before anything is sent: (folder variable, profile
+        folder, CLI version). A signed-out or removed account moves the run to the next
+        signed-in account of the panel's list, when the user turned switching on."""
+        overrides = self.settings.engine_commands
+        try:
+            account, home = self._account(engine, run_settings)
+            return account, home, require_ready(engine, overrides, account)
+        except EngineError as error:
+            if error.kind != "signed_out":
+                raise
+            found, tried = self._switch_account(job_id, engine, run_settings)
+            if found is not None:
+                return found
+            if tried:
+                raise EngineError(
+                    error.kind,
+                    f"{error.message} Automatic switching found no other account in the "
+                    "list that is signed in.",
+                ) from error
+            raise
+
+    def _switch_account(self, job_id: str, engine: str, run_settings: dict):
+        kind, batch_id = self._kind_of(job_id)
+        current, label = recorded(json.dumps(run_settings))
+        reason = (
+            "account_removed"
+            if cli_accounts.find(self.settings, engine, current) is None
+            else "signed_out"
+        )
+        candidates = auto_switch.account_candidates(self.settings, engine, kind, current)
+        for account in candidates:
+            try:
+                env = account_env(self.settings, engine, account["id"])
+                version = require_ready(engine, self.settings.engine_commands, env)
+            except (EngineError, AccountError):
+                continue
+            with writing_session(self.engine) as session:
+                auto_switch.move(
+                    session, self.settings, engine, account, {"id": current, "label": label},
+                    reason, job_id, [batch_id] if batch_id else [], include_job=True,
+                )
+            run_settings.update(account=account["id"], account_label=account["label"])
+            return (env, home_of(self.settings, engine, account["id"]), version), True
+        return None, bool(candidates)
+
+    def _key(self, job_id: str, engine: str, run_settings: dict) -> None:
+        """The run's key, checked before anything is sent. A removed key moves the run to
+        the next confirmed key of the panel's list that works, when switching is on."""
+        try:
+            require_key(self.settings, engine, run_settings)
+        except EngineError as error:
+            if error.kind != "key_problem":
+                raise
+            kind, batch_id = self._kind_of(job_id)
+            old_id, old_label = recorded_key(json.dumps(run_settings))
+            candidates = auto_switch.key_candidates(self.settings, engine, kind, run_settings)
+            for key in candidates:
+                if not self._key_works(engine, key["id"], run_settings.get("model"), kind):
+                    continue
+                with writing_session(self.engine) as session:
+                    auto_switch.move(
+                        session, self.settings, engine, key, {"id": old_id, "label": old_label},
+                        "key_removed", job_id, [batch_id] if batch_id else [], include_job=True,
+                    )
+                run_settings.update(key_stamp(key))
+                return
+            if candidates:
+                raise EngineError(
+                    error.kind,
+                    f"{error.message} Automatic switching found no other key in the list "
+                    "that works.",
+                ) from error
+            raise
+
+    def _key_works(self, engine: str, key_id: str, model: str | None, kind: str | None) -> bool:
+        """The free model-list check that Test key uses: the provider accepts the key and it
+        offers the run's model. Nothing is charged."""
+        try:
+            analysis, images = list_models(self.settings, engine, key_id)
+        except Exception:  # a key that cannot be checked is not used
+            return False
+        listed = images if key_purpose(engine, kind) == "generation" else analysis
+        return bool(model) and model in listed
+
+    def _after_refusal(self, job_id: str) -> set[str]:
+        """The provider refused a run's key: that run stays failed (it was sent and is never
+        retried), and each running batch on that key moves its waiting items to the next
+        confirmed key of its panel's list that works. Returns the batches that moved, so
+        they are not paused."""
+        with Session(self.engine) as session:
+            job = session.get(EngineJob, job_id)
+            engine = job.engine
+            if job.batch_id is None or engine not in KEY_PURPOSES:
+                return set()
+            old_id, old_label = recorded_key(job.settings_json)
+            batches = [
+                (b.id, b.kind, json.loads(b.settings_json or "{}"))
+                for b in session.scalars(
+                    select(Batch).where(Batch.status == "running", Batch.engine == engine)
+                )
+                if b.id == job.batch_id or runs_on(engine, b.settings_json) == old_id
+            ]
+        switched: set[str] = set()
+        works: dict[tuple, bool] = {}
+        for batch_id, kind, values in batches:
+            for key in auto_switch.key_candidates(self.settings, engine, kind, values):
+                check = (key["id"], values.get("model"), kind)
+                if check not in works:
+                    works[check] = self._key_works(engine, *check)
+                if not works[check]:
+                    continue
+                with writing_session(self.engine) as session:
+                    auto_switch.move(
+                        session, self.settings, engine, key, {"id": old_id, "label": old_label},
+                        "key_refused", job_id, [batch_id], include_job=False,
+                    )
+                switched.add(batch_id)
+                break
+        return switched
 
     def _codex_edit(
         self, job_id, job_dir: Path, files: list[Path], instruction: str, timeout, account, home

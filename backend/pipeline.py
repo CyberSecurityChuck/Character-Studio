@@ -123,14 +123,14 @@ class RunInput(BaseModel):
     # Paid engines: the user confirmed the charges for the whole run.
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 class ChargeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_charges: bool = False
     # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
-    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    charge_keys: list[str] = Field(default_factory=list, max_length=12)
 
 
 class ContinueInput(ChargeInput):
@@ -768,7 +768,7 @@ async def continue_run(request: Request, run_id: str, body: ContinueInput | None
         if moved:
             switch_account(request, session, [b for b in paused if b.engine == moved], moved, body)
             kinds = {b.kind for b in paused if b.engine == moved}
-            _remember_account(run, moved, body.account_id, request, kinds)
+            remember_account(run, moved, body.account_id, request.app.state.settings, kinds)
         for batch in paused:
             batch.status, batch.pause_kind, batch.pause_details = "running", None, None
             batch.updated_at = now()
@@ -795,13 +795,14 @@ def _moved_engine(body: "ContinueInput | None", engines: set[str]) -> str | None
     return engine
 
 
-def _remember_account(
-    run: PipelineRun, engine: str, account_id: str, request, kinds: set[str]
+def remember_account(
+    run: PipelineRun, engine: str, account_id: str, settings, kinds: set[str]
 ) -> None:
-    """Later batches of this run's moved parts (Run everything's images) use it too."""
+    """Later batches of this run's moved parts (Run everything's images) use it too; also
+    after an automatic switch (Phase 8C)."""
     rules = json.loads(run.rules_json)
     if is_api_engine(engine):
-        key = keystore.find(request.app.state.settings, engine, account_id)
+        key = keystore.find(settings, engine, account_id)
         if key is not None:
             for kind in kinds:
                 part = "image_run" if kind == "generation" else "analysis_run"
@@ -809,7 +810,7 @@ def _remember_account(
                     rules[part] = {**rules[part], **keystore.stamp(key)}
             run.rules_json = json.dumps(rules)
         return
-    account = cli_accounts.find(request.app.state.settings, engine, account_id)
+    account = cli_accounts.find(settings, engine, account_id)
     if account is None:
         return
     for kind in kinds:
@@ -847,7 +848,9 @@ async def retry(request: Request, run_id: str, body: ContinueInput | None = None
         if run.status != "finished":
             raise HTTPException(409, "Wait until the run has finished, then try again.")
         if moving:
-            _remember_account(run, engine, body.account_id, request, {"generation"})
+            remember_account(
+                run, engine, body.account_id, request.app.state.settings, {"generation"}
+            )
         added, skipped = 0, []
         for batch in run_batches(session, run.id, "generation"):
             if any(j.status == "failed" for j in live_jobs(session, [batch])):

@@ -386,6 +386,21 @@ def test_manual_engine_setting_and_settings_validation(engine_client):
             "openai_api:analysis": None,
             "openai_api:generation": None,
         },
+        # Phase 8C: automatic switching is off until the user turns it on.
+        "fallbacks": {
+            choice: {"on": False, "order": []}
+            for choice in (
+                "claude_cli:analysis",
+                "codex_cli:analysis",
+                "codex_cli:generation",
+                "anthropic_api:analysis",
+                "bfl_api:generation",
+                "gemini_api:analysis",
+                "gemini_api:generation",
+                "openai_api:analysis",
+                "openai_api:generation",
+            )
+        },
         "revision": 1,
     }
     status ={s["engine"]: s for s in client.get("/api/engines/status").json()}

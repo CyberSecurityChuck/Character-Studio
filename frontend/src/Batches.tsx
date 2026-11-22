@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { AccountChoice, accountName, afterPick, pickBody, useCliAccounts, type AccountPick, type RunAccount } from './Accounts'
 import { request, send } from './api'
-import { ChargeSummary, KeyChoice, chargeFields, chargeKey, engineNames, generationNames, isApiEngine, keyName, keysChanged, sendsTo, useApiEngines } from './ApiEngines'
+import { ChargeSummary, KeyChoice, chargeFields, fallbackKeys, runKeys, engineNames, generationNames, isApiEngine, keyName, keysChanged, sendsTo, useApiEngines } from './ApiEngines'
 import { PresetSelect, usePresets } from './Presets'
 import { Avatar, type Character, type Group } from './Library'
 import { duration } from './Results'
 import type { SceneSummary } from './Scenes'
+import { SwitchNotes, type SwitchRecord } from './Fallback'
 
 export type BatchItem = { job_id: string; position: number; scene_id: string; scene_title: string | null; thumbnail_url: string; status: string; mode: string | null; retry_of: string | null; error_kind: string | null; error_details: string | null; result_id: string | null; result_version: number | null; seconds: number | null; started_at: string | null }
 export type Batch = {
@@ -15,6 +16,8 @@ export type Batch = {
   account: RunAccount | null
   // Phase 8B: the API key the batch is charged to (id and name only).
   key: RunAccount | null
+  // Phase 8C: each automatic switch to another account or key.
+  switches?: SwitchRecord[]
   created_at: string; updated_at: string; counts: Record<'not_started' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted', number>
   total: number; scene_count: number; retryable: number; average_seconds: number | null; estimate_seconds: number | null; items: BatchItem[]
 }
@@ -143,6 +146,7 @@ function BatchCard({ batch, token, onChanged, onOpenScene, highlight = '' }: { b
         {batch.state === 'running' && batch.estimate_seconds != null && <span className="hint">about {duration(batch.estimate_seconds + (counts.running ? batch.average_seconds ?? 0 : 0))} left</span>}
       </p>
     </div>
+    <SwitchNotes switches={batch.switches} />
     {batch.state === 'paused' && batch.pause_kind && <div className="check-box warning batch-paused">
       <strong>{(pauseTitles[batch.pause_kind] ?? pauseTitles.user)(engineNames[batch.engine] ?? batch.engine_name, batch.engine)}</strong>
       {batch.pause_details && <p>{batch.pause_details}</p>}
@@ -280,8 +284,8 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
     setBusy(true); setError('')
     try {
       const result = kind === 'analysis'
-        ? await send<BatchStart>('/api/batches/analysis', 'POST', token, { scene_ids: queued.map(s => s.id), include_analysed: includeAnalysed, ...(charged ? chargeFields(chargeKey(apiEngines.byId[engine], 'analysis')) : {}) })
-        : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode, ...(presetId ? { preset_id: presetId } : {}), ...(charged ? chargeFields(chargeKey(apiEngines.byId[engine], 'generation')) : {}) })
+        ? await send<BatchStart>('/api/batches/analysis', 'POST', token, { scene_ids: queued.map(s => s.id), include_analysed: includeAnalysed, ...(charged ? chargeFields(...runKeys(apiEngines.byId[engine], 'analysis')) : {}) })
+        : await send<BatchStart>('/api/batches/generation', 'POST', token, { items: queued.map(s => ({ scene_id: s.id })), count, mode, ...(presetId ? { preset_id: presetId } : {}), ...(charged ? chargeFields(...runKeys(apiEngines.byId[engine], 'generation')) : {}) })
       onStarted(result)
     } catch (e) { setError(e instanceof Error ? e.message : 'The batch could not be started.'); setBusy(false) }
   }
@@ -313,7 +317,9 @@ export function BatchDialog({ kind, scenes, preselectAll, engine, token, onClose
         <ul>
           <li>{kind === 'generation' ? 'Each run sends one scene’s Base Image and approved reference photos' : 'Each run sends one Base Image'} to {sendsTo[engine]}{charged ? '' : ', using your own sign-in'}.</li>
           <li>{parts > 1 ? `The studio splits them into ${parts} batches of at most ${kind === 'generation' ? `${MAX_GENERATION_RUNS} images` : MAX_ANALYSIS_RUNS} and runs them` : 'They run'} one after another, never at the same time{average ? `: about ${duration(average * runs)} in all, going by earlier runs on this computer` : ''}.</li>
-          <li>A failed item is marked Failed and the next one starts. {charged ? 'A refused key or a rate or spending limit' : 'A plan limit or signing out'} pauses {parts > 1 ? 'every batch' : 'the batch'} until you continue. Nothing is retried on its own.</li>
+          <li>A failed item is marked Failed and the next one starts. {charged ? 'A refused key or a rate or spending limit' : 'A plan limit or signing out'} pauses {parts > 1 ? 'every batch' : 'the batch'} until you continue{charged
+            ? (fallbackKeys(apiEngines.byId[engine], kind === 'generation' ? 'generation' : 'analysis').length ? ', except that a refused key moves the waiting runs to your next key (Switch automatically)' : '')
+            : '; if Switch automatically is on in Studio settings, signing out moves the waiting runs to your next signed-in account instead'}. Nothing is retried on its own.</li>
           {parts > 1 && <li><b>A long run can use up {charged ? 'your key’s limits' : 'your plan’s allowance'} and stop partway.</b> What finished is kept.</li>}
         </ul>
       </div>}

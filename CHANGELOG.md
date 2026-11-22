@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-22 — Phase 8C: automatic switching for accounts or keys that cannot be used
+
+- **Started** at the user's word ("Start 8C"). The user first confirmed the change to D009: the studio may move a run to another account or key by itself, only when its own account is signed out or its key is refused, never because of a usage limit (D046). Three build questions, one at a time: an ordered list per engine panel, saved with the panel; all runs, single clicks included; the account or key that worked becomes the panel's choice.
+- **Switch automatically** under Account / API keys in each engine panel, off by default: the other accounts or keys with tick boxes, numbers and up/down arrows. Saved with the panel's Save (`fallbacks` in `/api/engines/settings`; kept in `accounts.json` and `keys.json`).
+- **Accounts:** the sign-in check before each run finds a signed-out or removed account, and the run (with its batch's waiting items) moves to the next signed-in account of the list before anything is sent. **Keys:** a key removed before sending moves the run the same way; a key the provider refuses leaves that run failed (it was sent) and moves the batch's waiting items to the next key that passes the free model-list check. Only keys the charge confirmation named are used: the dialog names them, and runs record them as `fallback_keys`.
+- Usage, spending and rate limits never switch. One pass through the list; when nothing works, the run pauses or fails as before, saying the list was tried.
+- Every switch is recorded on the job, the batch and the run (from, to, reason, time) and shown on batch and run cards and in Engine runs. The one that worked becomes the panel's choice and the other goes to the end of the list; an open settings page must reload before saving. Run everything keeps the new account or key for its later batches.
+- No database migration. 198 tests pass (6 new in `tests/test_auto_switch.py`). Review checklist: `Phase_Checks/Phase8C_Review_Checklist.html`.
+
 ## 2026-11-22 — Phase 8B accepted
 
 - The user's follow-up check passed (`Phase_Checks/Phase8B_Followup_Report.md`: 3/3, 0 problems, "Phase 8B looks good") after the heading alignment fix. Phase 8B (several API keys per provider) is accepted. Next in Phase 8: 8C, optional automatic switching for accounts or keys that cannot be used, only when the user says so and after its D009 change is confirmed. Docs only; nothing pushed.
