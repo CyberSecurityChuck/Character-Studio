@@ -50,6 +50,8 @@ class GenerateAllInput(BaseModel):
     preset_id: str | None = Field(default=None, max_length=32)
     # Paid image engines: the user confirmed the charges for every image of this run.
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 def _reason(session, scene: Scene, api: bool, engine: str) -> str | None:
@@ -134,7 +136,7 @@ def generate_all(request: Request, scene_set_id: str, body: GenerateAllInput):
                 "generate the set.",
             )
         image_run = (
-            image_run_settings(request, session, settings, body.confirm_charges, body.preset_id)
+            image_run_settings(request, session, settings, body, body.preset_id)
             if is_image_engine(engine)
             else {}
         )

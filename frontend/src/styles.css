@@ -1646,3 +1646,11 @@ h2 .tag { font-family: var(--font-ui); vertical-align: middle; }
   .account-add input { max-width: none; flex-basis: 100%; }
 }
 .account-switch .account-terms { color: var(--warn-text); }
+
+/* Phase 8B: several API keys per provider, inside the engine panels (same rows as accounts). */
+.key-picker .account-main .key-replace { padding-left: 0; margin-top: 6px; }
+.key-add { flex-wrap: wrap; }
+.key-add .key-name { flex: 0 1 220px; }
+.key-add input[type="password"] { flex: 1 1 260px; max-width: none; }
+.region-key-head + .key-picker { border-top: 0; padding-top: 0; }
+.engine-details > .key-picker:first-child { border-top: 0; padding-top: 0; }

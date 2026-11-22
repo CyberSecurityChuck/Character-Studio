@@ -65,6 +65,8 @@ from backend.generation import (
     store_result,
 )
 from backend.image_api import is_image_engine, run_image
+from backend.keystore import PURPOSES as KEY_PURPOSES
+from backend.keystore import recorded as recorded_key
 from backend.models import (
     Batch,
     EngineJob,
@@ -98,21 +100,28 @@ RESTART_PAUSE_MESSAGE = (
 PAUSE_KINDS = ("usage_limit", "signed_out", "not_installed", "key_problem", "model_problem")
 
 
+def runs_on(engine: str, settings_json: str | None) -> str | None:
+    """The account (subscription CLIs, Phase 8A) or key (API engines, Phase 8B) a job or
+    batch was queued with; None for engines without either."""
+    if engine in ACCOUNT_ENGINES:
+        return recorded(settings_json)[0]
+    if engine in KEY_PURPOSES:
+        return recorded_key(settings_json)[0]
+    return None
+
+
 def pause_batches(
-    session, engine: str, kind: str, details: str, batch_id: str | None, account: str | None = None
+    session, engine: str, kind: str, details: str, batch_id: str | None, where: str | None = None
 ) -> None:
     """Pause the job's own batch and every other running batch that uses the same engine
-    and (subscription CLIs, Phase 8A) the same account: another account is not affected."""
+    and the same account (Phase 8A) or key (Phase 8B): another account or key is not
+    affected."""
     for batch in session.scalars(
         select(Batch).where(
             Batch.status == "running", or_(Batch.id == batch_id, Batch.engine == engine)
         )
     ):
-        if (
-            batch.id != batch_id
-            and engine in ACCOUNT_ENGINES
-            and recorded(batch.settings_json)[0] != (account or "default")
-        ):
+        if batch.id != batch_id and runs_on(engine, batch.settings_json) != where:
             continue
         batch.status = "paused"
         batch.pause_kind = kind
@@ -292,8 +301,8 @@ class JobRunner:
         job.error_details = details
         job.finished_at = now()
         if status == "failed" and kind in PAUSE_KINDS:
-            account = recorded(job.settings_json)[0]
-            pause_batches(session, job.engine, kind, details, job.batch_id, account)
+            where = runs_on(job.engine, job.settings_json)
+            pause_batches(session, job.engine, kind, details, job.batch_id, where)
         session.flush()
         scene = session.get(Scene, job.scene_id)
         if scene is not None:
@@ -404,9 +413,9 @@ class JobRunner:
                     self._finish(session, job, "cancelled", "cancelled", NOT_SENT_CANCEL)
                 else:
                     job.status, job.started_at = "not_started", None
-                    account = recorded(job.settings_json)[0]
+                    where = runs_on(engine, job.settings_json)
                     pause_batches(
-                        session, engine, stop.error.kind, stop.error.message, batch_id, account
+                        session, engine, stop.error.kind, stop.error.message, batch_id, where
                     )
                     scene = session.get(Scene, job.scene_id)
                     if scene is not None:
@@ -446,7 +455,7 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this run, so nothing was sent."
                 )
-            require_key(self.settings, engine)
+            require_key(self.settings, engine, run_settings)
         except EngineError as error:
             if batch_id is not None and error.kind in PAUSE_KINDS:
                 raise _NotSent(error) from error
@@ -464,6 +473,7 @@ class JobRunner:
                 job_dir,
                 timeout,
                 lambda: self._cancel_requested(job_id),
+                run_settings,
             )
         except ApiCancelled as error:
             company = API_ENGINES[engine].company
@@ -496,7 +506,7 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this run, so nothing was sent."
                 )
-            require_key(self.settings, engine)
+            require_key(self.settings, engine, run_settings)
             version = model
         else:
             account, _home = self._account(engine, run_settings)
@@ -528,7 +538,8 @@ class JobRunner:
             )
             try:
                 value, usage = run_structured(
-                    self.settings, engine, version, job_dir, timeout, stop, task
+                    self.settings, engine, version, job_dir, timeout, stop, task,
+                    run_settings,
                 )
             except ApiCancelled as error:
                 company = API_ENGINES[engine].company
@@ -614,7 +625,7 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this run, so nothing was sent."
                 )
-            require_key(self.settings, engine)
+            require_key(self.settings, engine, run_settings)
         except EngineError as error:
             if batch_id is not None and error.kind in PAUSE_KINDS:
                 raise _NotSent(error) from error
@@ -680,7 +691,7 @@ class JobRunner:
                 raise EngineError(
                     "model_problem", "No model was recorded for this edit, so nothing was sent."
                 )
-            require_key(self.settings, option.engine)
+            require_key(self.settings, option.engine, run_settings)
             version = model
         else:
             account, home = self._account("codex_cli", run_settings)

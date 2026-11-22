@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-22 — Phase 8B: several API keys per provider
+
+- **Started** at the user's word ("Start 8B"; Phase 8 approved in D042). One build question, answered with the recommended option: the key is chosen **per engine panel** and saved with the panel's Save, like the 8A account choice (D045).
+- **API keys** in the engine panels: several named keys per provider (add, Test key, Replace, Rename, Remove), each stored as its own DPAPI file `keys/<provider>/<id>.key` with a `keys.json` list. The single key of earlier versions becomes the provider's **Default** key on first use. FLUX's key choice is saved at once.
+- Every paid job and batch records the key's id and name (never the key) and runs on that key. The charge confirmation names the key, and the server accepts a confirmation only for the keys it names (`charge_keys`). A refused key or limit pauses only batches on the same key.
+- **Continue with the key** on paused batch and run cards, and on **Try failed again**: not-started items move to the chosen key with a new confirmation naming it; nothing that ran is retried; **Also use for future runs** unticked by default.
+- `/api/api-engines/{engine}/keys…` replace the single-key routes. No database migration. 192 tests pass (6 new in `tests/test_api_keys.py`). Review checklist: `Phase_Checks/Phase8B_Review_Checklist.html`.
+
 ## 2026-11-22 — Phase 8A accepted
 
 - The user's follow-up check passed (`Phase_Checks/Phase8A_Followup_Report.md`: 6/6, 0 problems, "Phase 8A looks good"), including a Codex analysis on the Analysis panel's account and an image on the Generation panel's account. Phase 8A (several Claude Code and Codex accounts) is accepted. Next in Phase 8: 8B, several API keys per provider. Docs only; nothing pushed.

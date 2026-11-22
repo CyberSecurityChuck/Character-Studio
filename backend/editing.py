@@ -432,7 +432,7 @@ def flux_poll_once(settings: Settings, key: str, polling_url: str) -> tuple[str,
 
 def run_flux(settings, option, files, mask, prompt, options, job_dir, timeout, should_stop):
     """Submit once, then check the status until the image is ready (checks are free)."""
-    key = require_key(settings, "bfl_api")
+    key = require_key(settings, "bfl_api", options)
     url, body, asked = flux_request(settings, option, files, mask, prompt, options)
     _write_request(job_dir, "bfl_api", url, option.model, asked, files)
     if should_stop():
@@ -486,7 +486,7 @@ def run_api_edit(settings, option, model, files, mask, instruction, options, job
                  should_stop: Callable[[], bool]) -> tuple[bytes, dict]:
     """One OpenAI or Gemini edit request; returns (image bytes, usage)."""
     engine = option.engine
-    key = require_key(settings, engine)
+    key = require_key(settings, engine, options)
     if engine == "openai_api":
         url, body, asked = openai_edit_request(settings, model, files, mask, instruction, options)
     else:

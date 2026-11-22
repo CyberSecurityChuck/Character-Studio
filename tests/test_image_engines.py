@@ -12,7 +12,14 @@ from PIL import Image
 from backend.image_api import gemini_ratio, openai_size
 from backend.main import create_app
 from tests.conftest import authorization, wait_for_job
-from tests.test_api_engines import KEY, api_settings, providers, save_key  # noqa: F401
+from tests.test_api_engines import (  # noqa: F401
+    CHARGE,
+    KEY,
+    api_settings,
+    key_path,
+    providers,
+    save_key,
+)
 from tests.test_generation import approved_scene
 
 
@@ -114,7 +121,7 @@ def test_image_engine_settings_need_a_key_and_an_image_model(client, providers):
     assert chosen["models"]["gemini_api"] == {"generation": "img-model"}
     assert chosen["image_options"] == {"gemini_api": {"size": "2K"}}
     # A key in use for generation cannot be removed.
-    removed = client.delete("/api/api-engines/gemini_api/key", headers=authorization(client))
+    removed = client.delete(key_path("gemini_api"), headers=authorization(client))
     assert removed.status_code == 409 and "generation" in removed.json()["detail"]
     anthropic = client.get("/api/api-engines").json()
     assert {e["id"]: e["makes_images"] for e in anthropic}["anthropic_api"] is False
@@ -128,7 +135,7 @@ def test_gemini_generation_sends_the_approved_package_once(client, providers, ap
     refused = generate(client, scene, expect=409)
     assert "charged" in refused["detail"] and not providers.posts()
     providers.next["gemini_api"] = (200, gemini_image_reply())
-    queued = generate(client, scene, confirm_charges=True)
+    queued = generate(client, scene, **CHARGE)
     assert queued["active_job"]["engine"] == "gemini_api"
     job = wait_for_job(client, queued["active_job"]["id"])
     assert job["status"] == "completed", job
@@ -173,7 +180,7 @@ def test_openai_generation_uses_presets_and_reports_refusals(client, providers):
     assert preset.status_code == 201, preset.text
     assert preset.json()["image_quality"] == "high"
     providers.next["openai_api"] = (200, openai_image_reply())
-    queued = generate(client, scene, confirm_charges=True, preset_id=preset.json()["id"])
+    queued = generate(client, scene, **CHARGE, preset_id=preset.json()["id"])
     job = wait_for_job(client, queued["active_job"]["id"])
     assert job["status"] == "completed", job
     [sent] = providers.posts()
@@ -194,13 +201,13 @@ def test_openai_generation_uses_presets_and_reports_refusals(client, providers):
         400,
         {"error": {"code": "moderation_blocked", "message": "Rejected by the safety system."}},
     )
-    job = wait_for_job(client, generate(client, scene, confirm_charges=True)["active_job"]["id"])
+    job = wait_for_job(client, generate(client, scene, **CHARGE)["active_job"]["id"])
     assert job["status"] == "failed" and job["error_kind"] == "blocked"
     providers.next["openai_api"] = (
         403,
         {"error": {"message": "Your organization must be verified to use the model."}},
     )
-    job = wait_for_job(client, generate(client, scene, confirm_charges=True)["active_job"]["id"])
+    job = wait_for_job(client, generate(client, scene, **CHARGE)["active_job"]["id"])
     assert job["error_kind"] == "key_problem" and "verif" in job["error_details"]
     assert KEY not in job["error_details"]
     # Nothing was retried: one request per click.
@@ -219,7 +226,7 @@ def test_a_reply_without_an_image_fails_and_a_saved_output_can_be_kept(client, p
             ]
         },
     )
-    job = wait_for_job(client, generate(client, scene, confirm_charges=True)["active_job"]["id"])
+    job = wait_for_job(client, generate(client, scene, **CHARGE)["active_job"]["id"])
     assert job["status"] == "failed" and job["error_kind"] == "no_image"
     assert "I can't make that." in job["error_details"] and not job["recoverable"]
     # An image the run saved in its own folder (for example before a crash) can be kept.
@@ -235,7 +242,7 @@ def test_a_reply_without_an_image_fails_and_a_saved_output_can_be_kept(client, p
         200,
         {"candidates": [{"content": {"parts": []}, "finishReason": "IMAGE_SAFETY"}]},
     )
-    job = wait_for_job(client, generate(client, scene, confirm_charges=True)["active_job"]["id"])
+    job = wait_for_job(client, generate(client, scene, **CHARGE)["active_job"]["id"])
     assert job["error_kind"] == "blocked"
 
 
@@ -250,7 +257,7 @@ def test_api_generation_batches_need_confirmation_and_keep_their_engine(client, 
     started = client.post(
         "/api/batches/generation",
         headers=authorization(client),
-        json={**items, "confirm_charges": True},
+        json={**items, "confirm_charges": True, "charge_keys": ["default"]},
     )
     assert started.status_code == 202, started.text
     batch = started.json()["batch"]
@@ -265,7 +272,7 @@ def test_api_generation_batches_need_confirmation_and_keep_their_engine(client, 
     paused = client.post(
         "/api/batches/generation",
         headers=authorization(client),
-        json={**items, "confirm_charges": True},
+        json={**items, "confirm_charges": True, "charge_keys": ["default"]},
     ).json()["batch"]
     wait_for_job(client, paused["items"][0]["job_id"])
     state = client.get(f"/api/batches/{paused['id']}").json()
@@ -274,7 +281,7 @@ def test_api_generation_batches_need_confirmation_and_keep_their_engine(client, 
     blocked = client.post(
         f"/api/batches/{paused['id']}/continue",
         headers=authorization(client),
-        json={"confirm_charges": True},
+        json={"confirm_charges": True, "charge_keys": ["default"]},
     )
     assert blocked.status_code == 409 and "Gemini" in blocked.json()["detail"]
     path = f"/api/batches/{paused['id']}/continue"

@@ -78,6 +78,8 @@ class GenerateInput(BaseModel):
     preset_id: str | None = Field(default=None, max_length=32)
     # API image engines only: the user confirmed that this run may be charged (Phase 6C).
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 class ExportInput(BaseModel):
@@ -128,7 +130,7 @@ def generate(request: Request, scene_id: str, body: GenerateInput):
         run_settings = {"mode": body.mode}
         if api:
             run_settings |= image_run_settings(
-                request, session, settings, body.confirm_charges, body.preset_id
+                request, session, settings, body, body.preset_id
             )
         if preset := preset_name(session, body.preset_id):
             run_settings["preset"] = preset

@@ -79,10 +79,10 @@ export function QualityPanel({ resultId, resultVersion, references, token, runni
   const engine = settings?.analysis_engine ?? 'claude_cli'
   const apiEngine = isApiEngine(engine) ? api.byId[engine] : undefined
   const what = `the Base Image, ${references} reference ${references === 1 ? 'photo' : 'photos'} and result ${resultVersion} (without location data)`
-  async function start(confirmed: boolean) {
+  async function start(charge?: object) {
     setBusy(true); setError('')
     try {
-      const detail = await send<SceneDetail>(`/api/results/${resultId}/check`, 'POST', token, confirmed ? { confirm_charges: true } : undefined)
+      const detail = await send<SceneDetail>(`/api/results/${resultId}/check`, 'POST', token, charge)
       onStarted?.(detail)
       setJobId(detail.active_job?.kind === 'check' ? detail.active_job.id : null)
     } catch (e) { setError(e instanceof Error ? e.message : 'The check could not be started.'); setBusy(false) }
@@ -90,7 +90,7 @@ export function QualityPanel({ resultId, resultVersion, references, token, runni
   function ask() {
     if (engine === 'manual') return
     if (isApiEngine(engine)) { void api.reload(); setAsking(true); return }
-    if (window.confirm(`Check result ${resultVersion} with ${engineNames[engine]}? This sends ${what} to ${sendsTo[engine]} and uses your plan’s allowance once. Nothing about the result changes.`)) void start(false)
+    if (window.confirm(`Check result ${resultVersion} with ${engineNames[engine]}? This sends ${what} to ${sendsTo[engine]} and uses your plan’s allowance once. Nothing about the result changes.`)) void start()
   }
   const cancel = () => { if (jobId) void send(`/api/jobs/${jobId}/cancel`, 'POST', token).catch(() => undefined) }
   const remove = (check: QualityCheck) => {
@@ -129,6 +129,6 @@ export function QualityPanel({ resultId, resultVersion, references, token, runni
       : <div className="quality-actions"><button type="button" className="secondary" disabled={busy || running} onClick={ask}>{shown ? 'Check again' : 'Check quality'}</button>
         {shown && <button type="button" className="link-button" disabled={busy || running} onClick={() => remove(shown)}>Delete this check</button>}</div>}
     {asking && apiEngine && <ChargeDialog engine={apiEngine} model={settings?.models[engine]?.analysis ?? null} runs={1} what={what}
-      title={`Check result ${resultVersion} with the ${apiEngine.name}?`} action="Check" onConfirm={() => void start(true)} onClose={() => setAsking(false)} />}
+      title={`Check result ${resultVersion} with the ${apiEngine.name}?`} action="Check" onConfirm={charge => void start(charge)} onClose={() => setAsking(false)} />}
   </section>
 }

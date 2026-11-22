@@ -34,9 +34,10 @@ from backend.engines import EngineError
 from backend.generation import read_image_file, saved_images, snapshot_of, store_result
 from backend.image_api import IMAGE_ENGINES, options_for
 from backend.keystore import key_info, load_key
+from backend.keystore import recorded as recorded_key
 from backend.models import EngineJob, EngineSettings, GenerationResult
 from backend.scene_store import now
-from backend.scenes import require_idle, require_scene, scene_detail, writing
+from backend.scenes import charged_key, require_idle, require_scene, scene_detail, writing
 from backend.workflow import refresh_workflow
 
 router = APIRouter(prefix="/api")
@@ -53,13 +54,15 @@ class EditInput(BaseModel):
     mask: str = Field(min_length=10, max_length=MAX_MASK_TEXT)
     # API engines only: the user confirmed that this edit may be charged.
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 def option_state(settings: Settings, row: EngineSettings, option: EditOption) -> dict:
     """Whether an engine can edit now, the model it would use and why not."""
     model, reason = option.model, None
     if option.engine in API_ENGINES:
-        if not key_info(settings, option.engine)["saved"]:
+        if not key_info(settings, option.engine, "generation")["saved"]:
             reason = f"Add your {API_ENGINES[option.engine].name} key in Studio settings first."
         elif option.engine in IMAGE_ENGINES:
             model = chosen_model(row, option.engine, "generation")
@@ -124,8 +127,13 @@ def edit_result(request: Request, result_id: str, body: EditInput):
                 )
         elif len(instruction) < 3:
             raise HTTPException(422, "Describe the change for the marked area.")
-        if option.charged and not body.confirm_charges:
-            raise HTTPException(409, charge_confirmation(option.engine))
+        key = {}
+        if option.charged:
+            if not body.confirm_charges:
+                label = key_info(settings, option.engine, "generation")["label"]
+                raise HTTPException(409, charge_confirmation(option.engine, label))
+            # Phase 8B: the key the Generation panel chose, named in the confirmation.
+            key = charged_key(request, option.engine, "generation", body)
         try:
             mask = read_mask(body.mask, (result.width, result.height))
         except ValueError as error:
@@ -145,6 +153,7 @@ def edit_result(request: Request, result_id: str, body: EditInput):
             "parent_version": result.version,
             **({"model": state["model"]} if state["model"] else {}),
             **state["options"],
+            **key,
         }
         session.add(
             EngineJob(
@@ -222,7 +231,7 @@ def edit_output(settings: Settings, job: EngineJob, folder: Path) -> bytes | Non
     submitted = folder / "submitted.json"
     if job.engine == "bfl_api" and submitted.is_file():
         polling_url = json.loads(submitted.read_text(encoding="utf-8")).get("polling_url")
-        key = load_key(settings, "bfl_api")
+        key = load_key(settings, "bfl_api", recorded_key(job.settings_json)[0])
         if isinstance(polling_url, str) and key:
             # One free status check of the task that was already submitted.
             _status, payload = flux_poll_once(settings, key, polling_url)

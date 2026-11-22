@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AccountPicker, accountName, useCliAccounts } from './Accounts'
 import { ApiError, request, send } from './api'
-import { ApiKeyBox, isApiEngine, isImageEngine, useApiEngines, type ApiEngine } from './ApiEngines'
+import { KeyPicker, isApiEngine, isImageEngine, keysChanged, useApiEngines, type ApiEngine } from './ApiEngines'
 import { InfoTip } from './Controls'
 import { ModelPicker } from './ModelPicker'
 import { notify } from './Toast'
@@ -12,7 +12,9 @@ type ImageOptions = { size: string; quality?: string }
 type Settings = { analysis_engine: string; generation_engine: string; claude_timeout: number; codex_timeout: number; api_timeout: number
   models: Record<string, { analysis?: string; generation?: string }>; image_options: Record<string, ImageOptions>
   // Phase 8A review (D044): the Claude Code / Codex account per engine and purpose, e.g. "codex_cli:generation".
-  accounts: Record<string, string>; revision: number }
+  accounts: Record<string, string>
+  // Phase 8B: the API key per provider and purpose, e.g. "openai_api:generation" (null: no key yet).
+  keys: Record<string, string | null>; revision: number }
 type Choice = { id: string; name: string; tag?: string; line: string }
 type Group = { title: string; hint: string; items: Choice[] }
 
@@ -60,8 +62,10 @@ function modelsFor(s: Settings, purpose: Purpose) {
   return Object.fromEntries(Object.keys(s.models).sort().map(id => [id, s.models[id]?.[purpose] ?? '']).filter(([, v]) => v))
 }
 const accountsFor = (s: Settings, purpose: Purpose) => Object.entries(s.accounts ?? {}).filter(([k]) => k.endsWith(`:${purpose}`)).sort()
+// Phase 8B: each panel saves only its own key choices (bfl_api has no panel and saves at once).
+const keysFor = (s: Settings, purpose: Purpose) => Object.entries(s.keys ?? {}).filter(([k, v]) => k.endsWith(`:${purpose}`) && !k.startsWith('bfl_api:') && v).sort()
 function panelView(s: Settings, purpose: Purpose) {
-  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose), accountsFor(s, purpose)])
+  return JSON.stringify([...panelFields[purpose].map(f => f === 'image_options' ? Object.entries(s.image_options).sort() : s[f]), modelsFor(s, purpose), accountsFor(s, purpose), keysFor(s, purpose)])
 }
 const same = (a: Settings, b: Settings, purpose: Purpose) => panelView(a, purpose) === panelView(b, purpose)
 /** `target` with `source`'s choices for one panel; the other panel's choices are kept. */
@@ -77,7 +81,8 @@ function applyPanel(target: Settings, source: Settings, purpose: Purpose): Setti
   const fields = Object.fromEntries(panelFields[purpose].map(f => [f, source[f]]))
   // Each panel saves only its own account choices (Codex has one per panel).
   const accounts = { ...target.accounts, ...Object.fromEntries(accountsFor(source, purpose)) }
-  return { ...target, ...fields, models, accounts }
+  const keys = { ...target.keys, ...Object.fromEntries(keysFor(source, purpose)) }
+  return { ...target, ...fields, models, accounts, keys }
 }
 const formatDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -154,6 +159,8 @@ export default function Engines({ token }: { token: string }) {
       // An account removed since the page loaded falls back to Default (the server does too).
       const known = (key: string, id: string) => accounts.byEngine[key.split(':')[0]]?.accounts.some(a => a.id === id) !== false
       body.accounts = Object.fromEntries(Object.entries(body.accounts ?? {}).map(([key, id]) => [key, known(key, id) ? id : 'default']))
+      // A key removed since the page loaded is left out (the server keeps its own choice).
+      body.keys = Object.fromEntries(Object.entries(body.keys ?? {}).filter(([key, id]) => !key.startsWith('bfl_api:') && id && api.byId[key.split(':')[0]]?.keys.some(k => k.id === id)))
       const next = await send<Settings>('/api/engines/settings', 'PUT', token, { ...body, revision: saved.revision })
       setSaved(next)
       // Keep the other panel's unsaved edits.
@@ -164,6 +171,16 @@ export default function Engines({ token }: { token: string }) {
       const text = e instanceof Error ? e.message : 'Settings could not be saved.'
       setErrors(er => ({ ...er, [panel]: e instanceof ApiError && e.status === 409 ? `${text} Reload the page to see the latest settings.` : text }))
     } finally { setBusy('') }
+  }
+  // FLUX's key has no panel of its own, so choosing it saves at once (Phase 8B).
+  async function chooseFlux(id: string) {
+    try {
+      await send('/api/api-engines/bfl_api/active', 'PUT', token, { key_id: id, purpose: 'generation' })
+      keysChanged(); await api.reload()
+      const next = await request<Settings>('/api/engines/settings')
+      setSaved(s => s && { ...s, keys: next.keys, revision: next.revision }); setForm(f => f && { ...f, keys: { ...f.keys, 'bfl_api:generation': id }, revision: next.revision })
+      notify('FLUX key chosen. Edits are charged to it from now on.')
+    } catch (e) { notify(e instanceof Error ? e.message : 'The key could not be chosen.') }
   }
   if (!form || !saved) return <section className="panel provider-panel"><p role="status">{errors.analysis || 'Loading engine settings…'}</p></section>
 
@@ -189,14 +206,24 @@ export default function Engines({ token }: { token: string }) {
     const account = accounts.byEngine[id]?.accounts.find(a => a.id === chosenAccount(form, id, purpose))
     return account && !account.default && account.status && !account.status.signed_in ? `Sign in to ${accountName(account)} first, or choose another account` : undefined
   }
+  // The API key a panel's runs are charged to: its choice if the key still exists, else the first key.
+  const chosenKey = (s: Settings, id: string, purpose: Purpose) => {
+    const keys = api.byId[id]?.keys ?? []
+    const value = s.keys?.[`${id}:${purpose}`]
+    return keys.find(k => k.id === value)?.id ?? keys[0]?.id ?? null
+  }
+  const setKey = (id: string, purpose: Purpose, value: string) => setForm({ ...form, keys: { ...form.keys, [`${id}:${purpose}`]: value } })
+  const keyCount = (id: string) => api.byId[id]?.keys.length ?? 0
   const engine = form.analysis_engine
   const model = form.models[engine]?.analysis ?? ''
   const setModel = (id: string, value: string, purpose: Purpose = 'analysis') => setForm({ ...form, models: { ...form.models, [id]: { ...form.models[id], [purpose]: value } } })
-  const inUse = (id: string) => saved.analysis_engine === id || saved.generation_engine === id
   const apiItem: ApiEngine | undefined = isApiEngine(engine) ? api.byId[engine] : undefined
-  const blocked = apiItem && !apiItem.key.saved ? `Add your ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : accountBlocked(engine, 'analysis')
-  const choiceState = (id: string) => isApiEngine(id) ? (api.byId[id]?.key.saved ? 'Key saved' : 'Needs a key') : id === 'manual' ? undefined : statusText(byStatus[id], checking)
-  const choiceReady = (id: string) => isApiEngine(id) ? !!api.byId[id]?.key.saved : !!byStatus[id]?.signed_in
+  const blocked = apiItem && !apiItem.keys.length ? `Add your ${apiItem.name} key first` : apiItem && !model ? 'Choose a model first' : accountBlocked(engine, 'analysis')
+  const keyState = (id: string) => keyCount(id) > 1 ? `${keyCount(id)} keys saved` : keyCount(id) ? 'Key saved' : 'Needs a key'
+  const choiceState = (id: string) => isApiEngine(id) ? keyState(id) : id === 'manual' ? undefined : statusText(byStatus[id], checking)
+  const choiceReady = (id: string) => isApiEngine(id) ? keyCount(id) > 0 : !!byStatus[id]?.signed_in
+  const listFooter = (item: ApiEngine) => <span className="hint">{item.models_checked_at ? `List from ${item.models_listed_by ? `the key “${item.models_listed_by}”` : 'your key'}, updated ${formatDate(item.models_checked_at)}. Test key refreshes it.` : 'Test key fetches the list.'}</span>
+  const shared = (item: ApiEngine) => item.makes_images ? `${item.company} keys are shared by both engine panels; each panel chooses its own key.` : undefined
 
   let details: ReactNode = null
   if (engine === 'claude_cli' || engine === 'codex_cli') {
@@ -217,12 +244,12 @@ export default function Engines({ token }: { token: string }) {
     const options = apiItem.models.map(m => ({ value: m, tag: m === apiItem.suggested_model ? 'Recommended' : undefined }))
     if (apiItem.suggested_model && !apiItem.models.includes(apiItem.suggested_model)) options.unshift({ value: apiItem.suggested_model, tag: 'Recommended' })
     details = <>
-      <ApiKeyBox engine={apiItem} token={token} selected={inUse(engine)} onChanged={() => void api.reload()} />
+      <KeyPicker engine={apiItem} purpose="analysis" token={token} chosen={chosenKey(form, engine, 'analysis')} saved={chosenKey(saved, engine, 'analysis')} onChoose={id => setKey(engine, 'analysis', id)} onChanged={() => void api.reload()} shared={shared(apiItem)} />
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="api-model">Model</label><InfoTip label="Model">The models your key can use, listed when you saved or tested the key.{apiItem.suggested_model ? ` ${apiItem.suggested_model} is on Google’s free tier for analysis (October 2026).` : ''}</InfoTip></div>
-          <ModelPicker id="api-model" value={model} options={options} disabled={!apiItem.key.saved} placeholder={apiItem.key.saved ? 'Choose a model' : 'Add a key to list models'}
+          <ModelPicker id="api-model" value={model} options={options} disabled={!apiItem.keys.length} placeholder={apiItem.keys.length ? 'Choose a model' : 'Add a key to list models'}
             empty="No models listed yet. Use Test key." onChange={v => setModel(engine, v)}
-            footer={<span className="hint">{apiItem.models_checked_at ? `List updated ${formatDate(apiItem.models_checked_at)}. Test key refreshes it.` : 'Test key fetches the list.'}</span>} /></div>
+            footer={listFooter(apiItem)} /></div>
         <TimeLimit id="analysis-timeout" label="Time limit" value={form.api_timeout}
           tip="How long the studio waits for the answer. A request that has already been sent may still finish and be charged after the studio stops waiting."
           onChange={v => setForm({ ...form, api_timeout: v })} />
@@ -237,7 +264,7 @@ export default function Engines({ token }: { token: string }) {
   const imageModel = form.models[generator]?.generation ?? ''
   const options = form.image_options[generator] ?? defaultOptions(generator)
   const setOptions = (change: Partial<ImageOptions>) => setForm({ ...form, image_options: { ...form.image_options, [generator]: { ...options, ...change } } })
-  const generationBlocked = imageItem && !imageItem.key.saved ? `Add your ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : accountBlocked(generator, 'generation')
+  const generationBlocked = imageItem && !imageItem.keys.length ? `Add your ${imageItem.name} key first` : imageItem && !imageModel ? 'Choose an image model first' : accountBlocked(generator, 'generation')
   let generationDetails: ReactNode
   if (generator === 'codex_cli') {
     generationDetails = <>
@@ -252,12 +279,12 @@ export default function Engines({ token }: { token: string }) {
     if (imageItem.suggested_image_model && !imageItem.image_models.includes(imageItem.suggested_image_model)) choices.unshift({ value: imageItem.suggested_image_model, tag: 'Recommended' })
     const qualities = imageQualities[generator]
     generationDetails = <>
-      <ApiKeyBox engine={imageItem} token={token} selected={inUse(generator)} onChanged={() => void api.reload()} />
+      <KeyPicker engine={imageItem} purpose="generation" token={token} chosen={chosenKey(form, generator, 'generation')} saved={chosenKey(saved, generator, 'generation')} onChoose={id => setKey(generator, 'generation', id)} onChanged={() => void api.reload()} shared={shared(imageItem)} />
       <div className="engine-fields">
         <div className="engine-field"><div className="label-row"><label htmlFor="image-model">Image model</label><InfoTip label="Image model">The image models your key can use, listed when you saved or tested the key. {imageItem.suggested_image_model} is what {imageItem.company} recommends (October 2026).</InfoTip></div>
-          <ModelPicker id="image-model" value={imageModel} options={choices} disabled={!imageItem.key.saved} placeholder={imageItem.key.saved ? 'Choose an image model' : 'Add a key to list models'}
+          <ModelPicker id="image-model" value={imageModel} options={choices} disabled={!imageItem.keys.length} placeholder={imageItem.keys.length ? 'Choose an image model' : 'Add a key to list models'}
             empty="No image models listed yet. Use Test key." onChange={v => setModel(generator, v, 'generation')}
-            footer={<span className="hint">{imageItem.models_checked_at ? `List updated ${formatDate(imageItem.models_checked_at)}. Test key refreshes it.` : 'Test key fetches the list.'}</span>} /></div>
+            footer={listFooter(imageItem)} /></div>
         <TimeLimit id="generation-timeout" label="Time limit" value={form.api_timeout}
           tip="How long the studio waits for the image. Complex images can take up to two minutes. A request that has already been sent may still finish and be charged after the studio stops waiting. Shared with the API analysis engines."
           onChange={v => setForm({ ...form, api_timeout: v })} />
@@ -308,7 +335,8 @@ export default function Engines({ token }: { token: string }) {
       <PanelFooter dirty={!same(form, saved, 'generation')} busy={busy === 'generation'} message={messages.generation} error={errors.generation} blocked={generationBlocked}
         label="Save generation engine" onCancel={() => setForm(applyPanel(form, saved, 'generation'))} onSave={() => void save('generation')} />
       <div className="engine-group-head region-key-head"><h3>Region editing with FLUX</h3><span className="hint">Optional. Black Forest Labs’ FLUX.1 Fill (exact masks, fixes only) and FLUX 3 (can replace a person) appear in a result’s Edit area once a key is saved. Codex, OpenAI Images and Gemini image use the settings above.</span></div>
-      {api.byId.bfl_api && <ApiKeyBox engine={api.byId.bfl_api} token={token} selected={false} onChanged={() => void api.reload()} />}
+      {api.byId.bfl_api && <KeyPicker engine={api.byId.bfl_api} purpose="generation" token={token} chosen={chosenKey(saved, 'bfl_api', 'generation')} saved={chosenKey(saved, 'bfl_api', 'generation')}
+        onChoose={id => void chooseFlux(id)} onChanged={() => void api.reload()} shared="FLUX edits are charged to the key you choose here; the choice is saved at once." />}
       <div className="privacy-note"><strong>What leaves this computer</strong><p>Analyse and quality checks send the Base Image (checks also the reference photos and the result), without location data, to the analysis engine’s company: Anthropic for Claude Code and the Anthropic API, OpenAI for Codex and the OpenAI API, Google for the Gemini API. Polish prompt sends the prompt text and the analysis to Anthropic. Generate sends the Base Image and the approved reference photos, without location data, with the approved prompt to the generation engine’s company: OpenAI for Codex and OpenAI Images, Google for Gemini image. Edit area sends the result (and, to replace a person, that person’s approved photos), with the marked area where the engine uses it, to the edit engine’s company: OpenAI for Codex and OpenAI Images, Google for Gemini image, Black Forest Labs for FLUX. Character names are never sent. Manual analysis and manual export send nothing.</p></div>
     </section>
   </>

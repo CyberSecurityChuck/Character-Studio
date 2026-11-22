@@ -161,6 +161,8 @@ class AnalyseAllInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # API engines: the user confirmed that every run may be charged (once for the whole run).
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 @router.post("/scene-sets/{scene_set_id}/analyse-all", status_code=202)
@@ -189,7 +191,7 @@ def analyse_all(request: Request, scene_set_id: str, body: AnalyseAllInput):
             raise HTTPException(
                 409, "Nothing to analyse: every scene in this set already has an analysis."
             )
-        run = api_run_settings(request, settings, engine, body.confirm_charges)
+        run = api_run_settings(request, settings, engine, body)
         batches = queue_analysis_batches(session, settings, queued, run, scene_set_id)
         result = {
             "batches": [batch_data(session, b) for b in batches],

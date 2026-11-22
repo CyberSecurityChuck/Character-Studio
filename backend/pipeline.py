@@ -24,8 +24,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from backend import cli_accounts
-from backend.api_engines import charge_confirmation, engine_timeout, is_api_engine
+from backend import cli_accounts, keystore
+from backend.api_engines import engine_timeout, is_api_engine
 from backend.batches import (
     MAX_GENERATION_RUNS,
     MAX_IMAGES_PER_SCENE,
@@ -35,10 +35,13 @@ from backend.batches import (
     account_of,
     batch_state,
     cancel_waiting,
+    key_of,
+    require_charge,
     retry_batch,
     switch_account,
+    target_account,
 )
-from backend.cli_accounts import ACCOUNT_ENGINES, recorded
+from backend.cli_accounts import ACCOUNT_ENGINES
 from backend.generation import MAX_GENERATION_INSTRUCTION, generation_instruction, snapshot_of
 from backend.image_api import is_image_engine, run_label
 from backend.models import (
@@ -119,16 +122,21 @@ class RunInput(BaseModel):
     stop_before_generating: bool = False
     # Paid engines: the user confirmed the charges for the whole run.
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 class ChargeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 class ContinueInput(ChargeInput):
     """Continue or Try failed again, optionally on another Claude Code or Codex account
-    (Phase 8A): `account_engine` says which engine's paused part moves to it."""
+    (Phase 8A) or API key (Phase 8B; it must also be in `charge_keys`): `account_engine`
+    says which engine's paused part moves to it."""
 
     account_id: str | None = Field(default=None, min_length=1, max_length=40)
     account_engine: str | None = Field(default=None, max_length=20)
@@ -187,6 +195,13 @@ def _counts(session, batch: Batch) -> dict[str, int]:
     return counts
 
 
+def _key_in(run_settings: dict) -> dict | None:
+    if not run_settings.get("model"):
+        return None
+    key_id, label = keystore.recorded(json.dumps(run_settings))
+    return {"id": key_id, "label": label}
+
+
 def run_data(session, run: PipelineRun) -> dict:
     rules = json.loads(run.rules_json)
     batches = []
@@ -198,6 +213,7 @@ def run_data(session, run: PipelineRun) -> dict:
                 "kind": batch.kind,
                 "engine": batch.engine,
                 "account": account_of(batch),
+                "key": key_of(batch),
                 "state": batch_state(batch, counts),
                 "pause_kind": batch.pause_kind,
                 "total": sum(counts.values()),
@@ -215,6 +231,8 @@ def run_data(session, run: PipelineRun) -> dict:
         "stage": run.stage,
         "pause_details": run.pause_details,
         "rules": {k: v for k, v in rules.items() if k not in ("analysis_run", "image_run")},
+        # Phase 8B: the API key the run's images are charged to (for Generate now).
+        "image_key": _key_in(rules.get("image_run") or {}),
         "outcome": json.loads(run.outcome_json or "{}"),
         "batches": batches,
         "summary": generation_summary(session, run),
@@ -410,12 +428,12 @@ def start(request: Request, scene_set_id: str, body: RunInput):
                 "use Run everything.",
             )
         analysis_run = (
-            api_run_settings(request, settings, analysis_engine, body.confirm_charges)
+            api_run_settings(request, settings, analysis_engine, body)
             if to_analyse
             else {}
         )
         image_run = (
-            image_run_settings(request, session, settings, body.confirm_charges, body.preset_id)
+            image_run_settings(request, session, settings, body, body.preset_id)
             if is_image_engine(generation_engine)
             else {}
         )
@@ -427,7 +445,7 @@ def start(request: Request, scene_set_id: str, body: RunInput):
             stage="analysing",
             rules_json=json.dumps(
                 {
-                    **body.model_dump(exclude={"confirm_charges"}),
+                    **body.model_dump(exclude={"confirm_charges", "charge_keys"}),
                     "preset": preset_name(session, body.preset_id),
                     "analysis_engine": analysis_engine if to_analyse else None,
                     "generation_engine": generation_engine,
@@ -695,8 +713,9 @@ def generate(request: Request, run_id: str, body: ChargeInput | None = None):
             raise HTTPException(409, "This run is not waiting to generate.")
         rules = json.loads(run.rules_json)
         engine = rules["generation_engine"]
-        if is_image_engine(engine) and not (body and body.confirm_charges):
-            raise HTTPException(409, charge_confirmation(engine))
+        if is_image_engine(engine):
+            # The images are charged to the key the run was started with (Phase 8B).
+            require_charge(request, engine, _key_in(rules["image_run"])["id"], body)
         scenes = set_scenes(session, run.scene_set_id)
         ready = [
             s.id
@@ -728,11 +747,12 @@ async def continue_run(request: Request, run_id: str, body: ContinueInput | None
         engines = {b.engine for b in paused}
         moved = _moved_engine(body, engines)
         accounts = {
-            b.engine: (body.account_id if b.engine == moved else recorded(b.settings_json)[0])
+            b.engine: (body.account_id if b.engine == moved else target_account(b, None))
             for b in paused
         }
-    if any(is_api_engine(e) for e in engines) and not (body and body.confirm_charges):
-        raise HTTPException(409, charge_confirmation(next(e for e in engines if is_api_engine(e))))
+    # API engines: the confirmation names every key the continued items are charged to.
+    for engine in engines:
+        require_charge(request, engine, accounts.get(engine), body)
     for engine in engines:
         await run_in_threadpool(_check_engine, request, engine, accounts.get(engine))
     with writing(request) as session:
@@ -770,7 +790,7 @@ def _moved_engine(body: "ContinueInput | None", engines: set[str]) -> str | None
     if body is None or body.account_id is None:
         return None
     engine = body.account_engine or (next(iter(engines)) if len(engines) == 1 else None)
-    if engine not in ACCOUNT_ENGINES or engine not in engines:
+    if (engine not in ACCOUNT_ENGINES and not is_api_engine(engine)) or engine not in engines:
         raise HTTPException(422, "Choose which engine's paused part should use that account.")
     return engine
 
@@ -779,10 +799,19 @@ def _remember_account(
     run: PipelineRun, engine: str, account_id: str, request, kinds: set[str]
 ) -> None:
     """Later batches of this run's moved parts (Run everything's images) use it too."""
+    rules = json.loads(run.rules_json)
+    if is_api_engine(engine):
+        key = keystore.find(request.app.state.settings, engine, account_id)
+        if key is not None:
+            for kind in kinds:
+                part = "image_run" if kind == "generation" else "analysis_run"
+                if rules.get(part):
+                    rules[part] = {**rules[part], **keystore.stamp(key)}
+            run.rules_json = json.dumps(rules)
+        return
     account = cli_accounts.find(request.app.state.settings, engine, account_id)
     if account is None:
         return
-    rules = json.loads(run.rules_json)
     for kind in kinds:
         rules.setdefault("accounts", {})[kind] = {
             "account": account["id"],
@@ -796,14 +825,22 @@ async def retry(request: Request, run_id: str, body: ContinueInput | None = None
     """Try failed again for a whole run: the user's explicit choice, never automatic. Each
     failed image is queued once more as a new item in its own batch, on the run's account
     or (Phase 8A) another one the user chose."""
+    moving = body is not None and body.account_id is not None
     with Session(request.app.state.engine) as session:
         engine = json.loads(require_run(session, run_id).rules_json)["generation_engine"]
-    if is_image_engine(engine) and not (body and body.confirm_charges):
-        raise HTTPException(409, charge_confirmation(engine))
-    moving = body is not None and body.account_id is not None
+        failed = [
+            b
+            for b in run_batches(session, run_id, "generation")
+            if any(j.status == "failed" for j in live_jobs(session, [b]))
+        ]
+        targets = {target_account(b, body if moving else None) for b in failed}
+    if is_image_engine(engine):
+        # Phase 8B: the confirmation names every key the new items are charged to.
+        for key_id in targets:
+            require_charge(request, engine, key_id, body)
     if moving:
-        if engine not in ACCOUNT_ENGINES:
-            raise HTTPException(422, "Only Claude Code and Codex runs can change account.")
+        if engine not in ACCOUNT_ENGINES and not is_image_engine(engine):
+            raise HTTPException(422, "Only Claude Code, Codex and API key runs can change account.")
         await run_in_threadpool(_check_engine, request, engine, body.account_id)
     with writing(request) as session:
         run = require_run(session, run_id)

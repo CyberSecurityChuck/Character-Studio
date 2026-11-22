@@ -354,7 +354,7 @@ def run_image(
 ) -> tuple[Path, dict]:
     """One image request. Saves the image as `output.<ext>` in the job folder first, so it
     can still be kept if the studio stops before storing it, and returns (file, usage)."""
-    key = require_key(settings, engine)
+    key = require_key(settings, engine, options)
     company = API_ENGINES[engine].company
     with Image.open(files[0]) as base:
         base_size = base.size

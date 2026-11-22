@@ -13,7 +13,7 @@ from PIL import Image, ImageChops, ImageDraw
 from backend.editing import composite, flux3_prompt, mask_box, read_mask
 from backend.main import create_app
 from tests.conftest import authorization, wait_for_job
-from tests.test_api_engines import KEY, api_settings, providers, save_key  # noqa: F401
+from tests.test_api_engines import CHARGE, KEY, api_settings, providers, save_key  # noqa: F401
 from tests.test_generation import approved_scene, generation_calls, import_result
 from tests.test_image_engines import openai_image_reply, png
 
@@ -176,7 +176,7 @@ def test_flux_fill_fixes_with_a_true_mask_and_never_replaces(api_settings, provi
                     subject="Subject 1")["detail"].startswith("FLUX.1 Fill cannot replace")
         assert "charged" in edit(client, parent["id"], expect=409, option="flux_fill")["detail"]
         job = wait_for_job(client, edit(client, parent["id"], option="flux_fill",
-                                        confirm_charges=True)["active_job"]["id"])
+                                        **CHARGE)["active_job"]["id"])
         assert job["status"] == "completed", job
         assert job["engine_name"] == "FLUX.1 Fill" and job["usage"]["cost_credits"] == 5
         [submit] = providers.posts()
@@ -194,7 +194,7 @@ def test_flux_fill_fixes_with_a_true_mask_and_never_replaces(api_settings, provi
 
         providers.bfl_statuses = ["Content Moderated"]
         job = wait_for_job(client, edit(client, parent["id"], option="flux_fill",
-                                        confirm_charges=True)["active_job"]["id"])
+                                        **CHARGE)["active_job"]["id"])
         assert job["status"] == "failed" and job["error_kind"] == "blocked"
 
 
@@ -206,7 +206,7 @@ def test_flux_3_replaces_with_approved_photos_and_can_be_recovered(api_settings,
         providers.bfl_statuses = ["Error"]
         job = wait_for_job(client, edit(client, parent["id"], option="flux_3", kind="replace",
                                         subject="Subject 1", instruction="",
-                                        confirm_charges=True)["active_job"]["id"])
+                                        **CHARGE)["active_job"]["id"])
         assert job["status"] == "failed" and job["recoverable"], job
         [submit] = providers.posts()
         assert submit["path"].endswith("/v1/flux-3-image")
@@ -232,7 +232,7 @@ def test_flux_3_replaces_with_approved_photos_and_can_be_recovered(api_settings,
         providers.bfl_statuses = ["Ready"]
         providers.bfl_sample_url = "https://example.com/sample.png"
         job = wait_for_job(client, edit(client, parent["id"], option="flux_3",
-                                        confirm_charges=True)["active_job"]["id"])
+                                        **CHARGE)["active_job"]["id"])
         assert job["status"] == "failed" and "image link" in job["error_details"]
 
 
@@ -249,7 +249,7 @@ def test_openai_edit_sends_the_mask_and_needs_an_image_model(api_settings, provi
         assert reply.status_code == 200, reply.text
         providers.next["openai_api"] = (200, openai_image_reply())
         job = wait_for_job(client, edit(client, parent["id"], option="openai_api",
-                                        confirm_charges=True)["active_job"]["id"])
+                                        **CHARGE)["active_job"]["id"])
         assert job["status"] == "completed", job
         [sent] = providers.posts()
         form = sent["body"]

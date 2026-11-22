@@ -43,7 +43,7 @@ def check_result(request: Request, result_id: str, body: AnalyseInput | None = N
                 "in Studio settings.",
             )
         require_idle(session, scene.id, "checking a result")
-        run = api_run_settings(request, settings, engine, bool(body and body.confirm_charges))
+        run = api_run_settings(request, settings, engine, body)
         session.add(
             EngineJob(
                 id=uuid4().hex,

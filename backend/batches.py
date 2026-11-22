@@ -17,7 +17,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from backend import cli_accounts
+from backend import cli_accounts, keystore
 from backend.api_engines import (
     API_ENGINES,
     charge_confirmation,
@@ -33,7 +33,7 @@ from backend.generation import (
     snapshot_of,
 )
 from backend.image_api import is_image_engine, run_label
-from backend.keystore import key_info
+from backend.keystore import KeyStoreError
 from backend.models import (
     Batch,
     Character,
@@ -81,13 +81,18 @@ class AnalysisBatchInput(BaseModel):
     include_analysed: bool = False
     # API engines: the user confirmed that every run in the batch may be charged.
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 class ChargeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_charges: bool = False
-    # Continue / Try failed again on another Claude Code or Codex account (Phase 8A). The
-    # not-started items move to it; `make_active` also uses it for new runs (D042).
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
+    # Continue / Try failed again on another Claude Code or Codex account (Phase 8A) or,
+    # for API engines, another API key (Phase 8B). The not-started items move to it;
+    # `make_active` also uses it for new runs (D042). A key must be in `charge_keys`.
     account_id: str | None = Field(default=None, min_length=1, max_length=40)
     make_active: bool = False
 
@@ -100,13 +105,59 @@ def account_of(batch) -> dict | None:
     return {"id": account_id, "label": label}
 
 
+def key_of(batch) -> dict | None:
+    """The API key a batch is charged to (Phase 8B), for its card; None for other engines."""
+    if not is_api_engine(batch.engine):
+        return None
+    key_id, label = keystore.recorded(batch.settings_json)
+    return {"id": key_id, "label": label}
+
+
+def switch_key(request, session, batches: list, engine: str, body: "ChargeInput") -> None:
+    """The user's choice of another API key (Phase 8B): the not-started items move to it.
+    The caller checked that the charge confirmation names it."""
+    settings = request.app.state.settings
+    key = keystore.find(settings, engine, body.account_id)
+    if key is None:
+        raise HTTPException(409, "That key no longer exists. Reload the page.")
+    for batch in batches:
+        keystore.move(batch, key)
+        batch.updated_at = now()
+        for job in session.scalars(
+            select(EngineJob).where(
+                EngineJob.batch_id == batch.id, EngineJob.status == "not_started"
+            )
+        ):
+            keystore.move(job, key)
+    if body.make_active:
+        purpose = keystore.purpose_of(engine, batches[0].kind if batches else None)
+        try:
+            keystore.choose_key(settings, engine, key["id"], purpose)
+        except KeyStoreError as error:
+            raise HTTPException(409, str(error)) from error
+
+
+def require_charge(request, engine: str, key_id: str | None, body: "ChargeInput | None") -> None:
+    """Continue or Try failed again with an API engine: the user's confirmation must name the
+    key the items will be charged to (Phase 8B)."""
+    if not is_api_engine(engine):
+        return
+    key = keystore.find(request.app.state.settings, engine, key_id)
+    named = body.charge_keys if body is not None and body.confirm_charges else []
+    if key_id not in named:
+        raise HTTPException(409, charge_confirmation(engine, key["label"] if key else None))
+
+
 def switch_account(request, session, batches: list, engine: str, body: "ChargeInput | None"):
-    """The user's choice of another account for these batches: their not-started items move
-    to it. Nothing that already ran is touched or retried."""
+    """The user's choice of another account (or, API engines, key) for these batches: their
+    not-started items move to it. Nothing that already ran is touched or retried."""
     if body is None or body.account_id is None:
         return
+    if is_api_engine(engine):
+        switch_key(request, session, batches, engine, body)
+        return
     if engine not in ACCOUNT_ENGINES:
-        raise HTTPException(422, "Only Claude Code and Codex runs can change account.")
+        raise HTTPException(422, "Only Claude Code, Codex and API key runs can change account.")
     settings = request.app.state.settings
     account = cli_accounts.find(settings, engine, body.account_id)
     if account is None:
@@ -144,6 +195,8 @@ class GenerationBatchInput(BaseModel):
     preset_id: str | None = Field(default=None, max_length=32)
     # API image engines (Phase 6C): the user confirmed that every run may be charged.
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 class GroupSuggestionInput(BaseModel):
@@ -217,10 +270,12 @@ def batch_data(session, batch: Batch) -> dict:
         "pause_kind": batch.pause_kind,
         "pause_details": batch.pause_details,
         "account": account_of(batch),
+        # Phase 8B: the API key the batch is charged to (its id and name, never the key).
+        "key": key_of(batch),
         "settings": {
             k: v
             for k, v in json.loads(batch.settings_json).items()
-            if k not in ("account", "account_label")
+            if k not in ("account", "account_label", "key", "key_label")
         },
         "created_at": batch.created_at,
         "updated_at": batch.updated_at,
@@ -380,7 +435,7 @@ def analyse_selected(request: Request, body: AnalysisBatchInput):
             raise HTTPException(
                 409, "Manual analysis is selected in Studio settings, so nothing can be queued."
             )
-        run = api_run_settings(request, settings, engine, body.confirm_charges)
+        run = api_run_settings(request, settings, engine, body)
         timeout = engine_timeout(settings, engine)
         skipped, queued = [], []
         for scene_id in body.scene_ids:
@@ -441,7 +496,7 @@ def generate_approved(request: Request, body: GenerationBatchInput):
             )
         api = is_image_engine(engine)
         run = (
-            image_run_settings(request, session, settings, body.confirm_charges, body.preset_id)
+            image_run_settings(request, session, settings, body, body.preset_id)
             if api
             else {}
         )
@@ -513,7 +568,8 @@ def _generation_job(
     settings = {"mode": mode} | ({"retry_of": retry_of} if retry_of else {})
     chosen = json.loads(batch.settings_json)
     # API image runs keep the model, size and quality the batch was confirmed with.
-    for name in ("preset", "model", "size", "quality", "account", "account_label"):
+    for name in ("preset", "model", "size", "quality", "account", "account_label", "key",
+                 "key_label"):
         if chosen.get(name):
             settings[name] = chosen[name]
     return EngineJob(
@@ -556,11 +612,14 @@ def pause(request: Request, batch_id: str):
 
 
 def _check_engine(request, engine: str, account_id: str | None = None) -> None:
-    """Before continuing: a key is saved, or the CLI account the items will use is signed in."""
+    """Before continuing: the API key the items will use is still saved (Phase 8B), or the
+    CLI account they will use is signed in (Phase 8A)."""
     if is_api_engine(engine):
-        if not key_info(request.app.state.settings, engine)["saved"]:
+        if keystore.find(request.app.state.settings, engine, account_id) is None:
             raise HTTPException(
-                409, f"No {API_ENGINES[engine].name} key is saved. Add one, then continue."
+                409,
+                f"The {API_ENGINES[engine].name} key this batch used was removed. Choose another "
+                "key to continue, or add one in Studio settings.",
             )
         return
     settings = request.app.state.settings
@@ -589,9 +648,12 @@ def _check_engine(request, engine: str, account_id: str | None = None) -> None:
 
 
 def target_account(batch, body: "ChargeInput | None") -> str | None:
-    """The account a continued batch will run on: the one chosen now, else its own."""
+    """The account (or API key) a continued batch will run on: the one chosen now, else its
+    own."""
     if body is not None and body.account_id:
         return body.account_id
+    if is_api_engine(batch.engine):
+        return keystore.recorded(batch.settings_json)[0]
     return cli_accounts.recorded(batch.settings_json)[0]
 
 
@@ -601,8 +663,7 @@ async def continue_batch(request: Request, batch_id: str, body: ChargeInput | No
     with Session(request.app.state.engine) as session:
         batch = require_batch(session, batch_id)
         engine, account_id = batch.engine, target_account(batch, body)
-    if is_api_engine(engine) and not (body and body.confirm_charges):
-        raise HTTPException(409, charge_confirmation(engine))
+    require_charge(request, engine, account_id, body)
     await run_in_threadpool(_check_engine, request, engine, account_id)
     with writing(request) as session:
         batch = require_batch(session, batch_id)
@@ -669,8 +730,7 @@ async def retry_failed(request: Request, batch_id: str, body: ChargeInput | None
     with Session(request.app.state.engine) as session:
         batch = require_batch(session, batch_id)
         engine, account_id = batch.engine, target_account(batch, body)
-    if is_api_engine(engine) and not (body and body.confirm_charges):
-        raise HTTPException(409, charge_confirmation(engine))
+    require_charge(request, engine, account_id, body)
     if body is not None and body.account_id:
         await run_in_threadpool(_check_engine, request, engine, account_id)
     with writing(request) as session:

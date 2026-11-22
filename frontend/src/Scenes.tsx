@@ -33,7 +33,7 @@ export type AnalysisData = {
 type Analysis = { id: string; version: number; source: string; engine_version: string | null; has_raw_output: boolean; based_on_id: string | null; created_at: string; analysis: AnalysisData; confirmed_uncertainties: Uncertainty[] }
 export type Prompt = { id: string; version: number; analysis_id: string | null; mapping_hash: string | null; prompt_text: string; negative_prompt: string; scene_changes: string; source: string; is_polished: boolean; polished_from_version_id: string | null; engine_version: string | null; created_at: string }
 export type BatchPlace = { id: string; status: string; pause_kind: string | null; position: number; total: number; scene_items: number }
-export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; account?: RunAccount | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
+export type Job = { id: string; kind: string; engine: string; engine_name: string; engine_version: string | null; account?: RunAccount | null; key?: RunAccount | null; usage?: { input_tokens: number | null; output_tokens: number | null } | null; mode: string | null; batch: BatchPlace | null; batch_id: string | null; recoverable: boolean; seconds: number | null; status: string; error_kind: string | null; error_details: string | null; job_folder: string | null; timeout_seconds: number; result_id: string | null; input_id: string | null; decision: string | null; created_at: string; started_at: string | null; finished_at: string | null }
 export type SceneSummary = { id: string; title: string; workflow_state: string; width: number; height: number; revision: number; created_at: string; updated_at: string; last_opened_at: string | null; thumbnail_url: string; original_url: string; analysis_version: number | null; prompt_version: number | null; result_count: number; active_job: Job | null
   scene_set_id: string | null; stage: Exclude<StageFilter, 'all' | 'problems'>; problem: { kind: string; status: string; at: string } | null
   mismatch: string | null; import_character_id: string | null }
@@ -193,7 +193,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
       : { failed: `${job.engine_name} could not finish the analysis`, cancelled: 'Analysis cancelled', interrupted: 'The analysis was interrupted' }
   return <div className={`job-notice ${job.status}`} role="alert">
     <strong>{titles[job.status] ?? 'The run did not finish'}</strong>
-    <p>{job.error_details}{job.account && job.account.id !== 'default' ? ` Account: ${job.account.label}.` : ''}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' && job.engine === 'codex_cli' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
+    <p>{job.error_details}{job.account && job.account.id !== 'default' ? ` Account: ${job.account.label}.` : ''}{job.key ? ` Key: “${job.key.label}”.` : ''}{polish ? ' Your prompt is unchanged.' : ''}{generation && job.status === 'cancelled' && job.engine === 'codex_cli' ? ' The request may already have reached OpenAI and used some allowance, and Codex may have saved an image.' : ''}</p>
     {(job.status === 'interrupted' || (generation && job.recoverable)) && job.job_folder && <p className="folder-line"><Icon name="folder" /> <code>{job.job_folder}</code> <button type="button" className="link-button" onClick={() => copyText(job.job_folder!, setNote)}>Copy path</button></p>}
     <StatusNote text={note} />
     <div className="notice-actions">
@@ -207,7 +207,7 @@ function JobNotice({ job, onRetry, onManual, manualLabel, onDismiss, busy, extra
 }
 
 /** The Claude Code or Codex account a run uses (Phase 8A); nothing for the usual sign-in. */
-const onAccount = (job: Job) => job.account && job.account.id !== 'default' ? ` (${job.account.label})` : ''
+const onAccount = (job: Job) => job.account && job.account.id !== 'default' ? ` (${job.account.label})` : job.key ? ` (key “${job.key.label}”)` : ''
 
 function ProgressCard({ job, stopping, busy, onCancel }: { job: Job; stopping: boolean; busy: boolean; onCancel: () => void }) {
   const verb = job.kind === 'polish' ? 'Polishing' : job.kind === 'generation' ? 'Generating' : job.kind === 'check' ? 'Checking a result' : job.kind === 'edit' ? 'Editing a result' : 'Analysing'
@@ -404,11 +404,12 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
   }
   const confirmApprovedEdit = (what: string) => !approved || window.confirm(`${what} cancels the current approval. Continue?`)
 
-  const analyse = (confirmed = false, note?: string) => {
-    if (isApiEngine(engine) && !confirmed) { void apiEngines.reload(); setChargeAsk({ note }); return }
+  // `charge` (Phase 8B): what the charge dialog accepted, naming the key.
+  const analyse = (charge: object | null = null, note?: string) => {
+    if (isApiEngine(engine) && !charge) { void apiEngines.reload(); setChargeAsk({ note }); return }
     return run(async () => {
       if (lastAnalysisJob) setDismissed(d => [...d, lastAnalysisJob.id])
-      const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/analyse`, 'POST', token, isApiEngine(engine) ? { confirm_charges: true } : undefined)
+      const detail = await send<SceneDetail>(`/api/scenes/${scene.id}/analyse`, 'POST', token, isApiEngine(engine) && charge ? charge : undefined)
       setScene(detail); onChanged()
     })
   }
@@ -474,9 +475,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
     })
   }
   const generator = engines?.generation_engine ?? 'codex_cli'
-  const generate = (mode: 'generate' | 'variation', count = 1, presetId: string | null = null, confirmed = false) => run(async () => {
+  const generate = (mode: 'generate' | 'variation', count = 1, presetId: string | null = null, charge: object | null = null) => run(async () => {
     if (lastGenerationJob) setDismissed(d => [...d, lastGenerationJob.id])
-    const extra = { ...(presetId ? { preset_id: presetId } : {}), ...(confirmed ? { confirm_charges: true } : {}) }
+    const extra = { ...(presetId ? { preset_id: presetId } : {}), ...(charge ?? {}) }
     if (count > 1) {
       // Several images from this one approval: a batch for this scene (Phase 5.5).
       await send<BatchStart>('/api/batches/generation', 'POST', token, { items: [{ scene_id: scene.id, approval_id: scene.approval.current?.id }], count, mode, ...extra })
@@ -578,7 +579,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
               <span className="spacer" />
               {shown.id === current?.id ? <>
                 <button className="secondary" disabled={busy || !!scene.active_job} onClick={startEdit}><Icon name="edit" /> Edit</button>
-                {engine !== 'manual' && !showJobNotice && <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => { if (isApiEngine(engine)) void analyse(false, `This sends the Base Image again. ${againNote}`); else if (window.confirm(`Analyse again with ${engineLabels[engine]}? This sends the Base Image again and uses your plan's allowance. ${againNote}`)) void analyse() }}>Analyse again</button>}
+                {engine !== 'manual' && !showJobNotice && <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => { if (isApiEngine(engine)) void analyse(null, `This sends the Base Image again. ${againNote}`); else if (window.confirm(`Analyse again with ${engineLabels[engine]}? This sends the Base Image again and uses your plan's allowance. ${againNote}`)) void analyse() }}>Analyse again</button>}
                 {!showJobNotice && <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => setManual(true)}>Import</button>}
               </> : <button className="secondary" disabled={busy || !!scene.active_job} onClick={() => current && saveRevision(shown.analysis, shown.confirmed_uncertainties, current, `Version ${shown.version} restored as the current analysis.`)}>Restore as current</button>}
             </div>
@@ -683,7 +684,7 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
         </section>
 
         {scene.jobs.length > 0 && <details className="panel run-history"><summary>Engine runs ({scene.jobs.length})</summary>
-          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.account ? ` · ${accountName(j.account)}` : ''}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}{j.usage?.input_tokens != null ? ` · ${j.usage.input_tokens.toLocaleString()} in, ${(j.usage.output_tokens ?? 0).toLocaleString()} out tokens` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
+          <ul>{scene.jobs.map(j => <li key={j.id}><span className={`run-status ${j.status}`}>{statusLabels[j.status] ?? j.status}</span><span>{j.mode === 'variation' ? 'Variation' : kindLabels[j.kind] ?? j.kind} · {j.engine_name}{j.account ? ` · ${accountName(j.account)}` : ''}{j.key ? ` · key “${j.key.label}”` : ''}{j.engine_version ? ` · ${j.engine_version}` : ''}{j.seconds != null && j.kind !== 'export' ? ` · ${duration(j.seconds)}` : ''}{j.usage?.input_tokens != null ? ` · ${j.usage.input_tokens.toLocaleString()} in, ${(j.usage.output_tokens ?? 0).toLocaleString()} out tokens` : ''}</span><span className="hint">{formatDate(j.created_at)}</span>
             {j.job_folder && <button type="button" className="link-button" onClick={() => copyText(j.job_folder!, setMessage)}><Icon name="folder" /> Copy folder path</button>}</li>)}</ul>
         </details>}
       </div>
@@ -696,9 +697,9 @@ function Workspace({ data, sceneId, onBack, onOpen, onDirty, onBusy, onChanged }
       title={`${imageAsk.mode === 'variation' ? 'Make a variation' : 'Generate'} with ${generationNames[generator]}?`} action={imageAsk.count > 1 ? `Generate ${imageAsk.count} images` : 'Generate'}
       note={imageAsk.count > 1 ? 'They run one after another; each one is a separate request.' : 'Earlier results are kept.'} image={askOptions}
       what={`the Base Image and ${scene.total_images - 1 === 1 ? '1 approved reference photo' : `${scene.total_images - 1} approved reference photos`} (without location data) with the approved prompt`}
-      onConfirm={() => void generate(imageAsk.mode, imageAsk.count, imageAsk.presetId, true)} onClose={() => setImageAsk(null)} />}
+      onConfirm={charge => void generate(imageAsk.mode, imageAsk.count, imageAsk.presetId, charge)} onClose={() => setImageAsk(null)} />}
     {chargeAsk && apiEngines.byId[engine] && <ChargeDialog engine={apiEngines.byId[engine]} model={engines?.models[engine]?.analysis ?? null} runs={1} note={chargeAsk.note}
-      onConfirm={() => void analyse(true)} onClose={() => setChargeAsk(null)} />}
+      onConfirm={charge => void analyse(charge)} onClose={() => setChargeAsk(null)} />}
     {historyOpen && <PromptHistory scene={scene} token={token} editorDirty={promptDirty} onClose={() => setHistoryOpen(false)}
       onLoad={prompt => { if (restorePrompt(prompt)) setHistoryOpen(false) }}
       onDeleted={(detail, wasCurrent, version) => { void accept(detail, wasCurrent).then(() => setMessage(`Prompt version ${version} deleted.`)) }} />}

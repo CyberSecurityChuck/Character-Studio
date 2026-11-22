@@ -31,7 +31,7 @@ from backend.analysis_schema import (
 )
 from backend.configuration import Settings
 from backend.engines import ENGINE_NAMES, EngineError
-from backend.keystore import KeyStoreError, load_key
+from backend.keystore import DEFAULT, KeyStoreError, load_key
 
 # Long edge of the copy sent for analysis. Subject boxes are relative (0–1), so the
 # analysis is unchanged by scaling, and every provider accepts this size without resizing.
@@ -151,11 +151,14 @@ def chosen_model(row, engine: str, purpose: str = "analysis") -> str | None:
     return model if isinstance(model, str) and model else None
 
 
-def charge_confirmation(engine: str) -> str:
-    """Refusal text when an API run arrives without the user's cost confirmation."""
+def charge_confirmation(engine: str, key_label: str | None = None) -> str:
+    """Refusal text when an API run arrives without the user's cost confirmation for the key
+    that would be charged (Phase 8B: a confirmation covers only the keys it names)."""
+    through = f" through the key \u201c{key_label}\u201d" if key_label else ""
     return (
         f"Runs with the {API_ENGINES[engine].name} may be charged to your "
-        f"{API_ENGINES[engine].company} account. Confirm the charge in the studio first."
+        f"{API_ENGINES[engine].company} account{through}. Confirm the charge in the studio "
+        "first."
     )
 
 
@@ -328,16 +331,27 @@ def classify(engine: str, reply: ApiReply, key: str | None) -> EngineError:
     return EngineError("engine_error", f"{company} reported an error ({status}): {said}")
 
 
-def require_key(settings: Settings, engine: str) -> str:
+def require_key(settings: Settings, engine: str, run_settings: dict | None = None) -> str:
+    """The key a run was queued with (Phase 8B: `key` in its settings; older runs used the
+    Default key). A key removed since then stops the run before anything is sent."""
+    run_settings = run_settings or {}
+    key_id = run_settings.get("key") or DEFAULT
     try:
-        key = load_key(settings, engine)
+        key = load_key(settings, engine, key_id)
     except KeyStoreError as error:
         raise EngineError("key_problem", str(error)) from error
     if not key:
+        name = API_ENGINES[engine].name
+        if run_settings.get("key"):
+            label = run_settings.get("key_label") or "it was queued with"
+            raise EngineError(
+                "key_problem",
+                f"The {name} key \u201c{label}\u201d was removed, so nothing was sent. "
+                "Continue with another key, or add the key again in Studio settings.",
+            )
         raise EngineError(
             "key_problem",
-            f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings, or "
-            "choose another engine.",
+            f"No {name} key is saved. Add one in Studio settings, or choose another engine.",
         )
     return key
 
@@ -385,12 +399,12 @@ _IMAGE_MODEL = {
 }
 
 
-def list_models(settings: Settings, engine: str) -> tuple[list[str], list[str]]:
-    """Check the key with the provider's free model-list call.
+def list_models(settings: Settings, engine: str, key_id: str) -> tuple[list[str], list[str]]:
+    """Check one saved key with the provider's free model-list call.
 
     Returns (analysis models, image models).
     """
-    key = require_key(settings, engine)
+    key = require_key(settings, engine, {"key": key_id})
     if engine == "bfl_api":
         reply = _call(
             f"{_base(settings, engine)}/v1/credits", _headers(engine, key), None, 30,
@@ -596,9 +610,11 @@ def run_structured(
     timeout: float,
     should_stop: Callable[[], bool],
     task: StructuredTask,
+    run_settings: dict | None = None,
 ) -> tuple[object, dict]:
-    """One request; returns the reply (JSON object or text) and the reported usage."""
-    key = require_key(settings, engine)
+    """One request with the run's key; returns the reply (JSON object or text) and the
+    reported usage."""
+    key = require_key(settings, engine, run_settings)
     images = api_images(job_dir, task.images)
     url, body = structured_request(settings, engine, model, images, task)
     (job_dir / "request.json").write_text(
@@ -624,10 +640,11 @@ def run_analysis(
     job_dir: Path,
     timeout: float,
     should_stop: Callable[[], bool],
+    run_settings: dict | None = None,
 ) -> tuple[SceneAnalysisData, dict]:
     """One analysis request; returns the validated analysis and the reported usage."""
     value, usage = run_structured(
-        settings, engine, model, job_dir, timeout, should_stop, ANALYSIS_TASK
+        settings, engine, model, job_dir, timeout, should_stop, ANALYSIS_TASK, run_settings
     )
     try:
         data = validate_analysis(value) if isinstance(value, dict) else parse_analysis_text(value)

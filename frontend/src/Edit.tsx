@@ -143,12 +143,12 @@ export function EditDialog({ result, token, onClose, onQueued }: {
   const ready = !!option?.available && marked && (kind === 'replace' ? !!subject : instruction.trim().length >= 3)
   const references = kind === 'replace' ? result.mappings.find(m => m.subject === subject)?.images.length ?? 0 : 0
   const sends = `result ${result.version}${kind === 'replace' ? ` and ${references} approved ${references === 1 ? 'photo' : 'photos'} of ${subject}` : ''}${option?.area === 'mask' || option?.area === 'guided' ? ' with the marked area' : ''} (without location data)`
-  async function submit(confirmed: boolean) {
+  async function submit(charge?: { confirm_charges: boolean; charge_keys: string[] }) {
     if (!option) return
     setBusy(true); setError('')
     try {
       const detail = await send<SceneDetail>(`/api/results/${result.id}/edit`, 'POST', token, {
-        kind, option: option.id, subject: kind === 'replace' ? subject : null, instruction, mask: maskData(), confirm_charges: confirmed,
+        kind, option: option.id, subject: kind === 'replace' ? subject : null, instruction, mask: maskData(), ...(charge ?? {}),
       })
       onQueued(detail, `Editing result ${result.version} with ${option.name}…`)
       onClose()
@@ -157,7 +157,7 @@ export function EditDialog({ result, token, onClose, onQueued }: {
   function start() {
     if (!option || !ready) return
     if (option.charged) { setAsking(true); return }
-    if (window.confirm(`Edit with Codex? This sends ${sends} to OpenAI via Codex once and uses your ChatGPT plan’s image allowance.`)) void submit(false)
+    if (window.confirm(`Edit with Codex? This sends ${sends} to OpenAI via Codex once and uses your ChatGPT plan’s image allowance.`)) void submit()
   }
 
   const overlay = rect ? { left: `${Math.min(rect.a.x, rect.b.x) / result.width * 100}%`, top: `${Math.min(rect.a.y, rect.b.y) / result.height * 100}%`,
@@ -219,6 +219,6 @@ export function EditDialog({ result, token, onClose, onQueued }: {
     {asking && option && api.byId[option.engine] && <ChargeDialog engine={api.byId[option.engine]} model={option.model} runs={1} title={`Edit with ${option.name}?`} action="Edit"
       what={sends} image={option.options.size ? { size: option.options.size, quality: option.options.quality } : undefined}
       costLine={option.engine === 'bfl_api' ? 'Black Forest Labs charges per image in credits and reports the cost; the studio records it after the edit.' : undefined}
-      onConfirm={() => void submit(true)} onClose={() => setAsking(false)} />}
+      purpose="generation" onConfirm={charge => void submit(charge)} onClose={() => setAsking(false)} />}
   </dialog>
 }

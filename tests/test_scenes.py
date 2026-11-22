@@ -377,9 +377,18 @@ def test_manual_engine_setting_and_settings_validation(engine_client):
             "codex_cli:analysis": "default",
             "codex_cli:generation": "default",
         },
+        # Phase 8B: no API key is saved yet, so none is chosen.
+        "keys": {
+            "anthropic_api:analysis": None,
+            "bfl_api:generation": None,
+            "gemini_api:analysis": None,
+            "gemini_api:generation": None,
+            "openai_api:analysis": None,
+            "openai_api:generation": None,
+        },
         "revision": 1,
     }
-    status = {s["engine"]: s for s in client.get("/api/engines/status").json()}
+    status ={s["engine"]: s for s in client.get("/api/engines/status").json()}
     assert status["claude_cli"] == {
         "engine": "claude_cli",
         "name": "Claude",

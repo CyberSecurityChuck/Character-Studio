@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, object_session
 from starlette.concurrency import run_in_threadpool
 
-from backend import cli_accounts
+from backend import cli_accounts, keystore
 from backend.analysis_schema import (
     MANUAL_INSTRUCTION,
     SCHEMA_VERSION,
@@ -50,7 +50,6 @@ from backend.image_api import (
     saved_output,
 )
 from backend.jobs import MAX_PROMPT_LENGTH, job_folder_path
-from backend.keystore import key_info
 from backend.library import clean_deleted_files, decode_image, file_hash
 from backend.models import (
     Approval,
@@ -226,6 +225,9 @@ class EngineSettingsUpdate(BaseModel):
     # Phase 8A review (D044): the Claude Code / Codex account new runs use, per engine and
     # purpose, e.g. {"codex_cli:generation": "<account id>"}; missing keys stay as they are.
     accounts: dict[str, str] = Field(default_factory=dict)
+    # Phase 8B: the API key new runs use, per provider and purpose, e.g.
+    # {"openai_api:generation": "<key id>"}; missing keys stay as they are.
+    keys: dict[str, str | None] = Field(default_factory=dict)
     revision: int = Field(ge=1)
 
     @field_validator("image_options")
@@ -260,6 +262,8 @@ class AnalyseInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # API engines only: the user confirmed that this run may be charged (PLAN.md §12.3).
     confirm_charges: bool = False
+    # Phase 8B: the API keys the user confirmed charges to; it covers only these keys.
+    charge_keys: list[str] = Field(default_factory=list, max_length=4)
 
 
 def writing(request):
@@ -330,6 +334,14 @@ def job_account(job: EngineJob) -> dict | None:
     return {"id": account_id, "label": label}
 
 
+def job_key(job: EngineJob) -> dict | None:
+    """The API key a paid run was charged to (Phase 8B): its id and name, never the key."""
+    if job.engine not in keystore.PURPOSES:
+        return None
+    key_id, label = keystore.recorded(job.settings_json)
+    return {"id": key_id, "label": label}
+
+
 def job_data(request, job: EngineJob | None):
     if job is None:
         return None
@@ -344,6 +356,8 @@ def job_data(request, job: EngineJob | None):
         "model": json.loads(job.settings_json or "{}").get("model"),
         # The Claude Code or Codex account the run was queued with (Phase 8A).
         "account": job_account(job),
+        # The API key it was queued with (Phase 8B).
+        "key": job_key(job),
         "usage": json.loads(job.settings_json or "{}").get("usage"),
         "mode": json.loads(job.settings_json or "{}").get("mode"),
         # A generation that did not finish may still have saved an image in Codex's folder,
@@ -1180,49 +1194,66 @@ def save_scene_mappings(request: Request, scene_id: str, body: MappingsInput):
         return scene_detail(request, session, scene)
 
 
-def api_run_settings(request, settings: EngineSettings, engine: str, confirmed: bool) -> dict:
+def charged_key(request, engine: str, purpose: str, body) -> dict:
+    """The key a paid run will be charged to (Phase 8B): the one the engine panel chose.
+
+    The user's confirmation covers only the keys it names (`charge_keys`), so a key changed
+    in another window since the confirmation was shown is refused, not charged.
+    """
+    key = keystore.active(request.app.state.settings, engine, purpose)
+    if key is None:
+        raise HTTPException(
+            409, f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings."
+        )
+    if key["id"] not in (getattr(body, "charge_keys", None) or []):
+        raise HTTPException(409, charge_confirmation(engine, key["label"]))
+    return keystore.stamp(key)
+
+
+def _confirmed(body) -> bool:
+    return bool(body is not None and getattr(body, "confirm_charges", False))
+
+
+def api_run_settings(request, settings: EngineSettings, engine: str, body) -> dict:
     """Checks before queuing an analysis or check; returns the job settings (the model used).
 
     Subscription engines record the chosen model if one is set (else the CLI's default);
-    API engines also need a key, a model and the user's charge confirmation.
+    API engines also need a key, a model and the user's charge confirmation, which names the
+    key (Phase 8B). The job records the key's id and name, never the key.
     """
     if not is_api_engine(engine):
         model = chosen_model(settings, engine)
         return {"model": model} if model else {}
-    if not confirmed:
-        raise HTTPException(409, charge_confirmation(engine))
+    if not _confirmed(body):
+        label = keystore.key_info(request.app.state.settings, engine, "analysis")["label"]
+        raise HTTPException(409, charge_confirmation(engine, label))
     model = chosen_model(settings, engine)
     if model is None:
         raise HTTPException(
             409, f"Choose a model for the {API_ENGINES[engine].name} in Studio settings first."
         )
-    if not key_info(request.app.state.settings, engine)["saved"]:
-        raise HTTPException(
-            409, f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings."
-        )
-    return {"model": model}
+    return {"model": model, **charged_key(request, engine, "analysis", body)}
 
 
 def image_run_settings(
-    request, session, settings: EngineSettings, confirmed: bool, preset_id: str | None
+    request, session, settings: EngineSettings, body, preset_id: str | None
 ) -> dict:
-    """Checks before queuing an API image run (Phase 6C); returns the model, size and quality.
+    """Checks before queuing an API image run (Phase 6C); returns the model, size, quality
+    and (Phase 8B) the key.
 
     What the user confirmed is what runs: the job records these and never re-reads them.
     """
     engine = settings.generation_engine
-    if not confirmed:
-        raise HTTPException(409, charge_confirmation(engine))
+    if not _confirmed(body):
+        label = keystore.key_info(request.app.state.settings, engine, "generation")["label"]
+        raise HTTPException(409, charge_confirmation(engine, label))
     name = IMAGE_ENGINES[engine].name
     model = chosen_model(settings, engine, "generation")
     if model is None:
         raise HTTPException(409, f"Choose an image model for {name} in Studio settings first.")
-    if not key_info(request.app.state.settings, engine)["saved"]:
-        raise HTTPException(
-            409, f"No {API_ENGINES[engine].name} key is saved. Add one in Studio settings."
-        )
+    key = charged_key(request, engine, "generation", body)
     chosen = options_for(settings, engine, preset_image_options(session, preset_id))
-    return {"model": model, **chosen}
+    return {"model": model, **chosen, **key}
 
 
 @router.post("/scenes/{scene_id}/analyse", status_code=202)
@@ -1237,7 +1268,7 @@ def analyse_scene(request: Request, scene_id: str, body: AnalyseInput | None = N
             )
         if active_job(session, scene_id):
             raise HTTPException(409, "An engine job is already running for this scene.")
-        run = api_run_settings(request, settings, engine, bool(body and body.confirm_charges))
+        run = api_run_settings(request, settings, engine, body)
         session.add(
             EngineJob(
                 id=uuid4().hex,
@@ -1537,6 +1568,7 @@ def withdraw_approval(request: Request, scene_id: str, body: WithdrawInput):
 
 def settings_data(item: EngineSettings, settings=None):
     accounts = cli_accounts.choices(settings) if settings is not None else {}
+    keys = keystore.choices(settings) if settings is not None else {}
     return {
         "analysis_engine": item.analysis_engine,
         "generation_engine": item.generation_engine,
@@ -1546,6 +1578,7 @@ def settings_data(item: EngineSettings, settings=None):
         "models": models_of(item),
         "image_options": image_options_of(item),
         "accounts": accounts,
+        "keys": keys,
         "revision": item.revision,
     }
 
@@ -1562,27 +1595,40 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
         item = session.get(EngineSettings, 1)
         if item.revision != body.revision:
             raise HTTPException(409, "Engine settings changed in another window. Reload first.")
+        studio = request.app.state.settings
+        current_keys = keystore.choices(studio)
+        # A provider without keys has no choice yet (sent back as null).
+        body.keys = {k: v for k, v in body.keys.items() if v is not None}
+        for key, key_id in body.keys.items():
+            if key not in keystore.CHOICES:
+                raise HTTPException(422, "Unknown key choice.")
+            if keystore.find(studio, key.split(":")[0], key_id) is None:
+                raise HTTPException(409, "That key no longer exists. Reload the page.")
+
+        def has_key(engine: str, purpose: str) -> bool:
+            choice = f"{engine}:{purpose}"
+            return bool(body.keys.get(choice) or current_keys.get(choice))
+
         engine = body.analysis_engine
         if is_api_engine(engine):
             name = API_ENGINES[engine].name
             if not (body.models.get(engine) or {}).get("analysis"):
                 raise HTTPException(422, f"Choose a model for the {name} before selecting it.")
-            if not key_info(request.app.state.settings, engine)["saved"]:
+            if not has_key(engine, "analysis"):
                 raise HTTPException(422, f"Save your {name} key before selecting it.")
         engine = body.generation_engine
         if engine in IMAGE_ENGINES:
             name = IMAGE_ENGINES[engine].name
             if not (body.models.get(engine) or {}).get("generation"):
                 raise HTTPException(422, f"Choose an image model for {name} before selecting it.")
-            if not key_info(request.app.state.settings, engine)["saved"]:
+            if not has_key(engine, "generation"):
                 raise HTTPException(422, f"Save your {API_ENGINES[engine].name} key first.")
-        studio = request.app.state.settings
         for key, account_id in body.accounts.items():
             if key not in cli_accounts.CHOICES:
                 raise HTTPException(422, "Unknown account choice.")
             if cli_accounts.find(studio, key.split(":")[0], account_id) is None:
                 raise HTTPException(409, "That account no longer exists. Reload the page.")
-        excluded = {"revision", "models", "image_options", "accounts"}
+        excluded = {"revision", "models", "image_options", "accounts", "keys"}
         for key, value in body.model_dump(exclude=excluded).items():
             setattr(item, key, value)
         item.api_models_json = json.dumps(body.models, sort_keys=True)
@@ -1596,6 +1642,11 @@ def save_engine_settings(request: Request, body: EngineSettingsUpdate):
             if current[key] != account_id:
                 engine, purpose = key.split(":")
                 cli_accounts.choose(studio, engine, account_id, purpose)
+        # The same for API keys (Phase 8B): runs already queued keep the key they have.
+        for key, key_id in body.keys.items():
+            if current_keys[key] != key_id:
+                provider, purpose = key.split(":")
+                keystore.choose_key(studio, provider, key_id, purpose)
         item.revision += 1
         return settings_data(item, studio)
 

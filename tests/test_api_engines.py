@@ -207,12 +207,32 @@ def api_client(api_settings):
         yield client
 
 
-def save_key(client, engine, key=KEY):
-    result = client.put(
-        f"/api/api-engines/{engine}/key", headers=authorization(client), json={"key": key}
-    )
-    assert result.status_code == 200, result.text
+def save_key(client, engine, key=KEY, label="Default"):
+    """Save a key under a name (Phase 8B), or put it in place of the key with that name."""
+    listed = {e["id"]: e for e in client.get("/api/api-engines").json()}[engine]["keys"]
+    same = next((k for k in listed if k["label"] == label), None)
+    if same:
+        result = client.put(
+            f"/api/api-engines/{engine}/keys/{same['id']}",
+            headers=authorization(client),
+            json={"key": key},
+        )
+        assert result.status_code == 200, result.text
+    else:
+        result = client.post(
+            f"/api/api-engines/{engine}/keys",
+            headers=authorization(client),
+            json={"label": label, "key": key},
+        )
+        assert result.status_code == 201, result.text
     return result.json()
+
+
+def key_path(engine, key_id="default"):
+    return f"/api/api-engines/{engine}/keys/{key_id}"
+
+
+CHARGE = {"confirm_charges": True, "charge_keys": ["default"]}
 
 
 def select_api(client, engine, model="test-model", **changes):
@@ -230,7 +250,7 @@ def analyse(client, scene, confirm=True):
     return client.post(
         f"/api/scenes/{scene['id']}/analyse",
         headers=authorization(client),
-        json={"confirm_charges": confirm},
+        json={"confirm_charges": confirm, "charge_keys": ["default"] if confirm else []},
     )
 
 
@@ -246,24 +266,28 @@ def _save_and_back_up(client, api_settings):
     listed = {e["id"]: e for e in client.get("/api/api-engines").json()}
     assert set(listed) == set(ENGINES)
     assert listed["gemini_api"]["suggested_model"] == "gemini-2.5-flash"
-    assert listed["gemini_api"]["key"] == {"saved": False, "saved_at": None}
+    assert listed["gemini_api"]["key"]["saved"] is False and listed["gemini_api"]["keys"] == []
     assert client.get("/api/bootstrap").json()["paid_operations_enabled"] is False
 
-    bad = client.put(
-        "/api/api-engines/gemini_api/key", headers=authorization(client), json={"key": "a b"}
+    bad = client.post(
+        "/api/api-engines/gemini_api/keys",
+        headers=authorization(client),
+        json={"label": "Default", "key": "a b"},
     )
     assert bad.status_code == 422
     saved = save_key(client, "gemini_api")
     assert saved["key"]["saved"] is True and KEY not in json.dumps(saved)
     assert client.get("/api/bootstrap").json()["paid_operations_enabled"] is True
 
-    stored = api_settings.data_dir / "keys" / "gemini_api.key"
+    stored = api_settings.data_dir / "keys" / "gemini_api" / "default.key"
     assert stored.is_file() and KEY.encode() not in stored.read_bytes()
     assert load_key(api_settings, "gemini_api") == KEY
     for path in ("/api/api-engines", "/api/engines/settings", "/api/bootstrap"):
         assert KEY not in client.get(path).text
-    assert client.put(
-        "/api/api-engines/unknown/key", headers=authorization(client), json={"key": KEY}
+    assert client.post(
+        "/api/api-engines/unknown/keys",
+        headers=authorization(client),
+        json={"label": "Default", "key": KEY},
     ).status_code == 404
 
     state = make_backup(client)
@@ -275,8 +299,8 @@ def _save_and_back_up(client, api_settings):
 
 def test_test_key_lists_usable_models_without_generating(api_client, providers):
     client = api_client
-    missing = client.post("/api/api-engines/openai_api/models", headers=authorization(client))
-    assert missing.status_code == 409 and "No OpenAI API key" in missing.json()["detail"]
+    missing = client.post(f"{key_path('openai_api')}/test", headers=authorization(client))
+    assert missing.status_code == 404
     for engine, expected in (
         ("gemini_api", ["gemini-2.5-flash"]),
         ("anthropic_api", ["claude-test-1"]),
@@ -287,10 +311,10 @@ def test_test_key_lists_usable_models_without_generating(api_client, providers):
         assert saved["models"] == expected and saved["models_error"] is None
         listed = {e["id"]: e for e in client.get("/api/api-engines").json()}
         assert listed[engine]["models"] == expected and listed[engine]["models_checked_at"]
-        result = client.post(f"/api/api-engines/{engine}/models", headers=authorization(client))
+        result = client.post(f"{key_path(engine)}/test", headers=authorization(client))
         assert result.json()["models"] == expected
     assert providers.posts() == []
-    removed = client.delete("/api/api-engines/openai_api/key", headers=authorization(client))
+    removed = client.delete(key_path("openai_api"), headers=authorization(client))
     assert removed.json()["models"] == []
     headers = {r["engine"]: r["headers"] for r in providers.requests}
     assert headers["gemini_api"]["x-goog-api-key"] == KEY
@@ -314,9 +338,7 @@ def test_selecting_an_api_engine_needs_a_model_and_a_key(api_client):
     assert result.json()["models"] == {"gemini_api": {"analysis": "gemini-2.5-flash"}}
     assert result.json()["api_timeout"] == 240
     # The selected engine's key cannot be removed until another engine is chosen.
-    assert client.delete(
-        "/api/api-engines/gemini_api/key", headers=authorization(client)
-    ).status_code == 409
+    assert client.delete(key_path("gemini_api"), headers=authorization(client)).status_code == 409
 
 
 @pytest.mark.parametrize("engine", ENGINES[:3])  # FLUX only edits regions
@@ -423,7 +445,7 @@ def test_api_batches_confirm_charges_and_pause_on_spending_limits(api_client, pr
          "balance is too low to access the Anthropic API."}},
     )
     started = client.post(
-        "/api/batches/analysis", headers=headers, json={"scene_ids": ids, "confirm_charges": True}
+        "/api/batches/analysis", headers=headers, json={"scene_ids": ids, **CHARGE}
     ).json()["batch"]
     assert started["engine_name"] == "Anthropic API"
     deadline = time.monotonic() + 20
@@ -437,7 +459,7 @@ def test_api_batches_confirm_charges_and_pause_on_spending_limits(api_client, pr
     del providers.next["anthropic_api"]
     url = f"/api/batches/{started['id']}/continue"
     assert client.post(url, headers=headers).status_code == 409
-    assert client.post(url, headers=headers, json={"confirm_charges": True}).status_code == 200
+    assert client.post(url, headers=headers, json=CHARGE).status_code == 200
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         batch = client.get(f"/api/batches/{started['id']}").json()
@@ -447,6 +469,6 @@ def test_api_batches_confirm_charges_and_pause_on_spending_limits(api_client, pr
     assert batch["counts"]["completed"] == 2 and batch["counts"]["failed"] == 1
     retry = f"/api/batches/{started['id']}/retry"
     assert client.post(retry, headers=headers).status_code == 409
-    assert client.post(retry, headers=headers, json={"confirm_charges": True}).status_code == 202
+    assert client.post(retry, headers=headers, json=CHARGE).status_code == 202
     jobs = [j for s in ids for j in client.get(f"/api/scenes/{s}").json()["jobs"]]
     assert {j["model"] for j in jobs} == {"test-model"}

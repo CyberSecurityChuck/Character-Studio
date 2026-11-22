@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { request, send } from './api'
 import { ApproveAllDialog, type ApprovalCounts, type ApprovalList } from './Approve'
-import { ChargeSummary, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
+import { ChargeSummary, chargeFields, chargeKey, engineNames, isApiEngine, sendsTo, useApiEngines } from './ApiEngines'
 import { Dialog, plural, MAX_ANALYSIS_RUNS, type Batch } from './Batches'
 import type { GeneratePreview } from './GenerateAll'
 import { Avatar, type Character, type Group } from './Library'
@@ -186,7 +186,7 @@ function AnalyseAllDialog({ item, token, engine, count, onClose, onStarted }: { 
   async function start() {
     setBusy(true); setError('')
     try {
-      const result = await send<{ batches: Batch[]; queued: number; skipped: Skipped[] }>(`/api/scene-sets/${item.id}/analyse-all`, 'POST', token, charged ? { confirm_charges: true } : {})
+      const result = await send<{ batches: Batch[]; queued: number; skipped: Skipped[] }>(`/api/scene-sets/${item.id}/analyse-all`, 'POST', token, charged ? chargeFields(chargeKey(apiEngines.byId[engine], 'analysis')) : {})
       onStarted(`Analysing ${plural(result.queued, 'scene')} in ${plural(result.batches.length, 'batch')}, one run at a time.`, result.skipped.length ? `Skipped: ${result.skipped.map(s => `${s.title} (${s.reason})`).join(', ')}.` : undefined)
     } catch (e) { setError(e instanceof Error ? e.message : 'Analyse all could not be started.'); setBusy(false) }
   }

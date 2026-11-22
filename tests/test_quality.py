@@ -9,7 +9,14 @@ from fastapi.testclient import TestClient
 
 from backend.main import create_app
 from tests.conftest import authorization, wait_for_job
-from tests.test_api_engines import KEY, api_settings, providers, save_key, select_api  # noqa: F401
+from tests.test_api_engines import (  # noqa: F401
+    CHARGE,
+    KEY,
+    api_settings,
+    providers,
+    save_key,
+    select_api,
+)
 from tests.test_generation import approved_scene, generation_calls, import_result
 from tests.test_scenes import set_engine
 
@@ -110,7 +117,7 @@ def test_api_check_needs_confirmation_and_sends_every_image(api_settings, provid
                 "usageMetadata": {"promptTokenCount": 5200, "candidatesTokenCount": 400},
             },
         )
-        queued = check(client, result["id"], confirm_charges=True)
+        queued = check(client, result["id"], **CHARGE)
         job = wait_for_job(client, queued["active_job"]["id"])
         assert job["status"] == "completed", job
         assert job["usage"]["input_tokens"] == 5200 and job["model"] == "test-model"
